@@ -30,6 +30,8 @@ export function EntryCard({
   const [sharePreviewSrc, setSharePreviewSrc] = useState<string | null>(null);
   const [shareModalError, setShareModalError] = useState<string | null>(null);
   const [copyLinkHint, setCopyLinkHint] = useState<"ok" | "fail" | null>(null);
+  // 优化器回源偶发失败（线上见过 /_next/image 400）时，改为直接加载代理原图
+  const [unoptimizedSrcs, setUnoptimizedSrcs] = useState<ReadonlySet<string>>(() => new Set());
   const copyLinkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shareUrlRef = useRef("");
   const menuRootRef = useRef<HTMLDivElement | null>(null);
@@ -273,7 +275,14 @@ export function EntryCard({
                 className="object-cover"
                 sizes="96px"
                 // 私密文章的图片只给管理员：优化器回源不带 cookie，会被代理当作游客拒绝
-                unoptimized={item.isPublic === false && src.startsWith("/api/media/")}
+                unoptimized={
+                  unoptimizedSrcs.has(src) ||
+                  (item.isPublic === false && src.startsWith("/api/media/"))
+                }
+                onError={() => {
+                  if (!src.startsWith("/api/media/") || unoptimizedSrcs.has(src)) return;
+                  setUnoptimizedSrcs((prev) => new Set(prev).add(src));
+                }}
               />
             </div>
           ))}

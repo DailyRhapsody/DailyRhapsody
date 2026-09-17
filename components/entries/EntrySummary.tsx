@@ -39,8 +39,9 @@ export function EntrySummary({ text }: { text: string }) {
 
   return (
     <div>
+      {/* 正文图片与卡片首图同尺寸：小方图裁切，不按原图宽度铺开 */}
       <div
-        className={`${markdownPreviewProseClass} text-[0.82rem] leading-relaxed ${
+        className={`${markdownPreviewProseClass} text-[0.82rem] leading-relaxed [&_img]:h-24 [&_img]:w-24 [&_img]:bg-zinc-200 [&_img]:object-cover dark:[&_img]:bg-zinc-800 sm:[&_img]:h-20 sm:[&_img]:w-20 ${
           expanded ? "" : "max-h-36 overflow-hidden"
         }`}
       >
