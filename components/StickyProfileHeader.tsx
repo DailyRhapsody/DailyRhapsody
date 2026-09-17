@@ -183,6 +183,8 @@ export default function StickyProfileHeader({
     // Kill CSS transitions — rAF drives everything
     header.style.transition = "none";
     document.documentElement.style.overflowAnchor = "none";
+    // 动画不可中断，时间轴跳转看到这个标记会等它结束再滚（见 EntriesTimeline）
+    document.documentElement.dataset.returnToTop = "1";
     const collapsedEl = collapsedBarRef.current;
     const expandedEl = expandedContentRef.current;
     if (collapsedEl) collapsedEl.style.transition = "none";
@@ -274,6 +276,7 @@ export default function StickyProfileHeader({
               window.scrollTo({ top: 0, behavior: "instant" });
               header.style.transition = "";
               document.documentElement.style.overflowAnchor = "";
+              delete document.documentElement.dataset.returnToTop;
               returnToTopPhaseRef.current = 0;
             });
           }
@@ -302,6 +305,12 @@ export default function StickyProfileHeader({
       window.removeEventListener("scroll", onScroll);
       if (scrollRaf) cancelAnimationFrame(scrollRaf);
       if (returnToTopRafRef.current) cancelAnimationFrame(returnToTopRafRef.current);
+      // 回顶动画中途卸载（如点「首页」离开）：html 在客户端路由间保留，清掉动画留下的全局状态
+      if (returnToTopPhaseRef.current !== 0) {
+        returnToTopPhaseRef.current = 0;
+        delete document.documentElement.dataset.returnToTop;
+        document.documentElement.style.overflowAnchor = "";
+      }
     };
   }, []);
 

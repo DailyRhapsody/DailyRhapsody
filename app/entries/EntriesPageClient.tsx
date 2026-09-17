@@ -7,6 +7,7 @@ import StickyProfileHeader from "@/components/StickyProfileHeader";
 import { MomentLightbox } from "@/components/entries/MomentLightbox";
 import { CalendarHeatmap } from "@/components/entries/CalendarHeatmap";
 import { EntryCard } from "@/components/entries/EntryCard";
+import { EntriesTimeline } from "@/components/entries/EntriesTimeline";
 import { MomentsTab } from "@/components/entries/MomentsTab";
 import { getSizeClass } from "@/components/entries/utils";
 import type { MomentsTimelineRow } from "@/components/entries/types";
@@ -34,6 +35,9 @@ export default function EntriesPageClient({
     datesWithPosts,
     thisMonthPostCount,
     sentinelRef,
+    outline,
+    pendingEntryId,
+    requestEntry,
   } = useEntries(selectedTag);
   const totalPosts = total;
   const currentEntries = items;
@@ -125,12 +129,25 @@ export default function EntriesPageClient({
   useTabSwipeNavigation(setActiveTopTab, { min: 0, max: 1, enabled: lightbox == null });
 
   const handleTagClick = (tag: string) => {
+    requestEntry(null);
     setSelectedTag((prev) => (prev === tag ? null : tag));
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-100 to-white font-sans text-zinc-900 dark:from-black dark:via-zinc-950 dark:to-black dark:text-zinc-50">
       <RainbowBrushTrail />
+      {/* 必须在 entries-flip-wrapper 之外：它的 perspective/transform 会让 fixed 相对 main 定位 */}
+      {activeTopTab === 0 && (
+        <EntriesTimeline
+          key={selectedTag ?? ""}
+          outline={outline}
+          items={items}
+          hasMore={hasMore}
+          visible={entriesFlipped && !loading}
+          pendingEntryId={pendingEntryId}
+          requestEntry={requestEntry}
+        />
+      )}
       <div className="entries-flip-wrapper">
         <main
           id="entries"
