@@ -272,6 +272,8 @@ export function EntryCard({
                 fill
                 className="object-cover"
                 sizes="96px"
+                // 私密文章的图片只给管理员：优化器回源不带 cookie，会被代理当作游客拒绝
+                unoptimized={item.isPublic === false && src.startsWith("/api/media/")}
               />
             </div>
           ))}

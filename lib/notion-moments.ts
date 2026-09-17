@@ -19,6 +19,7 @@ import type {
   BlockObjectResponse,
   PageObjectResponse,
 } from "@notionhq/client/build/src/api-endpoints";
+import { mediaProxyPath } from "@/lib/notion-media";
 
 // Match the frontend PublicMoment / PublicMedia types
 export type PublicMedia = {
@@ -86,7 +87,10 @@ async function getRedis() {
   return _redis;
 }
 
-const CACHE_KEY = "notion:moments";
+// v2 / invalidatedAt：与 lib/notion.ts 同因（媒体改存代理路径，Preview 与生产共用 Upstash）
+const CACHE_KEY = "notion:moments:v2";
+const LEGACY_CACHE_KEY = "notion:moments";
+const INVALIDATED_KEY = "notion:moments:v2:invalidatedAt";
 const CACHE_STALE_MS = (Number(process.env.NOTION_CACHE_STALE_S) || 300) * 1000;
 // 48h + 下限钳制：与 lib/notion.ts 同因（NOTION_CACHE_TTL 曾被误配为 300 压塌 SWR）。
 const CACHE_HARD_TTL_S = 48 * 60 * 60;
@@ -100,44 +104,66 @@ function cacheTtl(): number {
   return configured;
 }
 
-type CacheEntry = { data: (PublicMoment & { isPublic: boolean })[]; refreshedAt: number };
+type MomentWithVisibility = PublicMoment & { isPublic: boolean };
+type CacheEntry = { data: MomentWithVisibility[]; refreshedAt: number; snapshotAt?: number };
+type CachedMoments = CacheEntry & { invalidatedAt: number };
 
-async function getCached(): Promise<CacheEntry | null> {
+function parseEntry(data: CacheEntry | MomentWithVisibility[] | null): CacheEntry | null {
+  if (!data) return null;
+  if (Array.isArray(data)) return { data, refreshedAt: 0 };
+  // 损坏数据保护：见 notion.ts 同位置注释。
+  if (typeof data !== "object" || !Array.isArray(data.data)) return null;
+  return data;
+}
+
+async function getCached(opts: { legacyFallback?: boolean } = {}): Promise<CachedMoments | null> {
   const redis = await getRedis();
   if (!redis) return null;
   try {
-    const data = await redis.get<CacheEntry | (PublicMoment & { isPublic: boolean })[]>(CACHE_KEY);
-    if (!data) return null;
-    if (Array.isArray(data)) return { data, refreshedAt: 0 };
-    // 损坏数据保护：见 notion.ts 同位置注释。
-    if (typeof data !== "object" || !Array.isArray((data as CacheEntry).data)) {
-      return null;
-    }
-    return data;
+    const [raw, invalidatedAt] = await redis.mget<
+      [CacheEntry | MomentWithVisibility[] | null, number | null]
+    >(CACHE_KEY, INVALIDATED_KEY);
+    const entry = parseEntry(raw);
+    if (entry) return { ...entry, invalidatedAt: Number(invalidatedAt) || 0 };
+    if (opts.legacyFallback === false) return null;
+    const legacy = parseEntry(await redis.get<CacheEntry | MomentWithVisibility[]>(LEGACY_CACHE_KEY));
+    return legacy ? { data: legacy.data, refreshedAt: 0, invalidatedAt: 0 } : null;
   } catch {
     return null;
   }
 }
 
-async function setCache(items: (PublicMoment & { isPublic: boolean })[]): Promise<void> {
+function isStale(cached: CachedMoments): boolean {
+  if (Date.now() - cached.refreshedAt > CACHE_STALE_MS) return true;
+  return cached.invalidatedAt > (cached.snapshotAt ?? cached.refreshedAt);
+}
+
+async function setCache(items: MomentWithVisibility[], snapshotAt: number): Promise<void> {
   const redis = await getRedis();
   if (!redis) return;
   try {
-    const entry: CacheEntry = { data: items, refreshedAt: Date.now() };
+    const entry: CacheEntry = { data: items, refreshedAt: Date.now(), snapshotAt };
     await redis.set(CACHE_KEY, entry, { ex: cacheTtl() });
   } catch {
     // non-fatal
   }
 }
 
-export async function invalidateMomentsCache(): Promise<void> {
+/** Notion 自动化调用：记下过期时间并立即后台重拉（同 lib/notion.ts markDiariesCacheStale）。 */
+export async function markMomentsCacheStale(): Promise<void> {
   const redis = await getRedis();
   if (!redis) return;
   try {
-    await redis.del(CACHE_KEY);
+    await redis.set(INVALIDATED_KEY, Date.now(), { ex: cacheTtl() });
   } catch {
-    // ignore
+    return;
   }
+  triggerBackgroundRefresh();
+}
+
+/** 只读缓存、不触发重拉，供 /api/media 鉴权用。 */
+export async function getCachedMoments(): Promise<MomentWithVisibility[] | null> {
+  return (await getCached({ legacyFallback: false }))?.data ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -146,14 +172,15 @@ export async function invalidateMomentsCache(): Promise<void> {
 
 const MAX_IMAGES_PER_MOMENT = 9;
 
+// Notion 托管文件的签名地址 1 小时过期，缓存里只存站内代理路径（见 lib/notion-media.ts）
 function blockMediaUrl(block: BlockObjectResponse): string | null {
   if (block.type === "image") {
     const f = block.image;
-    if (f.type === "file") return f.file.url;
+    if (f.type === "file") return mediaProxyPath("b", block.id, f.file.url);
     if (f.type === "external") return f.external.url;
   } else if (block.type === "video") {
     const f = block.video;
-    if (f.type === "file") return f.file.url;
+    if (f.type === "file") return mediaProxyPath("b", block.id, f.file.url);
     if (f.type === "external") return f.external.url;
   }
   return null;
@@ -301,6 +328,7 @@ function mapPageToMoment(
 async function refreshMomentsFromNotion(): Promise<(PublicMoment & { isPublic: boolean })[]> {
   const client = getClient();
   const databaseId = getDatabaseId();
+  const snapshotAt = Date.now();
 
   const pages: PageObjectResponse[] = [];
   let cursor: string | undefined;
@@ -321,7 +349,7 @@ async function refreshMomentsFromNotion(): Promise<(PublicMoment & { isPublic: b
 
   const mediaMap = await extractMediaBatch(pages.map((p) => p.id));
   const items = pages.map((page) => mapPageToMoment(page, mediaMap.get(page.id) ?? []));
-  await setCache(items);
+  await setCache(items, snapshotAt);
   return items;
 }
 
@@ -362,8 +390,7 @@ function triggerBackgroundRefresh(): void {
 export async function getMoments(): Promise<(PublicMoment & { isPublic: boolean })[]> {
   const cached = await getCached();
   if (cached) {
-    const age = Date.now() - cached.refreshedAt;
-    if (age > CACHE_STALE_MS) {
+    if (isStale(cached)) {
       triggerBackgroundRefresh();
     }
     return cached.data;

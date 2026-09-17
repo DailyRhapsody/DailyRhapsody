@@ -84,6 +84,8 @@ async function getRedis() {
 
 const LIST_CACHE_KEY = "notion:reference:items";
 const ITEM_CACHE_PREFIX = "notion:reference:item:";
+// Notion 自动化调 /api/revalidate 时写入；晚于列表快照开始时刻即视为过期（同 lib/notion.ts）
+const LIST_INVALIDATED_KEY = "notion:reference:items:invalidatedAt";
 const CACHE_STALE_MS = (Number(process.env.NOTION_CACHE_STALE_S) || 300) * 1000;
 // 48h + 下限钳制：与 lib/notion.ts 同因（NOTION_CACHE_TTL 曾被误配为 300 压塌 SWR）。
 const CACHE_HARD_TTL_S = 48 * 60 * 60;
@@ -97,31 +99,34 @@ function listTtl(): number {
   return configured;
 }
 
-type ListCacheEntry = { data: ReferenceItem[]; refreshedAt: number };
+type ListCacheEntry = { data: ReferenceItem[]; refreshedAt: number; snapshotAt?: number };
+type CachedList = ListCacheEntry & { invalidatedAt: number };
 
-async function getCachedList(): Promise<ListCacheEntry | null> {
+async function getCachedList(): Promise<CachedList | null> {
   const redis = await getRedis();
   if (!redis) return null;
   try {
-    const data = await redis.get<ListCacheEntry | ReferenceItem[]>(LIST_CACHE_KEY);
+    const [data, invalidatedAt] = await redis.mget<
+      [ListCacheEntry | ReferenceItem[] | null, number | null]
+    >(LIST_CACHE_KEY, LIST_INVALIDATED_KEY);
     if (!data) return null;
     if (Array.isArray(data)) {
-      return { data, refreshedAt: 0 };
+      return { data, refreshedAt: 0, invalidatedAt: 0 };
     }
-    if (typeof data !== "object" || !Array.isArray((data as ListCacheEntry).data)) {
+    if (typeof data !== "object" || !Array.isArray(data.data)) {
       return null;
     }
-    return data;
+    return { ...data, invalidatedAt: Number(invalidatedAt) || 0 };
   } catch {
     return null;
   }
 }
 
-async function setCachedList(items: ReferenceItem[]): Promise<void> {
+async function setCachedList(items: ReferenceItem[], snapshotAt: number): Promise<void> {
   const redis = await getRedis();
   if (!redis) return;
   try {
-    const entry: ListCacheEntry = { data: items, refreshedAt: Date.now() };
+    const entry: ListCacheEntry = { data: items, refreshedAt: Date.now(), snapshotAt };
     await redis.set(LIST_CACHE_KEY, entry, { ex: listTtl() });
   } catch {
     // 写缓存失败不影响读取
@@ -152,12 +157,16 @@ async function setCachedItem(item: ReferenceItem): Promise<void> {
   }
 }
 
-export async function invalidateReferenceCache(): Promise<void> {
+/**
+ * Notion 自动化调用：列表记下过期时间并立即后台重拉（期间访客继续看旧数据）；
+ * 单条正文缓存没有 SWR，单条回源很快，照旧删除。
+ */
+export async function markReferenceCacheStale(): Promise<void> {
   const redis = await getRedis();
   if (!redis) return;
   try {
-    // 清列表 + 用 SCAN 找单条 item 缓存全部清掉
-    await redis.del(LIST_CACHE_KEY);
+    await redis.set(LIST_INVALIDATED_KEY, Date.now(), { ex: listTtl() });
+    triggerBackgroundRefresh();
     let cursor: string = "0";
     do {
       const [next, keys]: [string, string[]] = await redis.scan(cursor, {
@@ -251,6 +260,7 @@ let _pendingRefresh: Promise<ReferenceItem[]> | null = null;
 async function refreshFromNotion(): Promise<ReferenceItem[]> {
   const client = getClient();
   const databaseId = getDatabaseId();
+  const snapshotAt = Date.now();
 
   const pages: PageObjectResponse[] = [];
   let cursor: string | undefined;
@@ -275,7 +285,7 @@ async function refreshFromNotion(): Promise<ReferenceItem[]> {
     (a, b) => new Date(b.clippedAt).getTime() - new Date(a.clippedAt).getTime()
   );
 
-  await setCachedList(items);
+  await setCachedList(items, snapshotAt);
   return items;
 }
 
@@ -308,8 +318,10 @@ function triggerBackgroundRefresh(): void {
 export async function getReferenceItems(): Promise<ReferenceItem[]> {
   const cached = await getCachedList();
   if (cached) {
-    const age = Date.now() - cached.refreshedAt;
-    if (age > CACHE_STALE_MS) triggerBackgroundRefresh();
+    const stale =
+      Date.now() - cached.refreshedAt > CACHE_STALE_MS ||
+      cached.invalidatedAt > (cached.snapshotAt ?? cached.refreshedAt);
+    if (stale) triggerBackgroundRefresh();
     return cached.data;
   }
   return ensureRefreshTask();

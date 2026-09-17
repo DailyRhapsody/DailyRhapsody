@@ -60,10 +60,11 @@ function sanitize(html: string): string {
     selfClosing: ["img", "br", "hr", "input", "source", "col"],
   });
 }
-import { highlightHashtagsForEditorHtml } from "@/lib/editor-hashtag-highlight";
+import { highlightHashtagsForRender } from "@/lib/editor-hashtag-highlight";
 import { stripHashtagOnlyLinesInProse } from "@/lib/hashtags";
 
-const FENCED_BLOCK = /```[\s\S]*?```/g;
+// 与 lib/editor-hashtag-highlight.ts 的 FENCE 一致：开闭围栏反引号数量相同
+const FENCED_BLOCK = /(`{3,})[\s\S]*?\1/g;
 
 /**
  * 渲染管线与 Notion 常用 Markdown 快捷一致：`# `…`###### ` + 空格 为标题（六级），
@@ -178,7 +179,7 @@ function prepareFencedProseChunk(chunk: string): string {
 export function renderMarkdown(markdown: string): string {
   const src = (markdown ?? "").replace(/\r\n/g, "\n");
   const prepped = mapOutsideFencedBlocks(src, prepareFencedProseChunk);
-  const withTags = highlightHashtagsForEditorHtml(prepped);
+  const withTags = highlightHashtagsForRender(prepped);
   return marked.parse(withTags, { async: false }) as string;
 }
 
@@ -186,4 +187,4 @@ export function renderMarkdown(markdown: string): string {
  * 与前台 / 编辑器预览区共用的样式：列表层级、表格、代码块、图片、引用等与 GFM 输出对齐。
  */
 export const markdownPreviewProseClass =
-  "prose prose-zinc max-w-none dark:prose-invert break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_ul_ul]:mt-1 [&_ul_ul]:list-[circle] [&_ul_ul_ul]:list-[square] [&_ol_ol]:mt-1 [&_ol_ol]:list-[lower-alpha] [&_ol_ol_ol]:list-[lower-roman] [&_a]:break-words [&_table]:w-full [&_table]:text-left [&_th]:border [&_th]:border-zinc-300 [&_th]:px-2 [&_th]:py-1.5 [&_td]:border [&_td]:border-zinc-300 [&_td]:px-2 [&_td]:py-1.5 dark:[&_th]:border-zinc-600 dark:[&_td]:border-zinc-600 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:p-4 [&_pre]:text-sm [&_pre]:bg-zinc-900 [&_pre]:text-zinc-100 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-inherit [&_p_code]:rounded [&_p_code]:bg-zinc-100 [&_p_code]:px-1 [&_p_code]:py-0.5 dark:[&_p_code]:bg-zinc-800 [&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-lg [&_blockquote]:border-l-4 [&_blockquote]:border-zinc-300 [&_blockquote]:pl-4 [&_blockquote]:not-italic dark:[&_blockquote]:border-zinc-600 [&_hr]:my-8 [&_input[type=checkbox]]:mr-1.5 [&_input[type=checkbox]]:align-middle [&_.dr-md-editor-tag]:font-medium [&_.dr-md-editor-tag]:text-violet-700 dark:[&_.dr-md-editor-tag]:text-sky-400";
+  "prose prose-zinc max-w-none dark:prose-invert break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_ul_ul]:mt-1 [&_ul_ul]:list-[circle] [&_ul_ul_ul]:list-[square] [&_ol_ol]:mt-1 [&_ol_ol]:list-[lower-alpha] [&_ol_ol_ol]:list-[lower-roman] [&_a]:break-words [&_table]:block [&_table]:w-full [&_table]:overflow-x-auto [&_table]:text-left [&_th]:border [&_th]:border-zinc-300 [&_th]:px-2 [&_th]:py-1.5 [&_td]:border [&_td]:border-zinc-300 [&_td]:px-2 [&_td]:py-1.5 dark:[&_th]:border-zinc-600 dark:[&_td]:border-zinc-600 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:p-4 [&_pre]:text-sm [&_pre]:bg-zinc-900 [&_pre]:text-zinc-100 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-inherit [&_p_code]:rounded [&_p_code]:bg-zinc-100 [&_p_code]:px-1 [&_p_code]:py-0.5 dark:[&_p_code]:bg-zinc-800 [&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-lg [&_blockquote]:border-l-4 [&_blockquote]:border-zinc-300 [&_blockquote]:pl-4 [&_blockquote]:not-italic dark:[&_blockquote]:border-zinc-600 [&_hr]:my-8 [&_.dr-mermaid]:my-3 [&_.dr-mermaid]:overflow-x-auto [&_.dr-mermaid_svg]:mx-auto [&_.dr-mermaid_svg]:h-auto [&_.dr-mermaid_svg]:max-w-full [&_input[type=checkbox]]:mr-1.5 [&_input[type=checkbox]]:align-middle [&_.dr-md-editor-tag]:font-medium [&_.dr-md-editor-tag]:text-violet-700 dark:[&_.dr-md-editor-tag]:text-sky-400";

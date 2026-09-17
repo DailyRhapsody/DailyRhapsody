@@ -58,14 +58,16 @@ Vercel 项目 `dailyrhapsody` 已连接本仓库的 Git 集成：
 
 ## 按需刷新缓存
 
-secret 只能走 Authorization 头，不能放 query string（避免落入访问日志、Referer、浏览器历史）；且仅接受 POST：
+secret 只能走请求头（`Authorization: Bearer <secret>` 或 `X-Revalidate-Secret: <secret>`），不能放 query string（避免落入访问日志、Referer、浏览器历史）；且仅接受 POST：
 
 ```bash
 curl -X POST -H "Authorization: Bearer $REVALIDATE_SECRET" \
      https://www.tengjun.org/api/revalidate
 ```
 
-会清空三个栏目的 Notion 缓存并重新验证页面缓存。
+会把三个栏目的 Notion 缓存标记为过期（保留旧数据，下一次访问时后台重拉）并重新验证页面缓存。
+
+Notion 数据库自动化的配置：触发条件选页面新增 / 属性修改（改正文不会触发），动作选 Send webhook，URL 填 `https://www.tengjun.org/api/revalidate`（带 www，裸域会 308 跳转），在 Add custom header 里加 `X-Revalidate-Secret`。
 
 ## 其他
 
