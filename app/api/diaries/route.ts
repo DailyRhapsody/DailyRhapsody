@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/auth";
+import { buildEntryOutline } from "@/lib/entry-outline";
+import type { EntryOutlineItem } from "@/components/entries/types";
 import { getDiaries, isNotionConfigured, type Diary } from "@/lib/notion";
 import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
 
@@ -98,11 +100,14 @@ export async function GET(req: Request) {
     hasMore: boolean;
     tagCounts?: { name: string; value: number }[];
     dates?: string[];
+    outline?: EntryOutlineItem[];
   } = { items, total, hasMore };
 
   if (offset === 0) {
     body.tagCounts = getTagCounts(visible);
     body.dates = [...new Set(visible.map((d) => d.date))];
+    // 时间轴大纲：用 filtered（已剔除访客不可见的私密文章并套用 tag/搜索），与 total 同口径
+    if (searchParams.get("outline") === "1") body.outline = buildEntryOutline(filtered);
   }
 
   return withAntiScrapeHeaders(NextResponse.json(body));

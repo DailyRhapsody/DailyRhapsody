@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { PAGE_SIZE } from "@/components/entries/utils";
-import type { Diary } from "@/components/entries/types";
+import type { Diary, EntryOutlineItem } from "@/components/entries/types";
 
 type DiariesResponse = {
   items?: Diary[];
   total?: number;
   tagCounts?: { name: string; value: number }[];
   dates?: string[];
+  outline?: EntryOutlineItem[];
 };
 
 export type UseEntriesState = {
@@ -33,6 +34,12 @@ export type UseEntriesState = {
   thisMonthPostCount: number;
   /** 文章列表底部的 sentinel，挂在 IntersectionObserver 上做无限滚动 */
   sentinelRef: React.RefObject<HTMLDivElement | null>;
+  /** 当前筛选下全部文章的大纲（含未加载的），供时间轴使用 */
+  outline: EntryOutlineItem[];
+  /** 时间轴请求跳转、但尚未加载到的文章 id */
+  pendingEntryId: string | null;
+  /** 请求逐页补载直到该文章出现；传 null 取消 */
+  requestEntry: (id: string | null) => void;
 };
 
 /**
@@ -52,6 +59,9 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
   const [total, setTotal] = useState(0);
   const [tagCounts, setTagCounts] = useState<{ name: string; value: number }[]>([]);
   const [datesFromApi, setDatesFromApi] = useState<string[]>([]);
+  const [outline, setOutline] = useState<EntryOutlineItem[]>([]);
+  const [pendingEntryId, setPendingEntryId] = useState<string | null>(null);
+  const requestEntry = useCallback((id: string | null) => setPendingEntryId(id), []);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -106,6 +116,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
         offset: String(offset),
       });
       if (tag) params.set("tag", tag);
+      if (!append) params.set("outline", "1");
       return fetchWithTimeout(`/api/diaries?${params}`, { signal })
         .then((res) => {
           if (!res.ok) throw new Error(String(res.status));
@@ -116,6 +127,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
           if (append) setItems((prev) => [...prev, ...list]);
           else {
             setItems(list);
+            setOutline(Array.isArray(data.outline) ? data.outline : []);
             loadedTagRef.current = tag; // items 从此归属这个 tag
           }
           if (typeof data.total === "number") setTotal(data.total);
@@ -158,6 +170,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
         if (loadedTagRef.current !== selectedTag) {
           setItems([]);
           setTotal(0);
+          setOutline([]);
         }
       })
       .finally(() => {
@@ -166,13 +179,17 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     return () => ctrl.abort();
   }, [selectedTag, loadPage, gateGen]);
 
-  /* ── hash 深链 #entry-N：如果目标文章不在当前已加载列表里，就 append 下一页 ── */
+  /* ── hash 深链 #entry-N / 时间轴跳转：目标文章不在已加载列表里时逐页 append ──
+   * 时间轴跳转（pendingEntryId）只负责补页，加载到后的滚动由时间轴自己做。 */
   useEffect(() => {
     if (loading || typeof window === "undefined") return;
-    const anchor = window.location.hash.replace(/^#/, "");
+    const anchor = pendingEntryId
+      ? `entry-${pendingEntryId}`
+      : window.location.hash.replace(/^#/, "");
     if (!anchor.startsWith("entry-")) return;
     const el = document.getElementById(anchor);
     if (el) {
+      if (pendingEntryId) return;
       requestAnimationFrame(() => {
         el.scrollIntoView({ behavior: "smooth", block: "nearest" });
       });
@@ -182,6 +199,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     if (!targetId) return;
     const inList = items.some((d) => d.id === targetId);
     if (inList) {
+      if (pendingEntryId) return;
       requestAnimationFrame(() => {
         document.getElementById(anchor)?.scrollIntoView({
           behavior: "smooth",
@@ -192,7 +210,13 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     }
     if (total > 0 && items.length >= total) return;
     if (!hasMore || loadingMore || appendInFlightRef.current) return;
-    if (Date.now() < appendCooldownUntilRef.current) return;
+    const cooldownLeft = appendCooldownUntilRef.current - Date.now();
+    if (cooldownLeft > 0) {
+      // 时间轴跳转撞上冷却：到期后重跑一次本 effect（hash 深链保持原行为，不重试）
+      if (!pendingEntryId) return;
+      const t = setTimeout(() => setAppendRetryGen((g) => g + 1), cooldownLeft + 50);
+      return () => clearTimeout(t);
+    }
     // items 尚未归属当前 tag（首页在途/失败）时不允许 append，防跨 tag 混排
     if (loadedTagRef.current !== selectedTag) return;
     const ctrl = new AbortController();
@@ -203,6 +227,8 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
       .catch(() => {
         if (ctrl.signal.aborted) return; // 首屏换血/卸载时主动取消的，不计失败
         appendCooldownUntilRef.current = Date.now() + 5000;
+        // 时间轴跳转失败即放弃，不随冷却自动重试
+        setPendingEntryId((cur) => (cur === targetId ? null : cur));
       })
       .finally(() => {
         if (appendCtrlRef.current === ctrl) appendCtrlRef.current = null;
@@ -211,7 +237,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
       });
     // 不在 cleanup 里 abort：本 effect 因 loadingMore/items 变化而重建，
     // 若随 cleanup 中止会把刚发起的请求自己取消掉（见 appendCtrlRef 注释）。
-  }, [loading, items, total, hasMore, loadingMore, selectedTag, loadPage]);
+  }, [loading, items, total, hasMore, loadingMore, selectedTag, loadPage, pendingEntryId, appendRetryGen]);
 
   /* ── 无限滚动：sentinel 进视窗就 append ── */
   useEffect(() => {
@@ -286,5 +312,8 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     datesWithPosts,
     thisMonthPostCount,
     sentinelRef,
+    outline,
+    pendingEntryId,
+    requestEntry,
   };
 }
