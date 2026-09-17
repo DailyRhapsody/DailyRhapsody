@@ -3,6 +3,10 @@ import { isAdmin } from "@/lib/auth";
 import { getDiaries, isNotionConfigured, type Diary } from "@/lib/notion";
 import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
 
+// SWR 后台重拉（waitUntil）跑在本次函数调用里，受 maxDuration 约束。
+// 正文抓取按 Retry-After 重试 429 后，全量刷新实测约 80s，与 cron 预热端点一样给足预算。
+export const maxDuration = 300;
+
 const DEFAULT_PAGE_SIZE = 30;
 const MAX_PAGE_SIZE = 30;
 

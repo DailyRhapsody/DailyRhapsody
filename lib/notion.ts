@@ -14,7 +14,7 @@
  *                           this is NOT the freshness knob — see CACHE_MIN_TTL_S)
  */
 
-import { Client } from "@notionhq/client";
+import { APIResponseError, APIErrorCode, Client } from "@notionhq/client";
 import type {
   BlockObjectResponse,
   PageObjectResponse,
@@ -240,6 +240,33 @@ function blockToMarkdown(b: BlockObjectResponse): string {
   }
 }
 
+// Notion 平均限速约 3 req/s（按 token 计，跨实例共享），全量刷新要逐篇拉 281 篇正文，
+// 必然撞上 429。SDK 2.3.0 不重试，异常又被吞掉、正文回退成标题并写进缓存：
+// 2026-09 线上缓存 281 篇里有 110 篇只剩标题。这里按 Retry-After 等待后重试，
+// 加随机抖动，避免多个 worker 读到同一个 Retry-After 后同时醒来再次撞限。
+const RATE_LIMIT_MAX_RETRIES = 6;
+
+async function withRateLimitRetry<T>(call: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await call();
+    } catch (e) {
+      if (
+        !APIResponseError.isAPIResponseError(e) ||
+        e.code !== APIErrorCode.RateLimited ||
+        attempt >= RATE_LIMIT_MAX_RETRIES
+      ) {
+        throw e;
+      }
+      const headers = e.headers as { get?: (name: string) => string | null } | undefined;
+      const retryAfterS = Number(headers?.get?.("retry-after"));
+      const baseMs =
+        Number.isFinite(retryAfterS) && retryAfterS > 0 ? retryAfterS * 1000 : 1000 * 2 ** attempt;
+      await new Promise((resolve) => setTimeout(resolve, baseMs + Math.random() * 1000));
+    }
+  }
+}
+
 /**
  * 递归遍历 page 下的所有 block，处理 toggle / column_list / synced_block 等容器。
  * Notion API 对每个有 has_children 的 block 都需要再调一次 list；这里限制深度避免循环。
@@ -251,14 +278,15 @@ async function walkBlocks(
   maxDepth = 3
 ): Promise<void> {
   if (depth > maxDepth) return;
-  const client = getClient();
   let cursor: string | undefined;
   do {
-    const r = await client.blocks.children.list({
-      block_id: blockId,
-      start_cursor: cursor,
-      page_size: 100,
-    });
+    const r = await withRateLimitRetry(() =>
+      getClient().blocks.children.list({
+        block_id: blockId,
+        start_cursor: cursor,
+        page_size: 100,
+      })
+    );
     for (const b of r.results) {
       if (!("type" in b)) continue;
       const block = b as BlockObjectResponse;
@@ -272,28 +300,33 @@ async function walkBlocks(
   } while (cursor);
 }
 
-export async function extractBodyMarkdown(pageId: string): Promise<string> {
+/** 抓取失败返回 null，让全量刷新能区分「正文确实为空」和「这次没抓到」。 */
+async function tryExtractBodyMarkdown(pageId: string): Promise<string | null> {
   const parts: string[] = [];
   try {
     await walkBlocks(pageId, 0, parts);
   } catch (e) {
     console.warn(`[notion] extractBodyMarkdown failed for ${pageId}:`, e);
-    return "";
+    return null;
   }
   return parts.join("\n\n");
+}
+
+export async function extractBodyMarkdown(pageId: string): Promise<string> {
+  return (await tryExtractBodyMarkdown(pageId)) ?? "";
 }
 
 async function extractBodyMarkdownBatch(
   pageIds: string[],
   concurrency = 3
-): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
+): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
   let idx = 0;
   const workers = Array.from({ length: Math.min(concurrency, pageIds.length) }, async () => {
     while (idx < pageIds.length) {
       const i = idx++;
       const id = pageIds[i];
-      out.set(id, await extractBodyMarkdown(id));
+      out.set(id, await tryExtractBodyMarkdown(id));
     }
   });
   await Promise.all(workers);
@@ -330,11 +363,20 @@ function extractTitle(page: PageObjectResponse): string {
   return "";
 }
 
+type PlaceValue = { name?: string | null; address?: string | null } | null;
+
 function extractLocation(page: PageObjectResponse): string | undefined {
   const prop = page.properties["Location"];
   if (prop?.type === "rich_text") {
     const text = richTextToPlain(prop.rich_text);
     return text || undefined;
+  }
+  // Notion 里 Location 已改成「地点」(place) 类型，之前只认 rich_text，全站地点都读不出。
+  // @notionhq/client 2.3.0 的类型定义没有 place，只能断言；只取地名，
+  // 经纬度和 place id 不进 API 响应。
+  const raw = prop as unknown as { type?: string; place?: PlaceValue } | undefined;
+  if (raw?.type === "place") {
+    return raw.place?.name?.trim() || raw.place?.address?.trim() || undefined;
   }
   return undefined;
 }
@@ -424,12 +466,14 @@ async function refreshDiariesFromNotion(): Promise<Diary[]> {
   const pages: PageObjectResponse[] = [];
   let cursor: string | undefined;
   do {
-    const response = await client.databases.query({
-      database_id: databaseId,
-      start_cursor: cursor,
-      page_size: 100,
-      sorts: [{ property: "Date", direction: "descending" }],
-    });
+    const response = await withRateLimitRetry(() =>
+      client.databases.query({
+        database_id: databaseId,
+        start_cursor: cursor,
+        page_size: 100,
+        sorts: [{ property: "Date", direction: "descending" }],
+      })
+    );
     for (const page of response.results) {
       if ("properties" in page) {
         pages.push(page as PageObjectResponse);
@@ -439,7 +483,11 @@ async function refreshDiariesFromNotion(): Promise<Diary[]> {
   } while (cursor);
 
   const bodies = await extractBodyMarkdownBatch(pages.map((p) => p.id));
-  const diaries = pages.map((page) => mapPageToDiary(page, bodies.get(page.id) ?? ""));
+  // 重试用尽仍没抓到的正文沿用上一版缓存，不让一次限流把好数据覆盖成只剩标题
+  const previous = new Map((await getCached())?.data.map((d) => [d.id, d.summary]) ?? []);
+  const diaries = pages.map((page) =>
+    mapPageToDiary(page, bodies.get(page.id) ?? previous.get(page.id) ?? "")
+  );
 
   // Sort: pinned first, then by publishedAt/date descending
   diaries.sort((a, b) => {
@@ -514,15 +562,24 @@ export async function getDiaryById(id: string): Promise<Diary | null> {
   // Try to find in cache first
   const cached = await getCached();
   if (cached) {
+    // 与列表同一套 SWR：过期就后台重拉，Notion 里的删除/私密不会卡在详情缓存里
+    if (Date.now() - cached.refreshedAt > CACHE_STALE_MS) triggerBackgroundRefresh();
     const found = cached.data.find((d) => d.id === id);
     if (found) return found;
   }
 
   try {
     const client = getClient();
-    const page = await client.pages.retrieve({ page_id: id });
+    const page = await withRateLimitRetry(() => client.pages.retrieve({ page_id: id }));
 
     if (!("properties" in page)) return null;
+    // Notion 是唯一后台：在 Notion 删除（进回收站）的页、不属于日记库的页，前端一律当不存在。
+    // pages.retrieve 对回收站里的页照样返回 200，不拦就能按 id 读到已删文章。
+    const full = page as PageObjectResponse & { in_trash?: boolean };
+    if (full.archived || full.in_trash) return null;
+    const parentDb =
+      full.parent.type === "database_id" ? full.parent.database_id.replace(/-/g, "") : "";
+    if (parentDb !== getDatabaseId().replace(/-/g, "")) return null;
 
     const body = await extractBodyMarkdown(id);
     return mapPageToDiary(page as PageObjectResponse, body);
