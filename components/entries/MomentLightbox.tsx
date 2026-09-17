@@ -76,7 +76,7 @@ export function MomentLightbox({
             </svg>
           </button>
         )}
-        <div className="relative mx-10 max-h-full w-full" onClick={(e) => e.stopPropagation()}>
+        <div className="relative mx-10 flex max-h-full w-full justify-center" onClick={(e) => e.stopPropagation()}>
           {failed.has(src) ? (
             <p className="py-24 text-center text-sm text-white/70">图片无法加载</p>
           ) : (
