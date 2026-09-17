@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
@@ -9,7 +9,7 @@ import { createShareCardElement } from "@/lib/share-card";
 import { DefaultAvatar } from "./DefaultAvatar";
 import { EntrySummary } from "./EntrySummary";
 import { EntryComments } from "./EntryComments";
-import { legacyCopyTextToClipboard } from "./utils";
+import { legacyCopyTextToClipboard, splitBodyImages } from "./utils";
 import type { Diary } from "./types";
 
 export function EntryCard({
@@ -17,11 +17,14 @@ export function EntryCard({
   authorName,
   avatarSrc,
   canEdit,
+  onOpenImages,
 }: {
   item: Diary;
   authorName: string;
   avatarSrc: string;
   canEdit: boolean;
+  /** 点击首图放大：urls 为本篇全部图片，index 为点中的那张 */
+  onOpenImages: (urls: string[], index: number) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -32,9 +35,20 @@ export function EntryCard({
   const [copyLinkHint, setCopyLinkHint] = useState<"ok" | "fail" | null>(null);
   // 优化器回源偶发失败（线上见过 /_next/image 400）时，改为直接加载代理原图
   const [unoptimizedSrcs, setUnoptimizedSrcs] = useState<ReadonlySet<string>>(() => new Set());
+  // 直连也加载失败的（如正文里的视频 block）不再占首图位置，也不进灯箱
+  const [brokenSrcs, setBrokenSrcs] = useState<ReadonlySet<string>>(() => new Set());
   const copyLinkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shareUrlRef = useRef("");
   const menuRootRef = useRef<HTMLDivElement | null>(null);
+  // 正文里独占一行的图片并入首图，正文只留文字
+  const { text: bodyText, images: bodyImages } = useMemo(
+    () => splitBodyImages(item.summary),
+    [item.summary]
+  );
+  const images = useMemo(
+    () => [...new Set([...(item.images ?? []), ...bodyImages])].filter((src) => !brokenSrcs.has(src)),
+    [item.images, bodyImages, brokenSrcs]
+  );
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -118,7 +132,7 @@ export function EntryCard({
       "position:fixed;left:-9999px;top:0;overflow:visible;opacity:1;pointer-events:none;z-index:-1";
 
     const card = createShareCardElement({
-      summary: item.summary,
+      summary: bodyText,
       date: item.date,
       publishedAt: item.publishedAt,
       entryId: item.id,
@@ -261,34 +275,42 @@ export function EntryCard({
           )}
         </div>
       </div>
-      {(item.images ?? []).length > 0 && (
-        <div className="flex gap-1 overflow-hidden rounded-xl">
-          {(item.images ?? []).slice(0, 3).map((src, idx) => (
-            <div
-              key={`${src}-${idx}`}
-              className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-200 dark:bg-zinc-800 sm:h-20 sm:w-20"
-            >
-              <Image
-                src={src}
-                alt=""
-                fill
-                className="object-cover"
-                sizes="96px"
-                // 私密文章的图片只给管理员：优化器回源不带 cookie，会被代理当作游客拒绝
-                unoptimized={
-                  unoptimizedSrcs.has(src) ||
-                  (item.isPublic === false && src.startsWith("/api/media/"))
-                }
-                onError={() => {
-                  if (!src.startsWith("/api/media/") || unoptimizedSrcs.has(src)) return;
-                  setUnoptimizedSrcs((prev) => new Set(prev).add(src));
-                }}
-              />
-            </div>
-          ))}
+      {images.length > 0 && (
+        // p-1/-m-1 给键盘焦点框留出位置，否则会被 overflow-hidden 裁掉
+        <div className="-m-1 flex gap-1 overflow-hidden rounded-xl p-1">
+          {images.slice(0, 3).map((src, idx) => {
+            // 只有公开文章的 Image 属性图走优化器（与改动前一致）：
+            // 私密图优化器回源不带 cookie 会被拒；正文图直连代理，文章转私密后 5 分钟内失效，
+            // 走优化器会被缓存 4 小时；外链图的域名不在 images 配置里，走优化器会直接报错
+            const optimized =
+              src.startsWith("/api/media/p/") && item.isPublic !== false && !unoptimizedSrcs.has(src);
+            return (
+              <button
+                key={src}
+                type="button"
+                onClick={() => onOpenImages(images, idx)}
+                aria-label={`查看大图 ${idx + 1}/${images.length}`}
+                // 窄屏（<350px）三张 96px 放不下，按行宽三等分缩小，保持方图
+                className="relative aspect-square w-[calc((100%-0.5rem)/3)] max-w-24 flex-shrink-0 cursor-zoom-in overflow-hidden rounded-lg bg-zinc-200 dark:bg-zinc-800 sm:h-20 sm:w-20"
+              >
+                <Image
+                  src={src}
+                  alt=""
+                  fill
+                  className="object-cover"
+                  sizes="96px"
+                  unoptimized={!optimized}
+                  onError={() => {
+                    if (optimized) setUnoptimizedSrcs((prev) => new Set(prev).add(src));
+                    else setBrokenSrcs((prev) => new Set(prev).add(src));
+                  }}
+                />
+              </button>
+            );
+          })}
         </div>
       )}
-      <EntrySummary text={item.summary} />
+      {bodyText.trim() !== "" && <EntrySummary text={bodyText} />}
       <div className="space-y-1">
         <div className="flex items-center justify-between gap-2">
           {(item.tags ?? []).length > 0 ? (

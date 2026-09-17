@@ -14,6 +14,8 @@ export function MomentLightbox({
   onClose: () => void;
 }) {
   const [i, setI] = useState(index);
+  // 加载失败的页（坏图、被当作图片的视频）显示提示，不留一页空白
+  const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
 
   const onKey = useCallback(
     (e: KeyboardEvent) => {
@@ -75,12 +77,17 @@ export function MomentLightbox({
           </button>
         )}
         <div className="relative mx-10 max-h-full w-full" onClick={(e) => e.stopPropagation()}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- 外链原图尺寸不定 */}
-          <img
-            src={src}
-            alt=""
-            className="max-h-[min(92vh,900px)] w-auto max-w-full object-contain"
-          />
+          {failed.has(src) ? (
+            <p className="py-24 text-center text-sm text-white/70">图片无法加载</p>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element -- 外链原图尺寸不定
+            <img
+              src={src}
+              alt=""
+              className="max-h-[min(92vh,900px)] w-auto max-w-full object-contain"
+              onError={() => setFailed((prev) => new Set(prev).add(src))}
+            />
+          )}
         </div>
         {urls.length > 1 && (
           <button

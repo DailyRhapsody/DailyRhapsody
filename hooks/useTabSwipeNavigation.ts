@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 
 /** 一旦累计到这个 deltaX 就立刻切 tab —— 不再等 wheel 停下 */
 const WHEEL_TRIGGER_DELTA = 40;
@@ -23,8 +23,22 @@ const TOUCH_TRIGGER_DELTA = 50;
  */
 export function useTabSwipeNavigation(
   setTab: Dispatch<SetStateAction<number>>,
-  { min = 0, max = 1 }: { min?: number; max?: number } = {},
+  {
+    min = 0,
+    max = 1,
+    enabled = true,
+  }: {
+    min?: number;
+    max?: number;
+    /** false 时不切 tab（如灯箱打开），但仍拦截横滑，避免触发浏览器前进/后退 */
+    enabled?: boolean;
+  } = {},
 ) {
+  const enabledRef = useRef(enabled);
+  useEffect(() => {
+    enabledRef.current = enabled;
+  }, [enabled]);
+
   useEffect(() => {
     let wheelAccum = 0;
     /** 上次触发 setTab 的时间戳（performance.now 刻度） */
@@ -54,6 +68,11 @@ export function useTabSwipeNavigation(
       // 反方向事件意味着用户明确开了新手势，把之前同方向残留的 accum 清掉再算
       if (wheelAccum !== 0 && Math.sign(wheelAccum) !== curSign) {
         wheelAccum = 0;
+      }
+
+      if (!enabledRef.current) {
+        wheelAccum = 0;
+        return;
       }
 
       wheelAccum += e.deltaX;
@@ -91,7 +110,7 @@ export function useTabSwipeNavigation(
       if (isHz) e.preventDefault();
     }
     function onTouchEnd(e: TouchEvent) {
-      if (!isHz) return;
+      if (!isHz || !enabledRef.current) return;
       const dx = (e.changedTouches[0]?.clientX ?? startX) - startX;
       if (Math.abs(dx) > TOUCH_TRIGGER_DELTA) {
         setTab((prev) =>
