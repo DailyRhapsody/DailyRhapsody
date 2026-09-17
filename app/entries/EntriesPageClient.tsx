@@ -122,7 +122,7 @@ export default function EntriesPageClient({
   }, []);
 
   /* ── 横向滚轮 / 触屏左右滑动切 tab + 屏蔽浏览器自带的左右回退 ── */
-  useTabSwipeNavigation(setActiveTopTab, { min: 0, max: 1 });
+  useTabSwipeNavigation(setActiveTopTab, { min: 0, max: 1, enabled: lightbox == null });
 
   const handleTagClick = (tag: string) => {
     setSelectedTag((prev) => (prev === tag ? null : tag));
@@ -270,6 +270,9 @@ export default function EntriesPageClient({
                       authorName={profile?.name ?? "DailyRhapsody"}
                       avatarSrc={profile?.avatar ?? "/avatar.png"}
                       canEdit={isAdminSession}
+                      onOpenImages={(urls, i) =>
+                        setLightbox({ urls, i, lbKey: `entry-${item.id}-${i}` })
+                      }
                     />
                   ))}
                 {hasMore && !loading && <div ref={sentinelRef} className="h-4" aria-hidden />}
