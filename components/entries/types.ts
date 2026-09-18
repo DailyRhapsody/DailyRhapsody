@@ -34,6 +34,10 @@ export type Comment = {
   author: string;
   content: string;
   createdAt: string;
+  /** 访客头像：头像库编号 */
+  avatar?: number;
+  /** 站长发的评论 */
+  isAuthor?: boolean;
 };
 
 export type PublicMedia = {

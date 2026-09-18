@@ -1,16 +1,53 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
 import { formatDate12h } from "@/lib/format";
 import { createShareCardElement } from "@/lib/share-card";
+import { useCommentCount } from "@/hooks/useCommentCounts";
 import { DefaultAvatar } from "./DefaultAvatar";
 import { EntrySummary } from "./EntrySummary";
-import { EntryComments } from "./EntryComments";
+import { CommentBubbleIcon, EntryComments } from "./EntryComments";
 import { legacyCopyTextToClipboard, splitBodyImages } from "./utils";
 import type { Diary } from "./types";
+
+const SHARE_TIMEOUT_MS = 20_000;
+
+/**
+ * 评论放在正文右侧（类 Notion 旁注）需要的最小视口：正文列 56rem，右侧留白至少约 15rem。
+ * 更窄时评论在文章下方展开。
+ */
+const MARGIN_COMMENTS_QUERY = "(min-width: 1440px)";
+/** 旁注线程可用高度的下限：短文章也要放得下一条评论和输入框 */
+const MARGIN_THREAD_MIN_PX = 176;
+/** 文章下方线程的最低高度 */
+const INLINE_THREAD_MIN_PX = 240;
+
+function subscribeMarginComments(onChange: () => void) {
+  const mql = window.matchMedia(MARGIN_COMMENTS_QUERY);
+  mql.addEventListener("change", onChange);
+  return () => mql.removeEventListener("change", onChange);
+}
+
+/**
+ * 分享卡片的截图倍率：默认 3 倍，长文按画布上限降倍。iOS Safari 单张画布约 1677 万像素、
+ * 浏览器单边约 3.2 万像素，超出会得到空白图或直接失败。
+ */
+function shareCardScale(width: number, height: number): number {
+  if (!width || !height) return 3;
+  return Math.min(3, Math.sqrt(16_000_000 / (width * height)), 32_000 / height);
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("share-read"));
+    reader.readAsDataURL(blob);
+  });
+}
 
 export function EntryCard({
   item,
@@ -28,6 +65,22 @@ export function EntryCard({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  /** 读者点了「评论」：线程挂上后聚焦输入框一次 */
+  const [commentFocus, setCommentFocus] = useState(false);
+  const commentCount = useCommentCount(item.id);
+  const marginComments = useSyncExternalStore(
+    subscribeMarginComments,
+    () => window.matchMedia(MARGIN_COMMENTS_QUERY).matches,
+    () => false
+  );
+  const marginThread = marginComments && (commentCount > 0 || commentsOpen);
+  const inlineThread = !marginComments && commentsOpen;
+  // 线程最高不超过文章本身：量正文部分（不含下方展开的评论）的高度
+  const postRef = useRef<HTMLDivElement>(null);
+  const [postHeight, setPostHeight] = useState(0);
+  // 旁注线程是绝对定位的，比文章高时会压到下一篇的线程上：量出实际高度，把文章撑到至少这么高
+  const marginRef = useRef<HTMLDivElement>(null);
+  const [marginHeight, setMarginHeight] = useState(0);
   const [sharing, setSharing] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [sharePreviewSrc, setSharePreviewSrc] = useState<string | null>(null);
@@ -39,6 +92,10 @@ export function EntryCard({
   const [brokenSrcs, setBrokenSrcs] = useState<ReadonlySet<string>>(() => new Set());
   const copyLinkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shareUrlRef = useRef("");
+  /** 每次生成 / 关闭都 +1：关闭弹窗即取消，迟到的生成结果按代号丢弃 */
+  const shareGenRef = useRef(0);
+  /** 系统分享用的图片文件；预览与下载用 data URL（微信等内置浏览器长按保存取不到 blob: 地址） */
+  const shareBlobRef = useRef<Blob | null>(null);
   const menuRootRef = useRef<HTMLDivElement | null>(null);
   // 正文里独占一行的图片并入首图，正文只留文字
   const { text: bodyText, images: bodyImages } = useMemo(
@@ -51,7 +108,44 @@ export function EntryCard({
   );
 
   useEffect(() => {
+    if (!marginThread && !inlineThread) return;
+    const el = postRef.current;
+    if (!el) return;
+    const measure = () => setPostHeight(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [marginThread, inlineThread]);
+
+  useEffect(() => {
+    const el = marginRef.current;
+    if (!marginThread || !el) {
+      setMarginHeight(0);
+      return;
+    }
+    const measure = () => setMarginHeight(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [marginThread]);
+
+  const openComments = useCallback(() => {
+    setCommentsOpen(true);
+    setCommentFocus(true);
+  }, []);
+  const closeComments = useCallback(() => {
+    setCommentsOpen(false);
+    setCommentFocus(false);
+  }, []);
+  const consumeCommentFocus = useCallback(() => setCommentFocus(false), []);
+  const engageComments = useCallback(() => setCommentsOpen(true), []);
+
+  useEffect(() => {
     if (!menuOpen) return;
+    // 菜单一打开就预取截图库，点「分享」时省掉一次下载
+    void import("html2canvas").catch(() => {});
     function onPointerDown(e: PointerEvent) {
       const root = menuRootRef.current;
       if (!root || root.contains(e.target as Node)) return;
@@ -69,6 +163,9 @@ export function EntryCard({
   }, [menuOpen]);
 
   const closeShareModal = useCallback(() => {
+    shareGenRef.current += 1;
+    shareBlobRef.current = null;
+    setSharing(false);
     setShareModalOpen(false);
     setSharePreviewSrc(null);
     setShareModalError(null);
@@ -78,6 +175,14 @@ export function EntryCard({
       copyLinkHintTimerRef.current = null;
     }
   }, []);
+
+  // 卸载时作废在途生成
+  useEffect(
+    () => () => {
+      shareGenRef.current += 1;
+    },
+    []
+  );
 
   useEffect(() => {
     if (!shareModalOpen) return;
@@ -120,8 +225,10 @@ export function EntryCard({
     if (typeof window === "undefined") return;
     const shareUrl = `${window.location.origin}${window.location.pathname}#entry-${item.id}`;
     shareUrlRef.current = shareUrl;
+    const gen = ++shareGenRef.current;
     setMenuOpen(false);
     setShareModalOpen(true);
+    shareBlobRef.current = null;
     setSharePreviewSrc(null);
     setShareModalError(null);
     setSharing(true);
@@ -142,31 +249,54 @@ export function EntryCard({
     host.appendChild(card);
     document.body.appendChild(host);
 
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // 整条流程（加载截图库、截图、编码）都算在超时里，任何一步挂住都会落到「生成超时」
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("share-timeout")), SHARE_TIMEOUT_MS);
+    });
     try {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      const { default: html2canvas } = await import("html2canvas");
-      const canvas = await html2canvas(card, {
-        scale: 3,
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#F7F8FA",
-      });
-      setSharePreviewSrc(canvas.toDataURL("image/png", 0.95));
+      const { default: html2canvas } = await Promise.race([import("html2canvas"), timeout]);
+      if (gen !== shareGenRef.current) return;
+      // 读 offsetHeight 会强制排版，不用再等一帧（后台标签页里 requestAnimationFrame 不触发）
+      const canvas = await Promise.race([
+        html2canvas(card, {
+          scale: shareCardScale(card.offsetWidth, card.offsetHeight),
+          useCORS: true,
+          logging: false,
+          backgroundColor: "#F7F8FA",
+          // html2canvas 默认克隆整页：列表越长越慢，且 WebKit 内核会等克隆页里所有图片加载完，
+          // 视口外的懒加载图永远不加载，生成就一直卡在「正在生成」。卡片只用行内样式，只克隆它自己
+          ignoreElements: (el) => el !== host && !host.contains(el) && !el.contains(host),
+        }),
+        timeout,
+      ]);
+      if (gen !== shareGenRef.current) return;
+      const blob = await Promise.race([
+        new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png")),
+        timeout,
+      ]);
+      if (gen !== shareGenRef.current) return;
+      if (!blob) throw new Error("share-empty");
+      const dataUrl = await Promise.race([blobToDataUrl(blob), timeout]);
+      if (gen !== shareGenRef.current) return;
+      shareBlobRef.current = blob;
+      setSharePreviewSrc(dataUrl);
     } catch (err) {
-      if ((err as Error).name !== "AbortError") console.error(err);
-      setShareModalError("生成图片失败，请稍后重试");
+      if (gen !== shareGenRef.current) return;
+      const timedOut = (err as Error).message === "share-timeout";
+      if (!timedOut) console.error(err);
+      setShareModalError(timedOut ? "生成超时，请重试" : "生成图片失败，请稍后重试");
     } finally {
+      clearTimeout(timer);
       host.remove();
-      setSharing(false);
+      if (gen === shareGenRef.current) setSharing(false);
     }
   }
 
   async function shareImageFromPreview() {
-    const src = sharePreviewSrc;
-    if (!src) return;
+    const blob = shareBlobRef.current;
+    if (!blob) return;
     try {
-      const res = await fetch(src);
-      const blob = await res.blob();
       const file = new File([blob], "DailyRhapsody.png", { type: "image/png" });
       const shareUrl = shareUrlRef.current;
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
@@ -211,107 +341,109 @@ export function EntryCard({
     <article
       id={`entry-${item.id}`}
       className="group relative flex flex-col gap-3 rounded-2xl px-3 py-4 transition-apple scroll-mt-24 hover:bg-zinc-100/70 hover:shadow-md dark:hover:bg-zinc-900/80 dark:hover:shadow-black/10"
+      // 线程距文章顶 16px（top-4），再留出与底边同样的 16px
+      style={marginThread && marginHeight > 0 ? { minHeight: marginHeight + 32 } : undefined}
     >
-      <div className="flex items-start gap-3">
-        <DefaultAvatar src={avatarSrc} className="h-10 w-10 shrink-0" />
-                    <div className="min-h-10 flex min-w-0 flex-1 flex-col justify-center">
-                      <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                        {authorName}
-                      </p>
-          <p className="text-[0.75rem] text-zinc-500 dark:text-zinc-400">
-            {timeStr}
-          </p>
-          {canEdit && item.isPublic === false && (
-            <span className="mt-1 w-fit rounded bg-zinc-200/80 px-1.5 py-0.5 text-[0.65rem] text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-              私密
-            </span>
-          )}
-        </div>
-        <div ref={menuRootRef} className="relative shrink-0">
-          <button
-            type="button"
-            onClick={() => setMenuOpen((o) => !o)}
-            className="rounded-full p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-            aria-label="更多"
-          >
-            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="6" r="1.5" />
-              <circle cx="12" cy="12" r="1.5" />
-              <circle cx="12" cy="18" r="1.5" />
-            </svg>
-          </button>
-          {menuOpen && (
-            <>
-              <div className="absolute right-0 top-full z-50 mt-1 min-w-[6rem] rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-                {canEdit && (
-                  <Link
-                    href={`/admin/diaries/${item.id}/edit`}
-                    className="block w-full px-3 py-2 text-left text-[0.8rem] text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                    onClick={() => setMenuOpen(false)}
+      <div ref={postRef} className="flex flex-col gap-3">
+        <div className="flex items-start gap-3">
+          <DefaultAvatar src={avatarSrc} className="h-10 w-10 shrink-0" />
+                      <div className="min-h-10 flex min-w-0 flex-1 flex-col justify-center">
+                        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                          {authorName}
+                        </p>
+            <p className="text-[0.75rem] text-zinc-500 dark:text-zinc-400">
+              {timeStr}
+            </p>
+            {canEdit && item.isPublic === false && (
+              <span className="mt-1 w-fit rounded bg-zinc-200/80 px-1.5 py-0.5 text-[0.65rem] text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+                私密
+              </span>
+            )}
+          </div>
+          <div ref={menuRootRef} className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((o) => !o)}
+              className="rounded-full p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+              aria-label="更多"
+            >
+              <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="6" r="1.5" />
+                <circle cx="12" cy="12" r="1.5" />
+                <circle cx="12" cy="18" r="1.5" />
+              </svg>
+            </button>
+            {menuOpen && (
+              <>
+                <div className="absolute right-0 top-full z-50 mt-1 min-w-[6rem] rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                  {canEdit && (
+                    <Link
+                      href={`/admin/diaries/${item.id}/edit`}
+                      className="block w-full px-3 py-2 text-left text-[0.8rem] text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      编辑
+                    </Link>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      openComments();
+                      setMenuOpen(false);
+                    }}
+                    className="w-full px-3 py-2 text-left text-[0.8rem] text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                   >
-                    编辑
-                  </Link>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCommentsOpen(true);
-                    setMenuOpen(false);
-                  }}
-                  className="w-full px-3 py-2 text-left text-[0.8rem] text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                >
-                  评论
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleShare()}
-                  disabled={sharing}
-                  className="w-full px-3 py-2 text-left text-[0.8rem] text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                >
-                  {sharing ? "生成中…" : "分享"}
-                </button>
-              </div>
-            </>
-          )}
+                    评论
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleShare()}
+                    disabled={sharing}
+                    className="w-full px-3 py-2 text-left text-[0.8rem] text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    {sharing ? "生成中…" : "分享"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
-      </div>
-      {images.length > 0 && (
-        // p-1/-m-1 给键盘焦点框留出位置，否则会被 overflow-hidden 裁掉
-        <div className="-m-1 flex gap-1 overflow-hidden rounded-xl p-1">
-          {images.slice(0, 3).map((src, idx) => {
-            // 只有公开文章的 Image 属性图走优化器（与改动前一致）：
-            // 私密图优化器回源不带 cookie 会被拒；正文图直连代理，文章转私密后 5 分钟内失效，
-            // 走优化器会被缓存 4 小时；外链图的域名不在 images 配置里，走优化器会直接报错
-            const optimized =
-              src.startsWith("/api/media/p/") && item.isPublic !== false && !unoptimizedSrcs.has(src);
-            return (
-              <button
-                key={src}
-                type="button"
-                onClick={() => onOpenImages(images, idx)}
-                aria-label={`查看大图 ${idx + 1}/${images.length}`}
-                // 窄屏（<350px）三张 96px 放不下，按行宽三等分缩小，保持方图
-                className="relative aspect-square w-[calc((100%-0.5rem)/3)] max-w-24 flex-shrink-0 cursor-zoom-in overflow-hidden rounded-lg bg-zinc-200 dark:bg-zinc-800 sm:h-20 sm:w-20"
-              >
-                <Image
-                  src={src}
-                  alt=""
-                  fill
-                  className="object-cover"
-                  sizes="96px"
-                  unoptimized={!optimized}
-                  onError={() => {
-                    if (optimized) setUnoptimizedSrcs((prev) => new Set(prev).add(src));
-                    else setBrokenSrcs((prev) => new Set(prev).add(src));
-                  }}
-                />
-              </button>
-            );
-          })}
-        </div>
-      )}
-      {bodyText.trim() !== "" && <EntrySummary text={bodyText} />}
-      <div className="space-y-1">
+        {images.length > 0 && (
+          // p-1/-m-1 给键盘焦点框留出位置，否则会被 overflow-hidden 裁掉
+          <div className="-m-1 flex gap-1 overflow-hidden rounded-xl p-1">
+            {images.slice(0, 3).map((src, idx) => {
+              // 只有公开文章的 Image 属性图走优化器（与改动前一致）：
+              // 私密图优化器回源不带 cookie 会被拒；正文图直连代理，文章转私密后 5 分钟内失效，
+              // 走优化器会被缓存 4 小时；外链图的域名不在 images 配置里，走优化器会直接报错
+              const optimized =
+                src.startsWith("/api/media/p/") && item.isPublic !== false && !unoptimizedSrcs.has(src);
+              return (
+                <button
+                  key={src}
+                  type="button"
+                  onClick={() => onOpenImages(images, idx)}
+                  aria-label={`查看大图 ${idx + 1}/${images.length}`}
+                  // 窄屏（<350px）三张 96px 放不下，按行宽三等分缩小，保持方图
+                  className="relative aspect-square w-[calc((100%-0.5rem)/3)] max-w-24 flex-shrink-0 cursor-zoom-in overflow-hidden rounded-lg bg-zinc-200 dark:bg-zinc-800 sm:h-20 sm:w-20"
+                >
+                  <Image
+                    src={src}
+                    alt=""
+                    fill
+                    className="object-cover"
+                    sizes="96px"
+                    unoptimized={!optimized}
+                    onError={() => {
+                      if (optimized) setUnoptimizedSrcs((prev) => new Set(prev).add(src));
+                      else setBrokenSrcs((prev) => new Set(prev).add(src));
+                    }}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {bodyText.trim() !== "" && <EntrySummary text={bodyText} />}
         <div className="flex items-center justify-between gap-2">
           {(item.tags ?? []).length > 0 ? (
             <div className="min-w-0 flex flex-wrap gap-1">
@@ -327,24 +459,81 @@ export function EntryCard({
           ) : (
             <div />
           )}
-          {item.location && (
-            <a
-              href={locationMapUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="max-w-[48%] shrink-0 truncate text-right text-[0.72rem] text-zinc-500 underline-offset-2 hover:underline dark:text-zinc-400"
-              title={`在地图中打开：${item.location}`}
-            >
-              📍 {item.location}
-            </a>
-          )}
+          <div className="flex min-w-0 max-w-[60%] shrink-0 items-center justify-end gap-3">
+            {/* 窄屏：有评论时给个入口，点开在下方展开 */}
+            {!marginComments && commentCount > 0 && !commentsOpen && (
+              <button
+                type="button"
+                onClick={() => setCommentsOpen(true)}
+                className="flex shrink-0 items-center gap-1 text-[0.72rem] text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              >
+                <CommentBubbleIcon />
+                {commentCount} 条评论
+              </button>
+            )}
+            {item.location && (
+              <a
+                href={locationMapUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-w-0 truncate text-right text-[0.72rem] text-zinc-500 underline-offset-2 hover:underline dark:text-zinc-400"
+                title={`在地图中打开：${item.location}`}
+              >
+                📍 {item.location}
+              </a>
+            )}
+          </div>
         </div>
+      </div>
+      {inlineThread && (
         <EntryComments
           diaryId={item.id}
-          open={commentsOpen}
-          onOpenChange={setCommentsOpen}
+          count={commentCount}
+          variant="inline"
+          maxHeight={Math.max(postHeight, INLINE_THREAD_MIN_PX)}
+          autoFocus={commentFocus}
+          onAutoFocused={consumeCommentFocus}
+          onClose={closeComments}
+          onEngage={engageComments}
+          canEdit={canEdit}
+          authorName={authorName}
+          authorAvatarSrc={avatarSrc}
         />
-      </div>
+      )}
+      {/* 宽屏：正文右侧的旁注列，与文章顶端对齐 */}
+      {marginComments && (
+        <div
+          ref={marginRef}
+          className="absolute left-[calc(100%+1.25rem)] top-4 w-[min(20rem,calc((100vw-56rem)/2-2.5rem))]"
+        >
+          {marginThread ? (
+            <EntryComments
+              diaryId={item.id}
+              count={commentCount}
+              variant="margin"
+              maxHeight={Math.max(postHeight, MARGIN_THREAD_MIN_PX)}
+              autoFocus={commentFocus}
+              onAutoFocused={consumeCommentFocus}
+              onClose={closeComments}
+              onEngage={engageComments}
+              canEdit={canEdit}
+              authorName={authorName}
+              authorAvatarSrc={avatarSrc}
+            />
+          ) : (
+            // 没有评论的文章：悬停时在右侧露出「评论」，点开即写。左侧伪元素补上与正文之间的空隙，
+            // 鼠标从正文移过来时不会因离开文章而让按钮淡出
+            <button
+              type="button"
+              onClick={openComments}
+              className="relative flex items-center gap-1 rounded-full px-2 py-1 text-[0.72rem] text-zinc-400 opacity-0 transition-apple before:absolute before:inset-y-0 before:-left-6 before:w-6 hover:bg-zinc-100 hover:text-zinc-600 focus-visible:opacity-100 group-hover:opacity-100 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+            >
+              <CommentBubbleIcon />
+              评论
+            </button>
+          )}
+        </div>
+      )}
     </article>
 
     {shareModalOpen &&
@@ -404,10 +593,26 @@ export function EntryCard({
                     />
                   </svg>
                   <span>正在生成…</span>
+                  <button
+                    type="button"
+                    onClick={closeShareModal}
+                    className="mt-1 rounded-lg px-3 py-1.5 text-xs text-zinc-500 underline-offset-2 hover:underline dark:text-zinc-400"
+                  >
+                    取消
+                  </button>
                 </div>
               )}
               {shareModalError && (
-                <p className="text-center text-sm text-red-600 dark:text-red-400">{shareModalError}</p>
+                <div className="flex flex-col items-center gap-2">
+                  <p className="text-center text-sm text-red-600 dark:text-red-400">{shareModalError}</p>
+                  <button
+                    type="button"
+                    onClick={() => void openShareImageModal()}
+                    className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    重试
+                  </button>
+                </div>
               )}
               {sharePreviewSrc && (
                 // data URL 预览，不用 next/image

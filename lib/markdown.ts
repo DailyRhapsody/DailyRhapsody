@@ -145,6 +145,22 @@ function escapeAttr(text: string) {
     .replaceAll("<", "&lt;");
 }
 
+/**
+ * 图注 / 表注：独占一段的「图 1 Notion 三库到前端的同步流程」「表 2：协议矩阵」。
+ * 不带句读标点、40 字以内，才算图注；「图 11 的失败处置分支就是这条路径，……」这类正文不算。
+ */
+const CAPTION_RE = /^[图表]\s*\d+(?:[.-]\d+)*(?:\s*[:：、.]\s*|\s+)[^\n，。；！？,;!?]{1,40}$/;
+
+/** 段落 token 的文本已被 highlightHashtagsForRender 转义并给 #标签 包了 span，判断图注前还原成可见文字 */
+function visibleText(text: string): string {
+  return text
+    .replace(/<span class="dr-md-editor-tag">([\s\S]*?)<\/span>/g, "$1")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&amp;", "&")
+    .trim();
+}
+
 marked.use({
   gfm: true,
   breaks: true,
@@ -154,6 +170,10 @@ marked.use({
     },
   },
   renderer: {
+    paragraph({ text, tokens }) {
+      if (!CAPTION_RE.test(visibleText(text))) return false;
+      return `<p class="dr-caption">${this.parser.parseInline(tokens)}</p>\n`;
+    },
     link({ href, title, tokens }) {
       if (href == null || href === "") return "";
       const inner = this.parser.parseInline(tokens);
