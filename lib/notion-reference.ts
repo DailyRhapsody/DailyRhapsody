@@ -26,6 +26,7 @@ import type {
   RichTextItemResponse,
 } from "@notionhq/client/build/src/api-endpoints";
 import { extractBodyMarkdown } from "@/lib/notion";
+import { assertNotionFetchAllowed, isNotionFetchAllowed, runWithRefreshLock } from "@/lib/notion-quota";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,6 +50,7 @@ export type ReferenceItem = {
 let _client: Client | null = null;
 
 function getClient(): Client {
+  assertNotionFetchAllowed();
   if (!_client) {
     const token = process.env.NOTION_TOKEN?.trim();
     if (!token) throw new Error("NOTION_TOKEN is required");
@@ -86,6 +88,8 @@ const LIST_CACHE_KEY = "notion:reference:items";
 const ITEM_CACHE_PREFIX = "notion:reference:item:";
 // Notion 自动化调 /api/revalidate 时写入；晚于列表快照开始时刻即视为过期（同 lib/notion.ts）
 const LIST_INVALIDATED_KEY = "notion:reference:items:invalidatedAt";
+// 跨实例刷新锁（lib/notion-quota.ts）
+const REFRESH_LOCK_KEY = "notion:reference:items:refreshLock";
 const CACHE_STALE_MS = (Number(process.env.NOTION_CACHE_STALE_S) || 300) * 1000;
 // 48h + 下限钳制：与 lib/notion.ts 同因（NOTION_CACHE_TTL 曾被误配为 300 压塌 SWR）。
 const CACHE_HARD_TTL_S = 48 * 60 * 60;
@@ -255,7 +259,7 @@ function mapPageToItem(page: PageObjectResponse, bodyMarkdown?: string): Referen
 // Core fetchers
 // ---------------------------------------------------------------------------
 
-let _pendingRefresh: Promise<ReferenceItem[]> | null = null;
+let _pendingRefresh: Promise<ReferenceItem[] | null> | null = null;
 
 async function refreshFromNotion(): Promise<ReferenceItem[]> {
   const client = getClient();
@@ -289,19 +293,36 @@ async function refreshFromNotion(): Promise<ReferenceItem[]> {
   return items;
 }
 
-function ensureRefreshTask(): Promise<ReferenceItem[]> {
+/** 返回 null：后台刷新没拿到跨实例锁（见 lib/notion.ts 同名函数）。 */
+function ensureRefreshTask(force: boolean): Promise<ReferenceItem[] | null> {
   if (!_pendingRefresh) {
-    _pendingRefresh = refreshFromNotion().finally(() => {
-      _pendingRefresh = null;
-    });
+    _pendingRefresh = getRedis()
+      .then((redis) => {
+        // 配置缺失在拿锁前抛出，不给共享的锁写冷却期（见 lib/notion.ts 同位置）
+        getClient();
+        getDatabaseId();
+        return runWithRefreshLock(redis, REFRESH_LOCK_KEY, force, refreshFromNotion);
+      })
+      .finally(() => {
+        _pendingRefresh = null;
+      });
   }
   return _pendingRefresh;
 }
 
+/** 同步路径（冷启动、Cron）一定要拿到数据（见 lib/notion.ts 同名函数）。 */
+async function refreshNow(): Promise<ReferenceItem[]> {
+  for (;;) {
+    const items = await ensureRefreshTask(true);
+    if (items !== null) return items;
+  }
+}
+
 function triggerBackgroundRefresh(): void {
   if (_pendingRefresh) return;
+  if (!isNotionFetchAllowed()) return;
   // 错误只在后台路径吞掉；同步冷路径复用同一任务时失败仍向上抛（见 notion.ts 同位置注释）
-  const task = ensureRefreshTask().catch((e) => {
+  const task = ensureRefreshTask(false).catch((e) => {
     console.warn("[notion-reference] background refresh failed:", e);
     return [] as ReferenceItem[];
   });
@@ -324,12 +345,12 @@ export async function getReferenceItems(): Promise<ReferenceItem[]> {
     if (stale) triggerBackgroundRefresh();
     return cached.data;
   }
-  return ensureRefreshTask();
+  return refreshNow();
 }
 
 /** Cron 预热入口：强制重拉并写缓存，返回条数。与用户请求共享 in-flight 去重。 */
 export async function warmReferenceCache(): Promise<number> {
-  const items = await ensureRefreshTask();
+  const items = await refreshNow();
   return items.length;
 }
 
@@ -348,8 +369,9 @@ export async function getReferenceItem(id: string): Promise<ReferenceItem | null
     if (!("properties" in page)) return null;
 
     const body = await extractBodyMarkdown(id);
-    const item = mapPageToItem(page as PageObjectResponse, body);
-    await setCachedItem(item);
+    const item = mapPageToItem(page as PageObjectResponse, body ?? "");
+    // 正文没抓到（限流、预算用完）不写 24h 缓存，下次请求再抓
+    if (body !== null) await setCachedItem(item);
     return item;
   } catch {
     return null;

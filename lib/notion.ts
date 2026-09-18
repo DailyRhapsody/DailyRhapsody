@@ -21,6 +21,7 @@ import type {
   RichTextItemResponse,
 } from "@notionhq/client/build/src/api-endpoints";
 import { mediaProxyPath, mediaVersion, type MediaKind } from "@/lib/notion-media";
+import { assertNotionFetchAllowed, isNotionFetchAllowed, runWithRefreshLock } from "@/lib/notion-quota";
 
 // ---------------------------------------------------------------------------
 // Types (compatible with existing Diary interface)
@@ -45,6 +46,7 @@ export type Diary = {
 let _client: Client | null = null;
 
 function getClient(): Client {
+  assertNotionFetchAllowed();
   if (!_client) {
     const token = process.env.NOTION_TOKEN?.trim();
     if (!token) throw new Error("NOTION_TOKEN is required");
@@ -86,6 +88,8 @@ const LEGACY_CACHE_KEY = "notion:diaries";
 // Notion 自动化调用 /api/revalidate 时写入的时间戳：晚于快照开始时刻即视为过期。
 // 单独一个小键，不回写大缓存，避免与正在进行的全量刷新互相覆盖。
 const INVALIDATED_KEY = "notion:diaries:v2:invalidatedAt";
+// 跨实例刷新锁（lib/notion-quota.ts）。Preview 与生产共用 Upstash 也共用 NOTION_TOKEN，同一把锁正好让两边互相让路。
+const REFRESH_LOCK_KEY = "notion:diaries:v2:refreshLock";
 // stale-while-revalidate 阈值：缓存超过这个时间就在后台异步重拉，但仍把旧数据立即返回给用户。
 // 默认 5 分钟，作者改完 Notion 最长 5min 看到新内容；Notion 自动化调 /api/revalidate 可立即触发重拉。
 const CACHE_STALE_MS = (Number(process.env.NOTION_CACHE_STALE_S) || 300) * 1000;
@@ -160,7 +164,7 @@ async function setCache(diaries: Diary[], snapshotAt: number): Promise<void> {
 /**
  * Notion 自动化调用：记下过期时间并立即在后台重拉，期间访客继续看旧数据。
  * 不再删缓存——删除后首位访客要同步冷拉 80s 以上，前端 30s 超时显示「暂无文章」。
- * 重拉开始前已在跑的那一轮快照早于这次修改，写入后按 invalidatedAt 仍判为过期，下一次访问会再拉。
+ * 别的实例正持锁刷新时，这次后台刷新拿不到锁会放弃，由持锁的那一轮收尾时补跑（refreshWithCatchUp）。
  */
 export async function markDiariesCacheStale(): Promise<void> {
   const redis = await getRedis();
@@ -225,8 +229,11 @@ function richTextToMarkdown(items: RichTextItemResponse[]): string {
     .join("");
 }
 
-/** proxyMedia：Notion 托管的图片 / 视频输出站内代理路径（见 lib/notion-media.ts）。 */
-type BodyOptions = { proxyMedia: boolean };
+/**
+ * proxyMedia：Notion 托管的图片 / 视频输出站内代理路径（见 lib/notion-media.ts）。
+ * deadline：重试预算的截止时刻（见 withNotionRetry）。
+ */
+type BodyOptions = { proxyMedia: boolean; deadline: number };
 
 function notionFileUrl(
   f: { type: "file"; file: { url: string } } | { type: "external"; external: { url: string } } | { type: string },
@@ -305,6 +312,14 @@ function blockToMarkdown(b: BlockObjectResponse, opts: BodyOptions): string {
 // 加随机抖动，避免多个 worker 读到同一个 Retry-After 后同时醒来再次撞限。
 // 连接被重置、请求超时、Notion 5xx 这类瞬时故障同样重试（实测全量刷新偶发 ECONNRESET）。
 const NOTION_MAX_RETRIES = 6;
+// 重试总预算：等待不能越过调用方给的截止时刻。2026-09-18 线上 Retry-After 从 8s 涨到 53s，
+// 照单全收时单个调用最多卡 5 分钟，全量刷新会被 maxDuration 截断、整轮白跑。
+//  - 全量刷新 200s：各路由 maxDuration=300s，扣掉 SDK 单请求 60s 超时后仍能写进缓存
+//  - 用户请求路径（详情页）15s：前端 30s 超时
+//  - 媒体代理 3s：限流时立即回 503，不让图片请求干等
+const REFRESH_BUDGET_MS = 200_000;
+const REQUEST_BUDGET_MS = 15_000;
+const MEDIA_BUDGET_MS = 3_000;
 const TRANSIENT_NETWORK_CODES = new Set(["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "ECONNREFUSED", "UND_ERR_SOCKET"]);
 
 function retryDelayMs(e: unknown, attempt: number): number | null {
@@ -325,14 +340,21 @@ function retryDelayMs(e: unknown, attempt: number): number | null {
   return null;
 }
 
-async function withNotionRetry<T>(call: () => Promise<T>): Promise<T> {
+async function withNotionRetry<T>(call: () => Promise<T>, deadline: number): Promise<T> {
+  let lastError: unknown;
   for (let attempt = 0; ; attempt++) {
+    // 预算用完不再发起新请求；重试等完才超时的，抛回上一次的错误（限流仍按限流处理，媒体代理回 503）
+    if (Date.now() >= deadline) throw lastError ?? new Error("Notion request budget exhausted");
     try {
       return await call();
     } catch (e) {
+      lastError = e;
       const delayMs = attempt < NOTION_MAX_RETRIES ? retryDelayMs(e, attempt) : null;
       if (delayMs === null) throw e;
-      await new Promise((resolve) => setTimeout(resolve, delayMs + Math.random() * 1000));
+      const waitMs = delayMs + Math.random() * 1000;
+      // 等完就过了截止时刻：放弃重试，原错误交给调用方（正文沿用上一版、媒体代理回 503）
+      if (Date.now() + waitMs > deadline) throw e;
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
   }
 }
@@ -347,13 +369,15 @@ function escapeTableCell(text: string): string {
  * 调用方跳过通用递归，避免逐行重复输出。GFM 必须有表头：没有列标题时补一行空表头。
  */
 async function tableToMarkdown(
-  table: Extract<BlockObjectResponse, { type: "table" }>
+  table: Extract<BlockObjectResponse, { type: "table" }>,
+  deadline: number
 ): Promise<string> {
   const rows: string[][] = [];
   let cursor: string | undefined;
   do {
-    const r = await withNotionRetry(() =>
-      getClient().blocks.children.list({ block_id: table.id, start_cursor: cursor, page_size: 100 })
+    const r = await withNotionRetry(
+      () => getClient().blocks.children.list({ block_id: table.id, start_cursor: cursor, page_size: 100 }),
+      deadline
     );
     for (const b of r.results) {
       if (!("type" in b) || b.type !== "table_row") continue;
@@ -387,18 +411,20 @@ async function walkBlocks(
   if (depth > maxDepth) return;
   let cursor: string | undefined;
   do {
-    const r = await withNotionRetry(() =>
-      getClient().blocks.children.list({
-        block_id: blockId,
-        start_cursor: cursor,
-        page_size: 100,
-      })
+    const r = await withNotionRetry(
+      () =>
+        getClient().blocks.children.list({
+          block_id: blockId,
+          start_cursor: cursor,
+          page_size: 100,
+        }),
+      opts.deadline
     );
     for (const b of r.results) {
       if (!("type" in b)) continue;
       const block = b as BlockObjectResponse;
       if (block.type === "table") {
-        const table = await tableToMarkdown(block);
+        const table = await tableToMarkdown(block, opts.deadline);
         if (table) parts.push(table);
         continue;
       }
@@ -429,29 +455,46 @@ async function tryExtractBodyMarkdown(
 
 /**
  * 页面正文 → markdown。日记传 proxyMedia: true；Reference 等没有接入媒体代理鉴权的
- * 数据源保持默认，图片仍输出 Notion 原始地址。
+ * 数据源保持默认，图片仍输出 Notion 原始地址。不传 deadline 时按用户请求路径的预算。
+ * 返回 null 表示这次没抓到（限流、预算用完等），调用方不要把它当空正文缓存下来。
  */
 export async function extractBodyMarkdown(
   pageId: string,
-  opts: BodyOptions = { proxyMedia: false }
-): Promise<string> {
-  return (await tryExtractBodyMarkdown(pageId, opts)) ?? "";
+  opts: Partial<BodyOptions> = {}
+): Promise<string | null> {
+  return tryExtractBodyMarkdown(pageId, {
+    proxyMedia: opts.proxyMedia ?? false,
+    deadline: opts.deadline ?? Date.now() + REQUEST_BUDGET_MS,
+  });
 }
 
+/**
+ * 到截止时刻就不再领新页面：没抓的正文不进结果，由调用方沿用上一版缓存。
+ * 页面按日期倒序排列，最新（最可能刚改过）的先抓。
+ */
 async function extractBodyMarkdownBatch(
   pageIds: string[],
+  deadline: number,
   concurrency = 3
 ): Promise<Map<string, string | null>> {
   const out = new Map<string, string | null>();
   let idx = 0;
   const workers = Array.from({ length: Math.min(concurrency, pageIds.length) }, async () => {
-    while (idx < pageIds.length) {
+    while (idx < pageIds.length && Date.now() < deadline) {
       const i = idx++;
       const id = pageIds[i];
-      out.set(id, await tryExtractBodyMarkdown(id, { proxyMedia: true }));
+      out.set(id, await tryExtractBodyMarkdown(id, { proxyMedia: true, deadline }));
     }
   });
   await Promise.all(workers);
+  const skipped = pageIds.length - out.size;
+  const failed = [...out.values()].filter((body) => body === null).length;
+  if (skipped + failed > 0) {
+    console.warn(
+      `[notion] ${skipped + failed}/${pageIds.length} bodies kept from previous snapshot ` +
+        `(${skipped} not started before deadline, ${failed} failed)`
+    );
+  }
   return out;
 }
 
@@ -568,20 +611,74 @@ function mapPageToDiary(page: PageObjectResponse, bodyMarkdown: string): Diary {
 
 // 正在进行的重拉任务（后台 SWR 与同步冷路径共用），避免多请求并发触发多次重拉。
 // 之前只有后台路径去重：N 个并发冷请求会跑 N 份完整抓取并互相争抢 Notion
-// 速率配额，实测把单份 22s 拖到 53s。
-let _pendingRefresh: Promise<Diary[]> | null = null;
+// 速率配额，实测把单份 22s 拖到 53s。跨实例去重由 Redis 锁负责（runWithRefreshLock）。
+let _pendingRefresh: Promise<Diary[] | null> | null = null;
 
-/** 取得当前的重拉任务；没有就启动一份。所有调用方共享同一个 Promise。 */
-function ensureRefreshTask(): Promise<Diary[]> {
+/**
+ * 取得本实例当前的重拉任务；没有就启动一份。所有调用方共享同一个 Promise。
+ * 返回 null：后台刷新没拿到跨实例锁（别的实例在跑，或上一轮失败仍在冷却期）。force 的任务不会返回 null。
+ */
+function ensureRefreshTask(force: boolean): Promise<Diary[] | null> {
   if (!_pendingRefresh) {
-    _pendingRefresh = refreshDiariesFromNotion().finally(() => {
-      _pendingRefresh = null;
-    });
+    _pendingRefresh = getRedis()
+      .then((redis) => {
+        // 配置缺失这类必然失败的错误在拿锁前抛出，不给共享的锁写冷却期
+        getClient();
+        getDatabaseId();
+        return runWithRefreshLock(redis, REFRESH_LOCK_KEY, force, refreshWithCatchUp);
+      })
+      .finally(() => {
+        _pendingRefresh = null;
+      });
   }
   return _pendingRefresh;
 }
 
-async function refreshDiariesFromNotion(): Promise<Diary[]> {
+/** 同步路径（冷启动、Cron）一定要拿到数据：碰上本实例一份没拿到锁的后台任务（很快返回 null），等它结束再强制刷新。 */
+async function refreshNow(): Promise<Diary[]> {
+  for (;;) {
+    const diaries = await ensureRefreshTask(true);
+    if (diaries !== null) return diaries;
+  }
+}
+
+// 持锁补跑的截止时刻（从本轮开始计）与最少剩余时间。截止时刻只挡新请求，已发出的请求最长还要等
+// SDK 超时 60s：230s + 60s 仍在锁 TTL 与各路由 maxDuration（均 300s）之内
+const CATCH_UP_DEADLINE_MS = 230_000;
+const CATCH_UP_MIN_REMAINING_MS = 60_000;
+
+async function invalidatedAfter(ts: number): Promise<boolean> {
+  const redis = await getRedis();
+  if (!redis) return false;
+  try {
+    return (Number(await redis.get(INVALIDATED_KEY)) || 0) > ts;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 刷新途中 Notion 自动化又调了 /api/revalidate：那次后台刷新因为锁被占而放弃，这一轮的快照又早于修改。
+ * 趁锁还在手里补跑一轮，否则这次修改要等下一位访客触发刷新才上线。剩余时间不够就不补，交给下一次访问。
+ */
+async function refreshWithCatchUp(holdsLock: boolean): Promise<Diary[]> {
+  const startedAt = Date.now();
+  const diaries = await refreshDiariesFromNotion(startedAt + REFRESH_BUDGET_MS);
+  // 没拿到锁的强制刷新（冷启动、Cron）不补，由持锁的实例补，避免两边各多跑一轮
+  if (!holdsLock) return diaries;
+  const catchUpDeadline = startedAt + CATCH_UP_DEADLINE_MS;
+  if (Date.now() > catchUpDeadline - CATCH_UP_MIN_REMAINING_MS) return diaries;
+  if (!(await invalidatedAfter(startedAt))) return diaries;
+  try {
+    return await refreshDiariesFromNotion(catchUpDeadline);
+  } catch (e) {
+    // 补跑失败不能连累第一轮已写入的结果；缓存快照仍早于修改、判为过期，下一次访问会再拉
+    console.warn("[notion] catch-up refresh failed, keeping first pass:", e);
+    return diaries;
+  }
+}
+
+async function refreshDiariesFromNotion(deadline: number): Promise<Diary[]> {
   const client = getClient();
   const databaseId = getDatabaseId();
   const snapshotAt = Date.now();
@@ -589,13 +686,15 @@ async function refreshDiariesFromNotion(): Promise<Diary[]> {
   const pages: PageObjectResponse[] = [];
   let cursor: string | undefined;
   do {
-    const response = await withNotionRetry(() =>
-      client.databases.query({
-        database_id: databaseId,
-        start_cursor: cursor,
-        page_size: 100,
-        sorts: [{ property: "Date", direction: "descending" }],
-      })
+    const response = await withNotionRetry(
+      () =>
+        client.databases.query({
+          database_id: databaseId,
+          start_cursor: cursor,
+          page_size: 100,
+          sorts: [{ property: "Date", direction: "descending" }],
+        }),
+      deadline
     );
     for (const page of response.results) {
       if ("properties" in page) {
@@ -605,8 +704,8 @@ async function refreshDiariesFromNotion(): Promise<Diary[]> {
     cursor = response.has_more ? response.next_cursor ?? undefined : undefined;
   } while (cursor);
 
-  const bodies = await extractBodyMarkdownBatch(pages.map((p) => p.id));
-  // 重试用尽仍没抓到的正文沿用上一版缓存，不让一次限流把好数据覆盖成只剩标题
+  const bodies = await extractBodyMarkdownBatch(pages.map((p) => p.id), deadline);
+  // 重试用尽或预算用完仍没抓到的正文沿用上一版缓存，不让一次限流把好数据覆盖成只剩标题
   const previous = new Map((await getCached())?.data.map((d) => [d.id, d.summary]) ?? []);
   const diaries = pages.map((page) =>
     mapPageToDiary(page, bodies.get(page.id) ?? previous.get(page.id) ?? "")
@@ -628,10 +727,12 @@ async function refreshDiariesFromNotion(): Promise<Diary[]> {
 
 function triggerBackgroundRefresh(): void {
   if (_pendingRefresh) return; // 已有任务在跑，避免堆叠
+  // 本地开发没放行回源时不发起后台刷新，继续用缓存里现有的数据
+  if (!isNotionFetchAllowed()) return;
   // 后台路径吞掉错误（用户继续看旧数据）；catch 产生的新 Promise 不写回
   // _pendingRefresh，同步冷路径复用同一任务时失败仍会向上抛（route 返回 500，
   // 而不是拿到 [] 渲染成「暂无文章」）。
-  const task = ensureRefreshTask().catch((e) => {
+  const task = ensureRefreshTask(false).catch((e) => {
     console.warn("[notion] background refresh failed:", e);
     return [] as Diary[];
   });
@@ -653,7 +754,7 @@ function triggerBackgroundRefresh(): void {
  *
  * 用户改 Notion 后：
  *  - 默认最长 NOTION_CACHE_STALE_S 后看到新内容
- *  - Notion 自动化调 /api/revalidate：标记过期并立即后台重拉（约 2 分钟后生效）
+ *  - Notion 自动化调 /api/revalidate：标记过期并立即后台重拉（约 2 分钟后生效；已有一轮在跑时顺延到它补跑完）
  */
 export async function getDiaries(): Promise<Diary[]> {
   const cached = await getCached();
@@ -665,7 +766,7 @@ export async function getDiaries(): Promise<Diary[]> {
     return cached.data;
   }
   // 完全无缓存：同步拉（复用 in-flight 任务，并发冷请求只跑一份抓取）
-  return ensureRefreshTask();
+  return refreshNow();
 }
 
 /**
@@ -673,7 +774,7 @@ export async function getDiaries(): Promise<Diary[]> {
  * 与用户请求共享 in-flight 去重。
  */
 export async function warmDiariesCache(): Promise<number> {
-  const diaries = await ensureRefreshTask();
+  const diaries = await refreshNow();
   return diaries.length;
 }
 
@@ -692,7 +793,8 @@ export async function getDiaryById(id: string): Promise<Diary | null> {
 
   try {
     const client = getClient();
-    const page = await withNotionRetry(() => client.pages.retrieve({ page_id: id }));
+    const deadline = Date.now() + REQUEST_BUDGET_MS;
+    const page = await withNotionRetry(() => client.pages.retrieve({ page_id: id }), deadline);
 
     if (!("properties" in page)) return null;
     // Notion 是唯一后台：在 Notion 删除（进回收站）的页、不属于日记库的页，前端一律当不存在。
@@ -703,8 +805,8 @@ export async function getDiaryById(id: string): Promise<Diary | null> {
       full.parent.type === "database_id" ? full.parent.database_id.replace(/-/g, "") : "";
     if (parentDb !== getDatabaseId().replace(/-/g, "")) return null;
 
-    const body = await extractBodyMarkdown(id, { proxyMedia: true });
-    return mapPageToDiary(page as PageObjectResponse, body);
+    const body = await extractBodyMarkdown(id, { proxyMedia: true, deadline });
+    return mapPageToDiary(page as PageObjectResponse, body ?? "");
   } catch {
     return null;
   }
@@ -723,13 +825,14 @@ const SIGNED_URL_SAFETY_S = 15 * 60;
  * 取 Notion 托管文件当前有效的签名地址，且文件版本必须与请求路径里的 v 一致
  * （换图后旧版本路径不会拿到新图，新版本路径也不会命中旧签名）。
  * 签名地址在 Redis 里按 kind:id:v 缓存，有效期内不重复调 Notion。调用方负责先确认该文件属于公开内容。
+ * 返回 "rate-limited"：Notion 限流且等不起（MEDIA_BUDGET_MS），调用方应回 503 而不是 404。
  */
 export async function resolveNotionFileUrl(
   kind: MediaKind,
   id: string,
   v: string,
   opts: { refresh?: boolean } = {}
-): Promise<NotionFileRef | null> {
+): Promise<NotionFileRef | "rate-limited" | null> {
   const redis = await getRedis();
   const key = `notion:media:v2:${kind}:${id}:${v}`;
   if (redis && !opts.refresh) {
@@ -741,12 +844,16 @@ export async function resolveNotionFileUrl(
     }
   }
 
+  // 本地开发没放行回源：只用缓存里的签名地址，不为每张图打一条开关报错
+  if (!isNotionFetchAllowed()) return null;
+
   let file: { url: string; expiry_time: string } | null = null;
   let media: "image" | "video" = "image";
+  const deadline = Date.now() + MEDIA_BUDGET_MS;
   try {
     const client = getClient();
     if (kind === "b") {
-      const b = await withNotionRetry(() => client.blocks.retrieve({ block_id: id }));
+      const b = await withNotionRetry(() => client.blocks.retrieve({ block_id: id }), deadline);
       if (!("type" in b)) return null;
       if (b.type === "image" && b.image.type === "file") {
         file = b.image.file;
@@ -755,7 +862,7 @@ export async function resolveNotionFileUrl(
         media = "video";
       }
     } else {
-      const page = await withNotionRetry(() => client.pages.retrieve({ page_id: id }));
+      const page = await withNotionRetry(() => client.pages.retrieve({ page_id: id }), deadline);
       if (!("properties" in page)) return null;
       const prop = (page as PageObjectResponse).properties["Image"];
       const first = prop?.type === "files" ? prop.files[0] : undefined;
@@ -763,6 +870,7 @@ export async function resolveNotionFileUrl(
     }
   } catch (e) {
     console.warn(`[notion] resolveNotionFileUrl failed for ${kind}:${id}:`, e);
+    if (APIResponseError.isAPIResponseError(e) && e.code === APIErrorCode.RateLimited) return "rate-limited";
     return null;
   }
   if (!file || mediaVersion(file.url) !== v) return null;

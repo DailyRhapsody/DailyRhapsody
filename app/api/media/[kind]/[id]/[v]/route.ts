@@ -10,6 +10,7 @@
  * 一律 404。归属只读缓存，不触发 Notion 抓取；缓存缺失返回 503。
  *
  * 公开图片只缓存 5 分钟：文章在 Notion 改成私密后，图片也要尽快对外失效。
+ * Notion 限流时立即回 503（不缓存），不在图片请求里按 Retry-After 干等（2026-09-18 实测单次可达 53s）。
  * 旧的 /api/media?block= 已删除：仓库里没有调用方，且不校验文件是否属于公开内容。
  */
 
@@ -26,6 +27,12 @@ const PRIVATE_CACHE = "private, no-store";
 
 function jsonError(status: number, error: string) {
   return NextResponse.json({ error }, { status, headers: { "Cache-Control": PRIVATE_CACHE } });
+}
+
+function upstreamBusy() {
+  const res = jsonError(503, "Upstream busy");
+  res.headers.set("Retry-After", "10");
+  return res;
 }
 
 type Visibility = "public" | "private" | "unknown" | "no-cache";
@@ -72,6 +79,7 @@ export async function GET(
   const cacheControl = visibility === "public" ? PUBLIC_CACHE : PRIVATE_CACHE;
 
   let ref = await resolveNotionFileUrl(kind, id, v);
+  if (ref === "rate-limited") return upstreamBusy();
   if (!ref) return jsonError(404, "Not found");
 
   if (ref.media === "video") {
@@ -85,6 +93,7 @@ export async function GET(
   if (upstream && !upstream.ok && ref.fromCache) {
     // 缓存的签名地址提前失效：强制换签再试一次
     ref = await resolveNotionFileUrl(kind, id, v, { refresh: true });
+    if (ref === "rate-limited") return upstreamBusy();
     if (!ref) return jsonError(404, "Not found");
     upstream = await fetch(ref.url).catch(() => null);
   }

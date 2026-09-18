@@ -43,6 +43,8 @@ npm run dev
 
 打开 http://localhost:3000
 
+`next dev` 默认不调用 Notion API（本地与生产共用同一 token 的限流额度），列表只读 Redis 里现有的缓存。确需回源时换用单独的 integration token，并设 `NOTION_ALLOW_DEV_FETCH=1`，见 `.env.example`。本地 `next start` 按生产模式运行，不受这道开关拦截，同样不要用 `vercel env pull` 拉下来的生产 token。
+
 若终端出现 **`Failed to open database` / `invalid digit found in string`**，是 **Turbopack 本地缓存**损坏（与数据库无关）。执行 `npm run clean:next` 后重跑，或直接用 **`npm run dev:webpack`** 走 Webpack。
 
 ## 部署

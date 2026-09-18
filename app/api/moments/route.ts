@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
 import { listMoments, isMomentsConfigured } from "@/lib/notion-moments";
 
+// SWR 后台重拉（waitUntil）跑在本次函数调用里，受 maxDuration 约束；与 /api/diaries 对齐，
+// 让全量刷新能在截断前写进缓存。
+export const maxDuration = 300;
+
 export async function GET(req: Request) {
   const blocked = await guardApiRequest(req, {
     scope: "moments:list",
