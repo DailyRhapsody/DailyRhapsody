@@ -32,8 +32,8 @@ export type UseEntriesState = {
   datesWithPosts: Set<string>;
   /** 本月发文篇数（来自 datesWithPosts） */
   thisMonthPostCount: number;
-  /** 文章列表底部的 sentinel，挂在 IntersectionObserver 上做无限滚动 */
-  sentinelRef: React.RefObject<HTMLDivElement | null>;
+  /** 文章列表底部 sentinel 的回调 ref，挂在 IntersectionObserver 上做无限滚动 */
+  sentinelRef: React.RefCallback<HTMLDivElement>;
   /** 当前筛选下全部文章的大纲（含未加载的），供时间轴使用 */
   outline: EntryOutlineItem[];
   /** 时间轴请求跳转、但尚未加载到的文章 id */
@@ -65,7 +65,12 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  /**
+   * sentinel 节点存 state 而不是 useRef：切到「动态」tab 时整个博客列表（含 sentinel）
+   * 卸载，切回来挂的是新节点。用 ref 的话 observer effect 的依赖一个都没变、不会重建，
+   * observer 继续盯着已脱离文档的旧节点，无限滚动静默停摆。存 state 后节点一换就重建。
+   */
+  const [sentinelEl, setSentinelEl] = useState<HTMLDivElement | null>(null);
   /** 防止「无限滚动 observer」与「hash 深链补页」同时触发同一 offset 的重复 append */
   const appendInFlightRef = useRef(false);
   /**
@@ -241,7 +246,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
 
   /* ── 无限滚动：sentinel 进视窗就 append ── */
   useEffect(() => {
-    const el = sentinelRef.current;
+    const el = sentinelEl;
     if (!el || !hasMore || loading) return;
     const obs = new IntersectionObserver(
       (entries) => {
@@ -287,7 +292,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     // 若随 cleanup 清掉，失败后刚设的定时器会立即被下一次重建清除，恢复机制失效。
     // 它们的生命周期跨 effect 重建，只在组件卸载时清理（见下面的 mount effect）。
     return () => obs.disconnect();
-  }, [hasMore, loading, loadingMore, items.length, selectedTag, loadPage, appendRetryGen]);
+  }, [sentinelEl, hasMore, loading, loadingMore, items.length, selectedTag, loadPage, appendRetryGen]);
 
   /* ── 卸载时中止在途 append、清理分页恢复定时器 ── */
   useEffect(() => {
@@ -311,7 +316,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     maxTagCount,
     datesWithPosts,
     thisMonthPostCount,
-    sentinelRef,
+    sentinelRef: setSentinelEl,
     outline,
     pendingEntryId,
     requestEntry,
