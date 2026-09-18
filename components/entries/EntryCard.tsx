@@ -20,15 +20,38 @@ const SHARE_TIMEOUT_MS = 20_000;
  * 更窄时评论在文章下方展开。
  */
 const MARGIN_COMMENTS_QUERY = "(min-width: 1440px)";
+/**
+ * 宽屏且能悬停时，正文右侧悬停就有「评论」入口，⋯ 菜单里不再重复放；
+ * 窄屏、触屏（没有悬停）时菜单是给还没有评论的文章写第一条的入口，保留
+ */
+const MARGIN_HOVER_QUERY = `${MARGIN_COMMENTS_QUERY} and (hover: hover)`;
 /** 旁注线程可用高度的下限：短文章也要放得下一条评论和输入框 */
 const MARGIN_THREAD_MIN_PX = 176;
 /** 文章下方线程的最低高度 */
 const INLINE_THREAD_MIN_PX = 240;
 
-function subscribeMarginComments(onChange: () => void) {
-  const mql = window.matchMedia(MARGIN_COMMENTS_QUERY);
-  mql.addEventListener("change", onChange);
-  return () => mql.removeEventListener("change", onChange);
+// 订阅函数按查询条件缓存：每次渲染都换一个新函数，useSyncExternalStore 会反复退订重订
+const mediaSubscribers = new Map<string, (onChange: () => void) => () => void>();
+
+function subscribeMedia(query: string) {
+  let subscribe = mediaSubscribers.get(query);
+  if (!subscribe) {
+    subscribe = (onChange) => {
+      const mql = window.matchMedia(query);
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    };
+    mediaSubscribers.set(query, subscribe);
+  }
+  return subscribe;
+}
+
+function useMediaQuery(query: string): boolean {
+  return useSyncExternalStore(
+    subscribeMedia(query),
+    () => window.matchMedia(query).matches,
+    () => false
+  );
 }
 
 /**
@@ -68,11 +91,8 @@ export function EntryCard({
   /** 读者点了「评论」：线程挂上后聚焦输入框一次 */
   const [commentFocus, setCommentFocus] = useState(false);
   const commentCount = useCommentCount(item.id);
-  const marginComments = useSyncExternalStore(
-    subscribeMarginComments,
-    () => window.matchMedia(MARGIN_COMMENTS_QUERY).matches,
-    () => false
-  );
+  const marginComments = useMediaQuery(MARGIN_COMMENTS_QUERY);
+  const marginHoverEntry = useMediaQuery(MARGIN_HOVER_QUERY);
   const marginThread = marginComments && (commentCount > 0 || commentsOpen);
   const inlineThread = !marginComments && commentsOpen;
   // 线程最高不超过文章本身：量正文部分（不含下方展开的评论）的高度
@@ -385,16 +405,18 @@ export function EntryCard({
                       编辑
                     </Link>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      openComments();
-                      setMenuOpen(false);
-                    }}
-                    className="w-full px-3 py-2 text-left text-[0.8rem] text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  >
-                    评论
-                  </button>
+                  {!marginHoverEntry && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openComments();
+                        setMenuOpen(false);
+                      }}
+                      className="w-full px-3 py-2 text-left text-[0.8rem] text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    >
+                      评论
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleShare()}

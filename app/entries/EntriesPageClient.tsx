@@ -65,7 +65,6 @@ export default function EntriesPageClient({
   const profile = useProfile(initialProfile);
   const { isAdmin: isAdminSession } = useAdminSession();
   const [entriesFlipped, setEntriesFlipped] = useState(false);
-  const [, setScrollYPos] = useState(0);
   /** 彩蛋只有在「最后一页且已有内容」时才允许触发 */
   const { eggPullY, isRebounding } = useEggPullToRefresh(!hasMore && totalPosts > 0);
   const contentWrapperRef = useRef<HTMLDivElement>(null);
@@ -123,24 +122,6 @@ export default function EntriesPageClient({
   useEffect(() => {
     const t = setTimeout(() => setEntriesFlipped(true), 80);
     return () => clearTimeout(t);
-  }, []);
-
-  /* ── 同步 window.scrollY 到本地 state（供其他逻辑使用） ── */
-  useEffect(() => {
-    let rafId = 0;
-    const syncScrollY = () => {
-      if (rafId) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = 0;
-        setScrollYPos(window.scrollY);
-      });
-    };
-    syncScrollY();
-    window.addEventListener("scroll", syncScrollY, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", syncScrollY);
-      if (rafId) cancelAnimationFrame(rafId);
-    };
   }, []);
 
   /* ── 横向滚轮 / 触屏左右滑动切 tab + 屏蔽浏览器自带的左右回退 ── */
