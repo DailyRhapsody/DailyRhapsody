@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { PAGE_SIZE } from "@/components/entries/utils";
+import { scrollToEntry } from "@/components/entries/ScrollTimeline";
 import type { Diary, EntryOutlineItem } from "@/components/entries/types";
 
 type DiariesResponse = {
@@ -48,7 +49,8 @@ export type UseEntriesState = {
  * 会做四件事：
  * 1. 首屏加载：组件挂载或 selectedTag 切换时拉首页
  * 2. 无限滚动：sentinel 进入视窗时 append 下一页
- * 3. hash 深链：URL 带 #entry-123 时如果文章不在当前页就一直翻页直到拉到（或翻完）
+ * 3. hash 深链：URL 带 #entry-123 时如果文章不在当前页就一直翻页直到拉到，滚到一次后
+ *    不再响应该锚点；目标不在当前筛选的大纲里则不翻页
  * 4. 把 dates / tagCounts 派生成 datesWithPosts / thisMonthPostCount / maxTagCount
  *
  * 之前这些状态、callback、4 个 effect 全在 entries page 里和彩蛋、tab 切换、滚动同步混在
@@ -61,7 +63,18 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
   const [datesFromApi, setDatesFromApi] = useState<string[]>([]);
   const [outline, setOutline] = useState<EntryOutlineItem[]>([]);
   const [pendingEntryId, setPendingEntryId] = useState<string | null>(null);
-  const requestEntry = useCallback((id: string | null) => setPendingEntryId(id), []);
+  /** hash 深链落地滚动的中止函数（scrollToEntry 返回）。时间轴跳转或切 tag 接管、gate 重拉
+   *  卸载卡片、组件卸载时中止，否则两段逐帧滚动互相争抢，或追着已移出 DOM 的卡片把页面往上带。 */
+  const hashScrollStopRef = useRef<(() => void) | null>(null);
+  /** 真正落地过的 hash 深链（锚点 + 当时的 tag）。gate 重拉卸载卡片、页面缩回顶部后据此重新定位；
+   *  读者之后切 tag、点时间轴、打断落地动画，就不再恢复。 */
+  const hashLandedRef = useRef<{ anchor: string; tag: string | null } | null>(null);
+  const requestEntry = useCallback((id: string | null) => {
+    // 时间轴跳转 / 切 tag 接管页面滚动：先停掉还在进行的 hash 深链落地，读者已离开那篇
+    hashScrollStopRef.current?.();
+    hashLandedRef.current = null;
+    setPendingEntryId(id);
+  }, []);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -99,6 +112,12 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
    * - 同 tag 刷新失败（gate 就绪重拉）→ 保留旧数据，不把「加载失败」渲染成「暂无文章」。
    */
   const loadedTagRef = useRef<string | null | undefined>(undefined);
+  /**
+   * 已了结的 hash 深链锚点：已滚到过，或读者已离开（回顶、切去动态 tab）。地址栏的
+   * #entry- 会一直留着，不记下来的话此后每次翻页 append 都会重跑深链 effect，
+   * 把读者拉回分享的那篇。只在 gate 就绪重拉冲掉刚落地的位置时清掉（见 hashLandedRef）。
+   */
+  const hashHandledRef = useRef<string | null>(null);
 
   const hasMore = items.length < total && total > 0;
 
@@ -145,6 +164,8 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
 
   /* ── gate 就绪时的重加载触发器 ── */
   const [gateGen, setGateGen] = useState(0);
+  /** 上一次首页加载对应的 gateGen：区分「gate 就绪重拉」与快速来回切 tag 造成的同 tag 重拉 */
+  const lastGateGenRef = useRef(gateGen);
   useEffect(() => {
     const onGateReady = () => setGateGen((g) => g + 1);
     window.addEventListener("dr-gate-ready", onGateReady);
@@ -161,6 +182,16 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
    * 同 tag 刷新失败保留旧数据，「加载失败」不再被渲染成「暂无文章」。 */
   useEffect(() => {
     const ctrl = new AbortController();
+    const gateReload = lastGateGenRef.current !== gateGen;
+    lastGateGenRef.current = gateGen;
+    // gate 就绪重拉（新标签页打开分享链接时握手完成会来一次）期间 loading 为真、卡片全部卸载，
+    // 页面缩回顶部，刚落地的位置随之丢失。同一 tag 下真正落地、之后读者没再操作过（切 tag、
+    // 点时间轴、打断落地）的那次，重拉结束后清掉「已了结」让深链重新定位；读者已离开的不恢复。
+    const landed = hashLandedRef.current;
+    const relocate =
+      gateReload && landed !== null && landed.tag === selectedTag && hashHandledRef.current === landed.anchor;
+    // 卡片即将卸载：还在进行的落地滚动随之作废，免得追着脱离 DOM 的卡片把页面往上带
+    if (relocate) hashScrollStopRef.current?.();
     // 首屏换血后列表整体重置，在途的旧 append 结果不能再接到新列表后面
     appendCtrlRef.current?.abort();
     appendCtrlRef.current = null;
@@ -179,7 +210,13 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
         }
       })
       .finally(() => {
-        if (!ctrl.signal.aborted) setLoading(false);
+        if (ctrl.signal.aborted) return;
+        // 成功或同 tag 失败保留旧数据都会重新渲染卡片，此时再放开深链
+        if (relocate) {
+          hashHandledRef.current = null;
+          hashLandedRef.current = null;
+        }
+        setLoading(false);
       });
     return () => ctrl.abort();
   }, [selectedTag, loadPage, gateGen]);
@@ -192,25 +229,41 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
       ? `entry-${pendingEntryId}`
       : window.location.hash.replace(/^#/, "");
     if (!anchor.startsWith("entry-")) return;
+    // hash 深链只滚一次：之后翻页 append 重跑本 effect 时不再把读者拉回分享的那篇
+    if (!pendingEntryId && hashHandledRef.current === anchor) return;
     const el = document.getElementById(anchor);
     if (el) {
       if (pendingEntryId) return;
-      requestAnimationFrame(() => {
-        el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      hashHandledRef.current = anchor;
+      // 读者正在用顶栏回顶：尊重读者，放弃这次定位，不和回顶动画争抢滚动
+      if (document.documentElement.dataset.returnToTop) return;
+      // 不用原生 smooth scrollIntoView：首屏翻转动画（rotateX）期间按变形后的几何
+      // 算落点，会停在半路或根本不滚；scrollToEntry 逐帧跟随目标实时位置并在结束后校正
+      hashScrollStopRef.current?.();
+      const landing = { anchor, tag: selectedTag };
+      hashLandedRef.current = landing;
+      hashScrollStopRef.current = scrollToEntry(el, (completed) => {
+        // 读者滚轮/触摸/按键打断了落地：算读者已接管，gate 重拉时不再恢复
+        if (!completed && hashLandedRef.current === landing) hashLandedRef.current = null;
       });
       return;
     }
     const targetId = anchor.slice("entry-".length);
     if (!targetId) return;
-    const inList = items.some((d) => d.id === targetId);
-    if (inList) {
-      if (pendingEntryId) return;
-      requestAnimationFrame(() => {
-        document.getElementById(anchor)?.scrollIntoView({
-          behavior: "smooth",
-          block: "nearest",
-        });
-      });
+    // 已加载但卡片不在 DOM：补页期间读者切去了动态 tab。视为读者已离开、不再定位，
+    // 否则切回博客后的下一次翻页会重跑本 effect，把读者拉回这篇
+    if (items.some((d) => d.id === targetId)) {
+      if (!pendingEntryId) hashHandledRef.current = anchor;
+      return;
+    }
+    // hash 目标不在当前筛选的大纲里（切到不含它的 tag、或文章已删/转私密）：翻完也
+    // 找不到，不为它翻页。不记为已处理——切回包含它的筛选时照常定位。
+    // 须确认大纲属于当前 tag：切 tag 的那次提交里首页请求还没发出，大纲仍是旧 tag 的。
+    if (
+      !pendingEntryId &&
+      loadedTagRef.current === selectedTag &&
+      !outline.some((o) => o.id === targetId)
+    ) {
       return;
     }
     if (total > 0 && items.length >= total) return;
@@ -242,7 +295,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
       });
     // 不在 cleanup 里 abort：本 effect 因 loadingMore/items 变化而重建，
     // 若随 cleanup 中止会把刚发起的请求自己取消掉（见 appendCtrlRef 注释）。
-  }, [loading, items, total, hasMore, loadingMore, selectedTag, loadPage, pendingEntryId, appendRetryGen]);
+  }, [loading, items, outline, total, hasMore, loadingMore, selectedTag, loadPage, pendingEntryId, appendRetryGen]);
 
   /* ── 无限滚动：sentinel 进视窗就 append ── */
   useEffect(() => {
@@ -294,11 +347,12 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     return () => obs.disconnect();
   }, [sentinelEl, hasMore, loading, loadingMore, items.length, selectedTag, loadPage, appendRetryGen]);
 
-  /* ── 卸载时中止在途 append、清理分页恢复定时器 ── */
+  /* ── 卸载时中止在途 append 与深链落地滚动、清理分页恢复定时器 ── */
   useEffect(() => {
     return () => {
       appendCtrlRef.current?.abort();
       appendCtrlRef.current = null;
+      hashScrollStopRef.current?.();
       if (appendRetryTimerRef.current) {
         clearTimeout(appendRetryTimerRef.current);
         appendRetryTimerRef.current = null;

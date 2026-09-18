@@ -48,7 +48,7 @@ function prefersReducedMotion() {
  * 每帧按目标的实时位置插值，结束后再校正几帧；用户在页面上滚轮/触摸/按键/点击即中止。
  * 返回中止函数；onDone(completed) 在结束或中止时调用一次。
  */
-function scrollToEntry(el: HTMLElement, onDone: (completed: boolean) => void): () => void {
+export function scrollToEntry(el: HTMLElement, onDone: (completed: boolean) => void): () => void {
   const root = document.documentElement;
   const margin = parseFloat(getComputedStyle(el).scrollMarginTop) || 96;
   const target = () =>
