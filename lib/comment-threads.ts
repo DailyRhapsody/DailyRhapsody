@@ -57,6 +57,7 @@ function flush() {
     if (!ids.includes(id) && !inFlight.has(id) && !fresh(id)) ids.push(id);
   }
   for (const id of ids) inFlight.add(id);
+  const sentAt = Date.now();
   fetchWithTimeout(`/api/diaries/comments?ids=${ids.map(encodeURIComponent).join(",")}`)
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
     .then((data: { threads?: Record<string, Comment[]>; pending?: string[] }) => {
@@ -70,6 +71,12 @@ function flush() {
           continue;
         }
         const list = Array.isArray(data?.threads?.[id]) ? data.threads[id] : [];
+        // 请求在途时本地发表 / 删除过：缓存里已是更新的线程，不用这次（可能更早读出的）结果覆盖
+        const current = cache.get(id);
+        if (current && current.at > sentAt) {
+          settle(id, { list: current.list });
+          continue;
+        }
         cache.set(id, { at: now, list });
         settle(id, { list });
       }

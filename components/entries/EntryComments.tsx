@@ -121,10 +121,11 @@ export function EntryComments({
   const dirtyRef = useRef(false);
 
   // 有评论的旁注线程先登记为候选：别的线程请求时顺带取回，滚动时不必一篇一个请求
+  // 自己拿到后就注销，免得过期后被反复捎带重取
   useEffect(() => {
-    if (variant !== "margin" || count === 0) return;
+    if (variant !== "margin" || count === 0 || loaded) return;
     return registerCommentThread(diaryId);
-  }, [variant, count, diaryId]);
+  }, [variant, count, loaded, diaryId]);
 
   useEffect(() => {
     if (near) return;
@@ -603,6 +604,7 @@ function CommentComposer({
             if (e.nativeEvent.isComposing || e.keyCode === 229) return;
             if (e.key === "Escape") {
               e.currentTarget.blur();
+              setEngaged(false);
               if (!content && showCancel) onCancel();
               return;
             }
@@ -645,7 +647,11 @@ function CommentComposer({
             {showCancel && (
               <button
                 type="button"
-                onClick={onCancel}
+                onClick={() => {
+                  // 主动取消就丢掉草稿，下次打开是空的
+                  setContent("");
+                  onCancel();
+                }}
                 className="shrink-0 rounded px-1.5 py-1 text-[0.72rem] text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
               >
                 取消

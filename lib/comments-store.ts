@@ -45,8 +45,9 @@ export function isDiaryId(id: string): boolean {
   return PAGE_ID_RE.test(id);
 }
 const INDEX_KEY = "dr:comments:index";
-/** 各篇评论数的短缓存；发表、删除时清掉，所有实例看到的都一致 */
+/** 各篇评论数的短缓存，带版本号：发表、删除时版本 +1，版本不符的缓存视为未命中 */
 const COUNTS_CACHE_KEY = "dr:comments:counts";
+const COUNTS_GEN_KEY = "dr:comments:gen";
 const COUNTS_TTL_S = 30;
 
 export function isCommentsStoreConfigured(): boolean {
@@ -141,7 +142,7 @@ export async function addComment(
     .multi()
     .hset(key, { [comment.id]: JSON.stringify(comment) })
     .sadd(INDEX_KEY, input.diaryId)
-    .del(COUNTS_CACHE_KEY)
+    .incr(COUNTS_GEN_KEY)
     .exec();
   return comment;
 }
@@ -150,7 +151,7 @@ export async function addComment(
 export async function deleteComment(diaryId: string, commentId: string): Promise<boolean> {
   if (!redis) return false;
   const removed = (await redis.hdel(threadKey(diaryId), commentId)) > 0;
-  if (removed) await redis.del(COUNTS_CACHE_KEY);
+  if (removed) await redis.incr(COUNTS_GEN_KEY);
   return removed;
 }
 
@@ -158,14 +159,18 @@ export async function deleteComment(diaryId: string, commentId: string): Promise
  * 各篇评论数（只含有评论的篇目）。known：日记库里现有的篇目（含私密），只对这些篇目查条数，
  * 已删篇不产生开销；按访客 / 站长可见范围过滤由调用方负责。
  * 每次打开博客页都会取一次，逐篇 HLEN 按条计费，所以结果在 Redis 里缓存 30 秒。
+ * 缓存记下计算前读到的版本号：计算期间有人发表 / 删除，版本已变，这份结果下次就不会被采用。
  */
 export async function getCommentCounts(known: ReadonlySet<string>): Promise<Record<string, number>> {
   if (!redis) return {};
-  const cached = await redis.get(COUNTS_CACHE_KEY);
+  const [cached, genRaw] = await redis.mget(COUNTS_CACHE_KEY, COUNTS_GEN_KEY);
+  const gen = String(genRaw ?? "0");
   if (typeof cached === "string") {
     try {
-      const all = JSON.parse(cached) as Record<string, number>;
-      return Object.fromEntries(Object.entries(all).filter(([id]) => known.has(id)));
+      const hit = JSON.parse(cached) as { gen?: string; counts?: Record<string, number> };
+      if (hit.gen === gen && hit.counts) {
+        return Object.fromEntries(Object.entries(hit.counts).filter(([id]) => known.has(id)));
+      }
     } catch {
       // 缓存损坏：按未命中处理
     }
@@ -181,6 +186,6 @@ export async function getCommentCounts(known: ReadonlySet<string>): Promise<Reco
       if (Number.isFinite(n) && n > 0) counts[id] = n;
     });
   }
-  await redis.set(COUNTS_CACHE_KEY, JSON.stringify(counts), { ex: COUNTS_TTL_S });
+  await redis.set(COUNTS_CACHE_KEY, JSON.stringify({ gen, counts }), { ex: COUNTS_TTL_S });
   return counts;
 }

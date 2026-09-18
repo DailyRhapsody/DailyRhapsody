@@ -43,6 +43,8 @@ function cleanText(s: string, max: number): string {
     .replace(/\r\n?/g, "\n")
     .replace(/\t/g, " ")
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
+    // 标签字符只在「🏴 + 标签 + 结束符」组成的旗帜里保留，单独出现的（可藏隐形文字）删掉
+    .replace(/(\u{1F3F4}[\u{E0020}-\u{E007E}]+\u{E007F})|[\u{E0000}-\u{E007F}]/gu, (_, flag) => flag ?? "")
     .replace(/(?![\u200c\u200d\u{E0020}-\u{E007F}])\p{Cf}/gu, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
