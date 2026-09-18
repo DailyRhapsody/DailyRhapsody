@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { syncCommentCount } from "@/hooks/useCommentCounts";
 import { useCommentIdentity } from "@/hooks/useCommentIdentity";
-import { loadCommentThread, updateCachedThread } from "@/lib/comment-threads";
+import { loadCommentThread, registerCommentThread, updateCachedThread } from "@/lib/comment-threads";
 import { COMMENT_AVATAR_COUNT, CommentAvatar } from "./CommentAvatar";
 import { DefaultAvatar } from "./DefaultAvatar";
 import type { Comment } from "./types";
@@ -12,6 +12,9 @@ import type { Comment } from "./types";
 const MAX_CONTENT = 2000;
 const MAX_NAME = 32;
 const TEXTAREA_MAX_PX = 160;
+
+/** 各篇没发出去的草稿：跨 1440px 断点时线程在旁注与正文下方之间换位会重挂载，草稿不能丢 */
+const drafts = new Map<string, string>();
 
 /** 旧评论没有头像字段：按 id 固定挑一个 */
 function avatarOf(c: Comment): number {
@@ -65,6 +68,8 @@ export type EntryCommentsProps = {
   onAutoFocused: () => void;
   /** 关掉线程：inline 的「收起」；没有评论时的「取消」/ 点到别处 */
   onClose: () => void;
+  /** 读者开始写评论：跨断点换位后线程也要保持展开 */
+  onEngage: () => void;
   canEdit: boolean;
   authorName: string;
   authorAvatarSrc: string;
@@ -91,11 +96,14 @@ export function EntryComments({
   autoFocus,
   onAutoFocused,
   onClose,
+  onEngage,
   canEdit,
   authorName,
   authorAvatarSrc,
 }: EntryCommentsProps) {
   const [comments, setComments] = useState<Comment[] | null>(null);
+  /** 已从服务端拿到过完整线程；没拿到时本地列表不完整，不能拿它去覆盖计数和缓存 */
+  const [loaded, setLoaded] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -109,6 +117,14 @@ export function EntryComments({
   const hasDraftRef = useRef(false);
   const scrollToEndRef = useRef(false);
   const postedRef = useRef(new Set<string>());
+  /** 本地发表 / 删除过，下次同步时写回缓存 */
+  const dirtyRef = useRef(false);
+
+  // 有评论的旁注线程先登记为候选：别的线程请求时顺带取回，滚动时不必一篇一个请求
+  useEffect(() => {
+    if (variant !== "margin" || count === 0) return;
+    return registerCommentThread(diaryId);
+  }, [variant, count, diaryId]);
 
   useEffect(() => {
     if (near) return;
@@ -127,10 +143,11 @@ export function EntryComments({
   useEffect(() => {
     if (!near) return;
     let cancelled = false;
-    loadCommentThread(diaryId, { fresh: reloadKey > 0 })
+    loadCommentThread(diaryId, { force: reloadKey > 0 })
       .then((fetched) => {
         if (cancelled) return;
         setLoadFailed(false);
+        setLoaded(true);
         setComments((prev) => mergeThread(fetched, prev, postedRef.current));
       })
       .catch(() => {
@@ -141,12 +158,15 @@ export function EntryComments({
     };
   }, [near, diaryId, reloadKey]);
 
-  // 线程变了（拉到、发表、删除）就同步计数与缓存：计数以线程为准，重挂载时读到的是最新线程
+  // 拿到完整线程后，计数以线程为准；本地发表 / 删除过的写回缓存（只读缓存时不续期）
   useEffect(() => {
-    if (comments === null) return;
+    if (!loaded || comments === null) return;
     syncCommentCount(diaryId, comments.length);
-    updateCachedThread(diaryId, comments);
-  }, [comments, diaryId]);
+    if (dirtyRef.current) {
+      dirtyRef.current = false;
+      updateCachedThread(diaryId, comments);
+    }
+  }, [loaded, comments, diaryId]);
 
   const list = comments ?? [];
   // 还没有任何评论的线程（含加载中、加载失败）可以直接关掉；有评论的线程常驻
@@ -155,6 +175,9 @@ export function EntryComments({
   // 点到线程外面就收起空线程。用 click 而不是失焦：Safari 点按钮不给焦点，失焦判断会把
   // 线程里的点击当成点到外面；在 pointerdown 时收起又会让下面的文章上移，这次点击落空。
   // 捕获阶段注册：打开线程的那次点击冒泡到 document 时不会被当成「点到外面」
+  // 失焦只处理键盘 Tab 出去：Chrome 按下鼠标时就把焦点移到按钮 / 链接上，若在失焦时收起，
+  // 下方文章会在松开前上移，这次点击同样落空
+  const keyboardRef = useRef(false);
   useEffect(() => {
     if (!dismissable) return;
     function onClick(e: MouseEvent) {
@@ -162,8 +185,20 @@ export function EntryComments({
       if (rootRef.current?.contains(e.target as Node)) return;
       onClose();
     }
+    const onKeyDown = () => {
+      keyboardRef.current = true;
+    };
+    const onPointerDown = () => {
+      keyboardRef.current = false;
+    };
     document.addEventListener("click", onClick, true);
-    return () => document.removeEventListener("click", onClick, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
   }, [dismissable, onClose]);
 
   // 线程总高不超过 maxHeight：量出列表以外部分（输入框、展开按钮、内边距）的高度，剩下的给列表
@@ -218,7 +253,10 @@ export function EntryComments({
   function handlePosted(c: Comment) {
     scrollToEndRef.current = true;
     postedRef.current.add(c.id);
+    dirtyRef.current = true;
     setComments((prev) => [...(prev ?? []), c]);
+    // 线程还没拿到（加载中或失败）：重新拉一次，拉到后与刚发的这条合并
+    if (!loaded) setReloadKey((k) => k + 1);
   }
 
   async function handleDelete(c: Comment) {
@@ -229,6 +267,7 @@ export function EntryComments({
         { method: "DELETE" }
       );
       if (!res.ok && res.status !== 404) throw new Error(String(res.status));
+      dirtyRef.current = true;
       setComments((prev) => (prev ?? []).filter((x) => x.id !== c.id));
     } catch {
       window.alert("删除失败，请稍后再试");
@@ -242,7 +281,7 @@ export function EntryComments({
       onBlur={(e) => {
         // 键盘 Tab 到线程外：同样收起空线程（鼠标点击由上面的 click 监听处理）
         const next = e.relatedTarget as Node | null;
-        if (!dismissable || hasDraftRef.current || !next) return;
+        if (!dismissable || hasDraftRef.current || !next || !keyboardRef.current) return;
         if (!rootRef.current?.contains(next)) onClose();
       }}
       className={`flex flex-col text-left ${
@@ -333,6 +372,7 @@ export function EntryComments({
         onCancel={onClose}
         onDraftChange={(has) => {
           hasDraftRef.current = has;
+          if (has) onEngage();
         }}
         onPosted={handlePosted}
       />
@@ -432,15 +472,50 @@ function CommentComposer({
   onDraftChange: (hasDraft: boolean) => void;
   onPosted: (c: Comment) => void;
 }) {
-  const [content, setContent] = useState("");
+  const [content, setContentState] = useState(() => drafts.get(diaryId) ?? "");
+  const setContent = (v: string) => {
+    setContentState(v);
+    if (v) drafts.set(diaryId, v);
+    else drafts.delete(diaryId);
+  };
   const { name, avatar, setName, shuffleAvatar } = useCommentIdentity();
-  const [focused, setFocused] = useState(false);
+  /** 评论框展开（露出昵称栏和发送键）：获得焦点时展开，点到框外或键盘移出时才收起 */
+  const [engaged, setEngaged] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const honeypotRef = useRef<HTMLInputElement>(null);
-  const active = focused || content !== "";
+  const active = engaged || content !== "";
+
+  // 不在失焦时收起：Chrome 按下鼠标就会让输入框失焦，此时收起昵称栏，下方内容在松开前上移，
+  // 这次点击就落到了别处。改为点击完成后（click）再判断是否点在框外；键盘 Tab 移出照常收起
+  useEffect(() => {
+    if (!engaged) return;
+    let pointer = false;
+    const onPointerDown = () => {
+      pointer = true;
+    };
+    const onKeyDown = () => {
+      pointer = false;
+    };
+    const onClick = (e: MouseEvent) => {
+      if (!formRef.current?.contains(e.target as Node)) setEngaged(false);
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      if (!pointer && !formRef.current?.contains(e.target as Node)) setEngaged(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("click", onClick, true);
+    document.addEventListener("focusin", onFocusIn, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("focusin", onFocusIn, true);
+    };
+  }, [engaged]);
 
   useEffect(() => {
     if (!autoFocus) return;
@@ -497,10 +572,7 @@ function CommentComposer({
         e.preventDefault();
         void submit();
       }}
-      onFocus={() => setFocused(true)}
-      onBlur={(e) => {
-        if (!formRef.current?.contains(e.relatedTarget as Node | null)) setFocused(false);
-      }}
+      onFocus={() => setEngaged(true)}
       className={`relative flex shrink-0 items-start gap-2 ${
         divided ? "mt-2 border-t border-zinc-900/5 pt-2.5 dark:border-white/10" : ""
       }`}

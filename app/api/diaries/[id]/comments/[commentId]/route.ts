@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/auth";
-import { deleteComment } from "@/lib/comments-store";
+import { deleteComment, isDiaryId } from "@/lib/comments-store";
 import { withAntiScrapeHeaders } from "@/lib/request-guard";
 import { rejectCrossSiteWrite } from "@/lib/same-origin";
 
@@ -15,7 +15,7 @@ export async function DELETE(
     return withAntiScrapeHeaders(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
   }
   const { id, commentId } = await params;
-  const removed = id && commentId ? await deleteComment(id, commentId) : false;
+  const removed = isDiaryId(id) && commentId ? await deleteComment(id, commentId) : false;
   return withAntiScrapeHeaders(
     NextResponse.json({ ok: removed }, { status: removed ? 200 : 404 })
   );

@@ -140,6 +140,7 @@ export function EntryCard({
     setCommentFocus(false);
   }, []);
   const consumeCommentFocus = useCallback(() => setCommentFocus(false), []);
+  const engageComments = useCallback(() => setCommentsOpen(true), []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -493,6 +494,7 @@ export function EntryCard({
           autoFocus={commentFocus}
           onAutoFocused={consumeCommentFocus}
           onClose={closeComments}
+          onEngage={engageComments}
           canEdit={canEdit}
           authorName={authorName}
           authorAvatarSrc={avatarSrc}
@@ -513,6 +515,7 @@ export function EntryCard({
               autoFocus={commentFocus}
               onAutoFocused={consumeCommentFocus}
               onClose={closeComments}
+              onEngage={engageComments}
               canEdit={canEdit}
               authorName={authorName}
               authorAvatarSrc={avatarSrc}

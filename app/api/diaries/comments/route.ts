@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/auth";
-import { getCommentsMany } from "@/lib/comments-store";
+import { getCommentsMany, isDiaryId } from "@/lib/comments-store";
 import { getCachedDiaries } from "@/lib/notion";
 import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
 
@@ -25,7 +25,7 @@ export async function GET(req: Request) {
       (new URL(req.url).searchParams.get("ids") ?? "")
         .split(",")
         .map((s) => s.trim())
-        .filter(Boolean)
+        .filter(isDiaryId)
     ),
   ];
   if (ids.length === 0 || ids.length > MAX_IDS) {
@@ -41,6 +41,6 @@ export async function GET(req: Request) {
     ? new Set(diaries.filter((d) => admin || d.isPublic).map((d) => d.id))
     : null;
   const allowed = readable ? ids.filter((id) => readable.has(id)) : ids;
-  const threads = await getCommentsMany(allowed);
-  return withAntiScrapeHeaders(NextResponse.json({ threads }));
+  const { threads, pending } = await getCommentsMany(allowed);
+  return withAntiScrapeHeaders(NextResponse.json({ threads, pending }));
 }

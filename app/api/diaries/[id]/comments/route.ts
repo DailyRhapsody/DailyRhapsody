@@ -6,6 +6,7 @@ import {
   COMMENT_AVATAR_COUNT,
   CommentLimitError,
   CommentsUnavailableError,
+  isDiaryId,
 } from "@/lib/comments-store";
 import { getCachedDiaries } from "@/lib/notion";
 import { getProfile } from "@/lib/profile-store";
@@ -33,15 +34,16 @@ async function diaryAccess(diaryId: string, admin: boolean): Promise<"ok" | "mis
 }
 
 /**
- * 去掉控制字符和不可见的格式字符（零宽、方向控制、软连字符等，保留拼 emoji 用的 U+200D），
- * 保留换行、制表符换成空格，连续空行压成一个
+ * 去掉控制字符和不可见的格式字符（零宽、方向控制、软连字符等），保留换行、制表符换成空格，
+ * 连续空行压成一个。U+200C / U+200D（波斯文等的连接控制、拼 emoji）和 U+E0020–E007F
+ * （苏格兰、威尔士等旗帜 emoji 的标签字符）是正常文字的一部分，不删
  */
 function cleanText(s: string, max: number): string {
   return s
     .replace(/\r\n?/g, "\n")
     .replace(/\t/g, " ")
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
-    .replace(/(?!\u200d)\p{Cf}/gu, "")
+    .replace(/(?![\u200c\u200d\u{E0020}-\u{E007F}])\p{Cf}/gu, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
     .slice(0, max);
@@ -71,7 +73,7 @@ export async function POST(
   });
   if (blocked) return blocked;
   const { id: diaryId } = await params;
-  if (!diaryId) return json({ error: "Invalid id" }, 400);
+  if (!isDiaryId(diaryId)) return json({ error: "Invalid id" }, 400);
   const lenHeader = req.headers.get("content-length");
   if (lenHeader && Number(lenHeader) > 8 * 1024) {
     return json({ error: "Payload too large" }, 413);

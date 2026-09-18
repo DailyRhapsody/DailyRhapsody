@@ -38,7 +38,16 @@ const redis =
     : null;
 
 const threadKey = (diaryId: string) => `dr:comments:${diaryId}`;
+
+/** Notion 页面 id（带或不带连字符）。也挡住与 dr:comments:index 等同前缀的内部键名 */
+const PAGE_ID_RE = /^[0-9a-f]{8}-?(?:[0-9a-f]{4}-?){3}[0-9a-f]{12}$/i;
+export function isDiaryId(id: string): boolean {
+  return PAGE_ID_RE.test(id);
+}
 const INDEX_KEY = "dr:comments:index";
+/** 各篇评论数的短缓存；发表、删除时清掉，所有实例看到的都一致 */
+const COUNTS_CACHE_KEY = "dr:comments:counts";
+const COUNTS_TTL_S = 30;
 
 export function isCommentsStoreConfigured(): boolean {
   return redis !== null;
@@ -83,20 +92,38 @@ function toThread(raw: unknown): Comment[] {
     .sort(byTime);
 }
 
-/** 一次取回多篇的评论（一个 pipeline 请求）；列表页按批加载，避免每篇各发一次请求撞上限流 */
-export async function getCommentsMany(diaryIds: string[]): Promise<Record<string, Comment[]>> {
-  const out: Record<string, Comment[]> = {};
+/** 批量响应的体积上限：Vercel 函数响应上限 4.5MB，留出余量 */
+const BATCH_BYTES_MAX = 3_000_000;
+
+/**
+ * 一次取回多篇的评论（一个 pipeline 请求）；列表页按批加载，避免每篇各发一次请求撞上限流。
+ * 累计体积超过上限就停下，没放进去的篇目放在 pending 里，由前端下一批再取。
+ */
+export async function getCommentsMany(
+  diaryIds: string[]
+): Promise<{ threads: Record<string, Comment[]>; pending: string[] }> {
+  const threads: Record<string, Comment[]> = {};
   if (!redis || diaryIds.length === 0) {
-    for (const id of diaryIds) out[id] = [];
-    return out;
+    for (const id of diaryIds) threads[id] = [];
+    return { threads, pending: [] };
   }
   const pipe = redis.pipeline();
   for (const id of diaryIds) pipe.hgetall(threadKey(id));
   const raws = await pipe.exec();
+  let bytes = 0;
+  const pending: string[] = [];
   diaryIds.forEach((id, i) => {
-    out[id] = toThread(raws[i]);
+    const thread = toThread(raws[i]);
+    const size = Buffer.byteLength(JSON.stringify(thread));
+    // 第一篇无论多大都放进去，否则它会永远取不到
+    if (bytes > 0 && bytes + size > BATCH_BYTES_MAX) {
+      pending.push(id);
+      return;
+    }
+    bytes += size;
+    threads[id] = thread;
   });
-  return out;
+  return { threads, pending };
 }
 
 export async function addComment(
@@ -114,6 +141,7 @@ export async function addComment(
     .multi()
     .hset(key, { [comment.id]: JSON.stringify(comment) })
     .sadd(INDEX_KEY, input.diaryId)
+    .del(COUNTS_CACHE_KEY)
     .exec();
   return comment;
 }
@@ -121,21 +149,38 @@ export async function addComment(
 /** 删除成功返回 true；评论不存在返回 false */
 export async function deleteComment(diaryId: string, commentId: string): Promise<boolean> {
   if (!redis) return false;
-  return (await redis.hdel(threadKey(diaryId), commentId)) > 0;
+  const removed = (await redis.hdel(threadKey(diaryId), commentId)) > 0;
+  if (removed) await redis.del(COUNTS_CACHE_KEY);
+  return removed;
 }
 
-/** 各篇评论数（只含有评论的篇目） */
-export async function getCommentCounts(): Promise<Record<string, number>> {
+/**
+ * 各篇评论数（只含有评论的篇目）。known：日记库里现有的篇目（含私密），只对这些篇目查条数，
+ * 已删篇不产生开销；按访客 / 站长可见范围过滤由调用方负责。
+ * 每次打开博客页都会取一次，逐篇 HLEN 按条计费，所以结果在 Redis 里缓存 30 秒。
+ */
+export async function getCommentCounts(known: ReadonlySet<string>): Promise<Record<string, number>> {
   if (!redis) return {};
-  const ids = (await redis.smembers(INDEX_KEY)).map(String);
-  if (ids.length === 0) return {};
-  const pipe = redis.pipeline();
-  for (const id of ids) pipe.hlen(threadKey(id));
-  const lens = await pipe.exec();
+  const cached = await redis.get(COUNTS_CACHE_KEY);
+  if (typeof cached === "string") {
+    try {
+      const all = JSON.parse(cached) as Record<string, number>;
+      return Object.fromEntries(Object.entries(all).filter(([id]) => known.has(id)));
+    } catch {
+      // 缓存损坏：按未命中处理
+    }
+  }
+  const ids = (await redis.smembers(INDEX_KEY)).map(String).filter((id) => known.has(id));
   const counts: Record<string, number> = {};
-  ids.forEach((id, i) => {
-    const n = Number(lens[i]);
-    if (Number.isFinite(n) && n > 0) counts[id] = n;
-  });
+  if (ids.length > 0) {
+    const pipe = redis.pipeline();
+    for (const id of ids) pipe.hlen(threadKey(id));
+    const lens = await pipe.exec();
+    ids.forEach((id, i) => {
+      const n = Number(lens[i]);
+      if (Number.isFinite(n) && n > 0) counts[id] = n;
+    });
+  }
+  await redis.set(COUNTS_CACHE_KEY, JSON.stringify(counts), { ex: COUNTS_TTL_S });
   return counts;
 }
