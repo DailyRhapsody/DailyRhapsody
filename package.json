@@ -20,7 +20,6 @@
     "marked": "^17.0.5",
     "mermaid": "11.17.2",
     "next": "^16.2.1",
-    "pg": "^8.20.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "sanitize-html": "^2.17.3"
@@ -28,7 +27,6 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/sanitize-html": "^2.16.0",

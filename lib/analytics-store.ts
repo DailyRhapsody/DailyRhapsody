@@ -2,25 +2,23 @@ import { Redis } from "@upstash/redis";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import {
-  USE_DATABASE,
-  assertWritableStorage,
-  ensureSchemaOnce,
-  getPool,
-} from "./db";
 
 const DATA_DIR = join(process.cwd(), "data");
 const JSONL_FILE = join(DATA_DIR, "analytics-visits.jsonl");
 
 const ANALYTICS_STORAGE_ERROR =
-  "DATABASE_URL is required in production for visitor analytics (file mode is not supported on serverless).";
+  "KV_REST_API_URL / KV_REST_API_TOKEN are required in production for visitor analytics (file mode is not supported on serverless).";
+
+/** 生产没有 KV 凭证时直接报错：serverless 文件系统不可写，也不持久。 */
+function assertWritableStorage(): void {
+  if (process.env.NODE_ENV === "production") throw new Error(ANALYTICS_STORAGE_ERROR);
+}
 
 /**
- * 有 KV 凭证时访问记录存 Upstash Redis（与 profile、限流同库同凭证）。
- * 生产的 DATABASE_URL 指向的 Supabase 项目已删除（2026-09 域名 NXDOMAIN），每次写入都报
- * tenant/user not found、被 collect 路由静默吞掉，统计从那时起一条都没记下来。
- * 按 UTC 日期分键存原始记录，查询时逐日读出、在内存里聚合（与本地 JSONL 同一套逻辑）。
- * 没有 KV 凭证的环境照旧走 Postgres / 本地文件。
+ * 访问记录存 Upstash Redis（与 profile、限流同库同凭证）。原先存 Postgres，生产的 DATABASE_URL
+ * 指向的 Supabase 项目已删除（2026-09 域名 NXDOMAIN），写入一直失败、被 collect 路由静默吞掉；
+ * 迁移后 Postgres 存储已移除。按 UTC 日期分键存原始记录，查询时逐日读出、在内存里聚合。
+ * 没有 KV 凭证时只在本地开发写 data/analytics-visits.jsonl（与 Redis 同一套聚合逻辑）。
  */
 const redisUrl = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
 const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
@@ -47,43 +45,6 @@ function clipField(s: string | null, max: number): string | null {
   const last = t.charCodeAt(t.length - 1);
   if (last >= 0xd800 && last <= 0xdbff) t = t.slice(0, -1);
   return t || null;
-}
-
-async function ensureSchema(): Promise<void> {
-  await ensureSchemaOnce("visit_events", async (client) => {
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS visit_events (
-        id BIGSERIAL PRIMARY KEY,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        ip TEXT,
-        country TEXT,
-        region TEXT,
-        city TEXT,
-        latitude DOUBLE PRECISION,
-        longitude DOUBLE PRECISION,
-        path TEXT NOT NULL,
-        query_string TEXT,
-        referrer TEXT,
-        user_agent TEXT,
-        accept_language TEXT,
-        utm_source TEXT,
-        utm_medium TEXT,
-        utm_campaign TEXT,
-        visitor_id TEXT,
-        is_bot BOOLEAN NOT NULL DEFAULT FALSE,
-        screen_width INT,
-        screen_height INT
-      );
-    `);
-    await client.query(
-      `CREATE INDEX IF NOT EXISTS visit_events_created_at_idx ON visit_events (created_at DESC);`
-    );
-    await client.query(`CREATE INDEX IF NOT EXISTS visit_events_path_idx ON visit_events (path);`);
-    await client.query(
-      `CREATE INDEX IF NOT EXISTS visit_events_country_idx ON visit_events (country);`
-    );
-    await client.query(`CREATE INDEX IF NOT EXISTS visit_events_ip_idx ON visit_events (ip);`);
-  });
 }
 
 export type VisitInput = {
@@ -134,36 +95,6 @@ function newJsonlId(): string {
   return `${Date.now()}-${randomBytes(6).toString("hex")}`;
 }
 
-function mapPgRow(row: Record<string, unknown>): VisitRow {
-  const id = row.id != null ? String(row.id) : "";
-  const createdAt =
-    row.created_at instanceof Date
-      ? row.created_at.toISOString()
-      : String(row.created_at ?? "");
-  return {
-    id,
-    createdAt,
-    ip: row.ip != null ? String(row.ip) : null,
-    country: row.country != null ? String(row.country) : null,
-    region: row.region != null ? String(row.region) : null,
-    city: row.city != null ? String(row.city) : null,
-    latitude: row.latitude != null ? Number(row.latitude) : null,
-    longitude: row.longitude != null ? Number(row.longitude) : null,
-    path: String(row.path ?? ""),
-    queryString: row.query_string != null ? String(row.query_string) : null,
-    referrer: row.referrer != null ? String(row.referrer) : null,
-    userAgent: row.user_agent != null ? String(row.user_agent) : null,
-    acceptLanguage: row.accept_language != null ? String(row.accept_language) : null,
-    utmSource: row.utm_source != null ? String(row.utm_source) : null,
-    utmMedium: row.utm_medium != null ? String(row.utm_medium) : null,
-    utmCampaign: row.utm_campaign != null ? String(row.utm_campaign) : null,
-    visitorId: row.visitor_id != null ? String(row.visitor_id) : null,
-    isBot: Boolean(row.is_bot),
-    screenWidth: row.screen_width != null ? Number(row.screen_width) : null,
-    screenHeight: row.screen_height != null ? Number(row.screen_height) : null,
-  };
-}
-
 function toVisitRow(input: VisitInput): VisitRow {
   return {
     id: newJsonlId(),
@@ -190,7 +121,7 @@ function toVisitRow(input: VisitInput): VisitRow {
 }
 
 /**
- * 存进共享 Redis 前再截短一轮：collect 路由的上限是为 Postgres 定的，单条可达约 6KB。
+ * 存进共享 Redis 前再截短一轮：collect 路由的字段上限单条可达约 6KB。
  * 字段按字符截短，中文等多字节字符仍可能超出字节预算，超出时依次丢弃次要字段，最后再截短路径。
  */
 function boundRow(row: VisitRow): VisitRow {
@@ -239,44 +170,7 @@ export async function recordVisit(input: VisitInput): Promise<void> {
     return;
   }
 
-  assertWritableStorage(ANALYTICS_STORAGE_ERROR);
-  if (USE_DATABASE) {
-    await ensureSchema();
-    await getPool().query(
-      `
-        INSERT INTO visit_events (
-          ip, country, region, city, latitude, longitude,
-          path, query_string, referrer, user_agent, accept_language,
-          utm_source, utm_medium, utm_campaign, visitor_id, is_bot,
-          screen_width, screen_height
-        ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
-        )
-      `,
-      [
-        input.ip === "unknown" ? null : input.ip,
-        input.country,
-        input.region,
-        input.city,
-        input.latitude,
-        input.longitude,
-        input.path,
-        input.queryString,
-        input.referrer,
-        input.userAgent,
-        input.acceptLanguage,
-        input.utmSource,
-        input.utmMedium,
-        input.utmCampaign,
-        input.visitorId,
-        input.isBot,
-        input.screenWidth,
-        input.screenHeight,
-      ]
-    );
-    return;
-  }
-
+  assertWritableStorage();
   await mkdir(DATA_DIR, { recursive: true });
   await appendFile(JSONL_FILE, `${JSON.stringify(toVisitRow(input))}\n`, "utf8");
 }
@@ -465,134 +359,6 @@ function reportFromRows(all: VisitRow[], q: AnalyticsQuery): AnalyticsReport {
 
 export async function queryAnalytics(q: AnalyticsQuery): Promise<AnalyticsReport> {
   if (redis) return reportFromRows(await loadRedisVisits(redis, q.from, q.to), q);
-
-  assertWritableStorage(ANALYTICS_STORAGE_ERROR);
-  const offset = (q.page - 1) * q.pageSize;
-
-  if (USE_DATABASE) {
-    await ensureSchema();
-    const pool = getPool();
-    const botClause = q.includeBots ? "" : " AND is_bot = FALSE";
-
-    const sumRes = await pool.query(
-      `
-        SELECT
-          COUNT(*)::int AS total,
-          COUNT(*) FILTER (WHERE NOT is_bot)::int AS human_total,
-          COUNT(*) FILTER (WHERE is_bot)::int AS bot_total,
-          COUNT(DISTINCT ip) FILTER (WHERE ip IS NOT NULL AND ip <> '')::int AS unique_ip,
-          COUNT(DISTINCT visitor_id) FILTER (WHERE visitor_id IS NOT NULL AND visitor_id <> '')::int AS unique_visitors
-        FROM visit_events
-        WHERE created_at >= $1 AND created_at <= $2
-      `,
-      [q.from, q.to]
-    );
-    const srow = sumRes.rows[0] as Record<string, unknown>;
-    const summary: AnalyticsSummary = {
-      total: Number(srow.total) || 0,
-      humanTotal: Number(srow.human_total) || 0,
-      botTotal: Number(srow.bot_total) || 0,
-      uniqueIp: Number(srow.unique_ip) || 0,
-      uniqueVisitors: Number(srow.unique_visitors) || 0,
-    };
-
-    if (!q.includeBots) {
-      summary.uniqueIp = Number(
-        (
-          await pool.query(
-            `SELECT COUNT(DISTINCT ip)::int AS c FROM visit_events
-             WHERE created_at >= $1 AND created_at <= $2 AND is_bot = FALSE
-             AND ip IS NOT NULL AND ip <> ''`,
-            [q.from, q.to]
-          )
-        ).rows[0]?.c ?? 0
-      );
-      summary.uniqueVisitors = Number(
-        (
-          await pool.query(
-            `SELECT COUNT(DISTINCT visitor_id)::int AS c FROM visit_events
-             WHERE created_at >= $1 AND created_at <= $2 AND is_bot = FALSE
-             AND visitor_id IS NOT NULL AND visitor_id <> ''`,
-            [q.from, q.to]
-          )
-        ).rows[0]?.c ?? 0
-      );
-    }
-
-    const topPathsRes = await pool.query(
-      `SELECT path AS key, COUNT(*)::int AS count FROM visit_events
-       WHERE created_at >= $1 AND created_at <= $2 ${botClause}
-       GROUP BY path ORDER BY count DESC LIMIT 25`,
-      [q.from, q.to]
-    );
-    const topCountriesRes = await pool.query(
-      `SELECT COALESCE(country, '(未知)') AS key, COUNT(*)::int AS count FROM visit_events
-       WHERE created_at >= $1 AND created_at <= $2 ${botClause}
-       GROUP BY country ORDER BY count DESC LIMIT 25`,
-      [q.from, q.to]
-    );
-    const topRegionsRes = await pool.query(
-      `SELECT COALESCE(country || ' / ' || region, country, '(未知)') AS key, COUNT(*)::int AS count
-       FROM visit_events
-       WHERE created_at >= $1 AND created_at <= $2 ${botClause}
-       GROUP BY country, region ORDER BY count DESC LIMIT 25`,
-      [q.from, q.to]
-    );
-
-    const dailyRes = await pool.query(
-      `SELECT (created_at AT TIME ZONE 'UTC')::date::text AS date, COUNT(*)::int AS count
-       FROM visit_events
-       WHERE created_at >= $1 AND created_at <= $2 ${botClause}
-       GROUP BY 1 ORDER BY 1`,
-      [q.from, q.to]
-    );
-
-    const geoRes = await pool.query(
-      `SELECT ROUND(latitude::numeric, 2)::float AS lat,
-              ROUND(longitude::numeric, 2)::float AS lng,
-              COALESCE(city, '') AS city, COALESCE(country, '') AS country,
-              COUNT(*)::int AS count
-       FROM visit_events
-       WHERE created_at >= $1 AND created_at <= $2
-         AND latitude IS NOT NULL AND longitude IS NOT NULL ${botClause}
-       GROUP BY 1, 2, city, country
-       ORDER BY count DESC LIMIT 500`,
-      [q.from, q.to]
-    );
-    const geoPoints: GeoPoint[] = geoRes.rows.map((r) => ({
-      lat: Number(r.lat),
-      lng: Number(r.lng),
-      count: Number(r.count),
-      city: r.city || null,
-      country: r.country || null,
-    }));
-
-    const countRes = await pool.query(
-      `SELECT COUNT(*)::int AS c FROM visit_events
-       WHERE created_at >= $1 AND created_at <= $2 ${botClause}`,
-      [q.from, q.to]
-    );
-    const totalRows = Number(countRes.rows[0]?.c) || 0;
-
-    const rowsRes = await pool.query(
-      `SELECT * FROM visit_events
-       WHERE created_at >= $1 AND created_at <= $2 ${botClause}
-       ORDER BY created_at DESC
-       LIMIT $3 OFFSET $4`,
-      [q.from, q.to, q.pageSize, offset]
-    );
-
-    return {
-      summary,
-      topPaths: topPathsRes.rows.map((r) => ({ key: String(r.key), count: Number(r.count) })),
-      topCountries: topCountriesRes.rows.map((r) => ({ key: String(r.key), count: Number(r.count) })),
-      topRegions: topRegionsRes.rows.map((r) => ({ key: String(r.key), count: Number(r.count) })),
-      daily: dailyRes.rows.map((r) => ({ date: String(r.date), count: Number(r.count) })),
-      geoPoints,
-      rows: rowsRes.rows.map((row) => mapPgRow(row)),
-      totalRows,
-    };
-  }
-
+  assertWritableStorage();
   return reportFromRows(await loadJsonlVisits(q.from, q.to, true), q);
 }
