@@ -79,4 +79,4 @@ Notion 数据库自动化的配置：触发条件选页面新增 / 属性修改�
 
 ## 关于存储
 
-内容源已全部迁到 Notion，**不需要 PostgreSQL**。`lib/db.ts` 与 `pg` 依赖目前只被访客统计 `lib/analytics-store.ts` 引用，且生产环境未配置 `DATABASE_URL`，因此实际未启用。
+内容源已全部迁到 Notion，**不需要 PostgreSQL**。访客统计（`lib/analytics-store.ts`）存在 Upstash Redis，与缓存、限流同库；没有 KV 凭证时只在本地开发写 `data/analytics-visits.jsonl`。
