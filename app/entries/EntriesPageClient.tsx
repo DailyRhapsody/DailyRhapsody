@@ -7,7 +7,8 @@ import StickyProfileHeader from "@/components/StickyProfileHeader";
 import { MomentLightbox } from "@/components/entries/MomentLightbox";
 import { CalendarHeatmap } from "@/components/entries/CalendarHeatmap";
 import { EntryCard } from "@/components/entries/EntryCard";
-import { EntriesTimeline } from "@/components/entries/EntriesTimeline";
+import { ScrollTimeline } from "@/components/entries/ScrollTimeline";
+import { entryTimelineRows, momentTimelineRows } from "@/components/entries/timelineRows";
 import { MomentsTab } from "@/components/entries/MomentsTab";
 import { getSizeClass } from "@/components/entries/utils";
 import type { MomentsTimelineRow } from "@/components/entries/types";
@@ -17,6 +18,13 @@ import { useMoments } from "@/hooks/useMoments";
 import { useTabSwipeNavigation } from "@/hooks/useTabSwipeNavigation";
 import { useEntries } from "@/hooks/useEntries";
 import { useEggPullToRefresh } from "@/hooks/useEggPullToRefresh";
+
+// 修饰键点击（新标签页）打开的地址。文章用绝对地址：页面带 ?tab=moments 时相对 hash 会落在动态 tab；
+// 动态没有深链定位，只打开动态 tab
+const entryHref = (id: string) => `/entries#entry-${id}`;
+const momentHref = () => "/entries?tab=moments";
+const ENTRY_MESSAGES = { loading: "正在载入更早的文章", failed: "未能载入这篇文章" };
+const MOMENT_MESSAGES = { loading: "正在载入更早的动态", failed: "未能载入这条动态" };
 
 export default function EntriesPageClient({
   initialProfile,
@@ -49,6 +57,9 @@ export default function EntriesPageClient({
     loading: momentsLoading,
     loadingMore: momentsLoadingMore,
     sentinelRef: momentsSentinelRef,
+    outline: momentsOutline,
+    pendingMomentId,
+    requestMoment,
   } = useMoments({ active: activeTopTab === 1 });
   const [lightbox, setLightbox] = useState<{ urls: string[]; i: number; lbKey: string } | null>(null);
   const profile = useProfile(initialProfile);
@@ -58,6 +69,13 @@ export default function EntriesPageClient({
   /** 彩蛋只有在「最后一页且已有内容」时才允许触发 */
   const { eggPullY, isRebounding } = useEggPullToRefresh(!hasMore && totalPosts > 0);
   const contentWrapperRef = useRef<HTMLDivElement>(null);
+
+  // 时间轴数据：引用稳定（只随列表数据变化），ScrollTimeline 是 memo 组件
+  const entryRows = useMemo(() => entryTimelineRows(outline), [outline]);
+  const entryIds = useMemo(() => items.map((d) => d.id), [items]);
+  const momentRows = useMemo(() => momentTimelineRows(momentsOutline), [momentsOutline]);
+  // 与 MomentsTab 的渲染条件一致：没有图片/视频的动态不渲染，也不参与高亮定位
+  const momentIds = useMemo(() => moments.filter((m) => m.media.length > 0).map((m) => String(m.id)), [moments]);
 
   const momentsTimeline = useMemo<MomentsTimelineRow[]>(() => {
     return moments.map((m) => ({
@@ -137,15 +155,33 @@ export default function EntriesPageClient({
     <div className="min-h-screen bg-gradient-to-b from-zinc-100 to-white font-sans text-zinc-900 dark:from-black dark:via-zinc-950 dark:to-black dark:text-zinc-50">
       <RainbowBrushTrail />
       {/* 必须在 entries-flip-wrapper 之外：它的 perspective/transform 会让 fixed 相对 main 定位 */}
-      {activeTopTab === 0 && (
-        <EntriesTimeline
-          key={selectedTag ?? ""}
-          outline={outline}
-          items={items}
+      {activeTopTab === 0 ? (
+        <ScrollTimeline
+          key={`entries:${selectedTag ?? ""}`}
+          ariaLabel="文章时间轴"
+          rows={entryRows}
+          anchorPrefix="entry-"
+          itemIds={entryIds}
           hasMore={hasMore}
           visible={entriesFlipped && !loading}
-          pendingEntryId={pendingEntryId}
-          requestEntry={requestEntry}
+          pendingId={pendingEntryId}
+          requestId={requestEntry}
+          hrefFor={entryHref}
+          messages={ENTRY_MESSAGES}
+        />
+      ) : (
+        <ScrollTimeline
+          key="moments"
+          ariaLabel="动态时间轴"
+          rows={momentRows}
+          anchorPrefix="moment-"
+          itemIds={momentIds}
+          hasMore={momentsHasMore}
+          visible={entriesFlipped && !momentsLoading}
+          pendingId={pendingMomentId}
+          requestId={requestMoment}
+          hrefFor={momentHref}
+          messages={MOMENT_MESSAGES}
         />
       )}
       <div className="entries-flip-wrapper">
