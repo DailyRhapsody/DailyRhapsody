@@ -20,6 +20,7 @@ import type {
   PageObjectResponse,
 } from "@notionhq/client/build/src/api-endpoints";
 import { mediaProxyPath } from "@/lib/notion-media";
+import type { MomentOutlineItem } from "@/components/entries/types";
 
 // Match the frontend PublicMoment / PublicMedia types
 export type PublicMedia = {
@@ -411,14 +412,27 @@ export async function listMoments(opts: {
   limit: number;
   offset: number;
   includePrivate: boolean;
-}): Promise<{ items: PublicMoment[]; total: number; hasMore: boolean }> {
+  /** 附带全部可见动态的轻量大纲（时间轴用） */
+  withOutline?: boolean;
+}): Promise<{ items: PublicMoment[]; total: number; hasMore: boolean; outline?: MomentOutlineItem[] }> {
   const all = await getMoments();
-  const visible = opts.includePrivate ? all : all.filter((m) => m.isPublic);
+  // 没有图片/视频的动态（Notion 读取正文失败时会出现）前台不渲染，也不能出现在时间轴里
+  const visible = all.filter((m) => (opts.includePrivate || m.isPublic) && m.media.length > 0);
   const items = visible.slice(opts.offset, opts.offset + opts.limit);
   return {
     items,
     total: visible.length,
     hasMore: opts.offset + items.length < visible.length,
+    ...(opts.withOutline
+      ? {
+          outline: visible.map((m) => ({
+            id: String(m.id),
+            at: m.createdAt,
+            count: m.media.length,
+            ...(m.type === 2 ? { video: true as const } : {}),
+          })),
+        }
+      : {}),
   };
 }
 

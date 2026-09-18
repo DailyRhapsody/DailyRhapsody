@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
-import type { PublicMoment } from "@/components/entries/types";
+import type { MomentOutlineItem, PublicMoment } from "@/components/entries/types";
 
 const PAGE_LIMIT = 8;
 /** 提前 240px 触发加载下一页，避免动态滚动到底再 stall */
@@ -14,6 +14,12 @@ export type UseMomentsState = {
   loading: boolean;
   loadingMore: boolean;
   sentinelRef: React.RefObject<HTMLDivElement | null>;
+  /** 全部可见动态的大纲（含未加载的），供时间轴使用 */
+  outline: MomentOutlineItem[];
+  /** 时间轴请求跳转、但尚未加载到的动态 id */
+  pendingMomentId: string | null;
+  /** 请求逐页补载直到该动态出现；传 null 取消 */
+  requestMoment: (id: string | null) => void;
 };
 
 /**
@@ -32,6 +38,9 @@ export function useMoments({ active }: { active: boolean }): UseMomentsState {
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [outline, setOutline] = useState<MomentOutlineItem[]>([]);
+  const [pendingMomentId, setPendingMomentId] = useState<string | null>(null);
+  const requestMoment = useCallback((id: string | null) => setPendingMomentId(id), []);
 
   const loadLock = useRef(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -52,18 +61,19 @@ export function useMoments({ active }: { active: boolean }): UseMomentsState {
    */
   const appendCtrlRef = useRef<AbortController | null>(null);
 
-  const loadPage = useCallback(async (fromOffset: number, replace: boolean, signal?: AbortSignal) => {
+  /** 返回 false 表示请求失败（被取消或被锁跳过都不算失败） */
+  const loadPage = useCallback(async (fromOffset: number, replace: boolean, signal?: AbortSignal): Promise<boolean> => {
     if (replace) {
       setLoading(true);
     } else {
       // 防止 observer 在 setLoadingMore 还没 flush 时把同一 offset 又触发一次
-      if (loadLock.current) return;
+      if (loadLock.current) return true;
       loadLock.current = true;
       setLoadingMore(true);
     }
     try {
       const res = await fetchWithTimeout(
-        `/api/moments?limit=${PAGE_LIMIT}&offset=${fromOffset}`,
+        `/api/moments?limit=${PAGE_LIMIT}&offset=${fromOffset}${replace && fromOffset === 0 ? "&outline=1" : ""}`,
         { credentials: "include", signal },
       );
       const data = await res.json().catch(() => ({}));
@@ -71,11 +81,14 @@ export function useMoments({ active }: { active: boolean }): UseMomentsState {
       const next: PublicMoment[] = Array.isArray(data.items) ? data.items : [];
       setHasMore(!!data.hasMore);
       setOffset(typeof data.nextOffset === "number" ? data.nextOffset : fromOffset + next.length);
-      if (replace) setMoments(next);
-      else setMoments((prev) => [...prev, ...next]);
+      if (replace) {
+        setMoments(next);
+        setOutline(Array.isArray(data.outline) ? data.outline : []);
+      } else setMoments((prev) => [...prev, ...next]);
+      return true;
     } catch {
       // 主动取消的请求（gate 重拉换血 / 卸载），不动任何 state
-      if (signal?.aborted) return;
+      if (signal?.aborted) return true;
       // 失败保留已有数据、不动 hasMore：不把「加载失败」渲染成空列表，
       // 恢复交给 gate 重拉或下面的冷却重试
       if (!replace) {
@@ -90,6 +103,7 @@ export function useMoments({ active }: { active: boolean }): UseMomentsState {
           setAppendRetryGen((g) => g + 1);
         }, 5100);
       }
+      return false;
     } finally {
       if (replace) {
         // 被换血取消的旧首屏请求不动 loading——新一轮已 setLoading(true)，
@@ -148,6 +162,26 @@ export function useMoments({ active }: { active: boolean }): UseMomentsState {
     return () => obs.disconnect();
   }, [active, hasMore, loading, loadingMore, offset, loadPage, appendRetryGen]);
 
+  /* 时间轴跳转：目标动态未加载时逐页补载；失败即放弃，冷却期内到期后重试一次 */
+  useEffect(() => {
+    if (!pendingMomentId || loading || loadingMore || !hasMore) return;
+    if (moments.some((m) => String(m.id) === pendingMomentId)) return;
+    if (loadLock.current) return;
+    const cooldownLeft = appendCooldownUntilRef.current - Date.now();
+    if (cooldownLeft > 0) {
+      const t = setTimeout(() => setAppendRetryGen((g) => g + 1), cooldownLeft + 50);
+      return () => clearTimeout(t);
+    }
+    const target = pendingMomentId;
+    const ctrl = new AbortController();
+    appendCtrlRef.current = ctrl;
+    void loadPage(offset, false, ctrl.signal).then((ok) => {
+      if (appendCtrlRef.current === ctrl) appendCtrlRef.current = null;
+      if (!ok) setPendingMomentId((cur) => (cur === target ? null : cur));
+    });
+    // 不在 cleanup 里 abort（见 appendCtrlRef 注释）
+  }, [pendingMomentId, moments, loading, loadingMore, hasMore, offset, loadPage, appendRetryGen]);
+
   /* 卸载时中止在途 append、清理分页恢复定时器 */
   useEffect(() => {
     return () => {
@@ -160,5 +194,5 @@ export function useMoments({ active }: { active: boolean }): UseMomentsState {
     };
   }, []);
 
-  return { moments, hasMore, loading, loadingMore, sentinelRef };
+  return { moments, hasMore, loading, loadingMore, sentinelRef, outline, pendingMomentId, requestMoment };
 }

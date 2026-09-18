@@ -12,16 +12,9 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
-import { formatDate12h } from "@/lib/format";
-import type { Diary, EntryOutlineItem } from "./types";
 
-/** 每篇一行，行高 8px；跨年、置顶组之后多留 8px */
+/** 每条一行，行高 8px；跨年、置顶组之后多留 8px */
 const ROW_H = 8;
-/** 横线宽度：10 字及以下最短 6px，3000 字及以上最长 28px，中间按对数映射 */
-const MIN_W = 6;
-const MAX_W = 28;
-const LO = 10;
-const HI = 3000;
 /** 阅读线 = 文章的 scroll-margin-top（EntryCard 的 scroll-mt-24）+ 16px，两处相互依赖 */
 const READING_SLACK = 16;
 /** 距离超过 3 屏时先瞬移到目标前一屏，再平滑滚完最后一屏 */
@@ -36,11 +29,6 @@ const JUMP_TIMEOUT_MS = 20000;
 const FAIL_SHOW_MS = 2500;
 const WIDE_POINTER_QUERY = "(min-width: 1080px) and (hover: hover) and (pointer: fine)";
 
-function lineWidth(words: number) {
-  const t = (Math.log1p(words) - Math.log(LO + 1)) / (Math.log(HI + 1) - Math.log(LO + 1));
-  return Math.round(MIN_W + (MAX_W - MIN_W) * Math.min(1, Math.max(0, t)));
-}
-
 function subscribeWidePointer(onChange: () => void) {
   const mql = window.matchMedia(WIDE_POINTER_QUERY);
   mql.addEventListener("change", onChange);
@@ -48,7 +36,7 @@ function subscribeWidePointer(onChange: () => void) {
 }
 
 const insideTimeline = (target: EventTarget | null) =>
-  target instanceof Element && target.closest("[data-entries-timeline]") != null;
+  target instanceof Element && target.closest("[data-scroll-timeline]") != null;
 
 function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -137,51 +125,80 @@ function scrollToEntry(el: HTMLElement, onDone: (completed: boolean) => void): (
   return () => stop();
 }
 
-type Row = EntryOutlineItem & { width: number; gapBefore: boolean; date: string; label: string };
+/** 时间轴的一行：宽度和提示文字由调用方按内容类型算好（见 timelineRows.ts） */
+export type TimelineRow = {
+  id: string;
+  at: string;
+  /** 横线宽度（px） */
+  width: number;
+  /** 提示第一行，如「2026/8/26 · 530 字」 */
+  line1: string;
+  /** 提示第二行，如正文开头 */
+  line2?: string;
+  /** 读屏标签 */
+  label: string;
+  pinned?: boolean;
+  /** 淡色显示（管理员看到的私密文章） */
+  muted?: boolean;
+};
+type Row = TimelineRow & { gapBefore: boolean };
 type Tip = { i: number; top: number; shown: boolean };
 
 /**
- * 博客列表左侧的滚动时间轴（仿 Notion 目录缩略导航）：每篇一条横线，横线长度按正文字数，
- * 当前阅读的那篇高亮；悬停显示日期与字数，点击跳转，未加载的文章逐页补载后再跳。
+ * 列表左侧的滚动时间轴（仿 Notion 目录缩略导航），博客与动态共用：每条内容一条横线，
+ * 当前阅读的那条高亮；悬停显示提示，点击跳转，未加载的条目逐页补载后再跳。
  * 只在宽屏且有精确指针（鼠标/触控板）时渲染。
  */
-export const EntriesTimeline = memo(function EntriesTimeline({
-  outline,
-  items,
+export const ScrollTimeline = memo(function ScrollTimeline({
+  ariaLabel,
+  rows: inputRows,
+  anchorPrefix,
+  itemIds,
   hasMore,
   visible,
-  pendingEntryId,
-  requestEntry,
+  pendingId,
+  requestId,
+  hrefFor,
+  messages,
 }: {
-  outline: EntryOutlineItem[];
-  items: Diary[];
+  ariaLabel: string;
+  /** 当前筛选下的全部条目（含未加载的），顺序与列表一致 */
+  rows: TimelineRow[];
+  /** 列表里每条内容的 DOM id 前缀，如 "entry-" */
+  anchorPrefix: string;
+  /** 已加载条目的 id，顺序与列表一致 */
+  itemIds: string[];
   hasMore: boolean;
   visible: boolean;
-  pendingEntryId: string | null;
-  requestEntry: (id: string | null) => void;
+  /** 已请求补载、尚未加载到的条目 id */
+  pendingId: string | null;
+  /** 请求逐页补载直到该条目出现；传 null 取消 */
+  requestId: (id: string | null) => void;
+  /** 修饰键点击（新标签页）时打开的地址 */
+  hrefFor: (id: string) => string;
+  /** 读屏播报：补载中、补载失败 */
+  messages: { loading: string; failed: string };
 }) {
   const wide = useSyncExternalStore(
     subscribeWidePointer,
     () => window.matchMedia(WIDE_POINTER_QUERY).matches,
     () => false,
   );
-  const enabled = wide && outline.length >= 2;
+  const enabled = wide && inputRows.length >= 2;
 
   const rows = useMemo<Row[]>(() => {
     const yearOf = (at: string) => {
       const d = new Date(at);
       return Number.isNaN(d.getTime()) ? null : d.getFullYear();
     };
-    return outline.map((o, i) => {
-      const prev = outline[i - 1];
+    return inputRows.map((o, i) => {
+      const prev = inputRows[i - 1];
       const gapBefore =
         !!prev && ((!!prev.pinned && !o.pinned) || (!o.pinned && yearOf(o.at) !== yearOf(prev.at)));
-      const date = formatDate12h(o.at).split(" ")[0] ?? "";
-      const parts = [o.pinned ? "置顶" : "", date, o.words > 0 ? `${o.words.toLocaleString("zh-CN")} 字` : "", o.isPublic === false ? "私密" : ""].filter(Boolean);
-      return { ...o, width: lineWidth(o.words), gapBefore, date, label: parts.join("，") };
+      return { ...o, gapBefore };
     });
-  }, [outline]);
-  const indexById = useMemo(() => new Map(outline.map((o, i) => [o.id, i])), [outline]);
+  }, [inputRows]);
+  const indexById = useMemo(() => new Map(inputRows.map((o, i) => [o.id, i])), [inputRows]);
 
   const [active, setActive] = useState(0);
   const [focusIdx, setFocusIdx] = useState<number | null>(null);
@@ -244,16 +261,16 @@ export const EntriesTimeline = memo(function EntriesTimeline({
         if (lock.settledY === null || Math.abs(window.scrollY - lock.settledY) <= 4) return;
         lockRef.current = null; // 跳转落定后用户滚动（含拖滚动条）→ 恢复自动判断
       }
-      if (items.length === 0) return;
-      const first = document.getElementById(`entry-${items[0].id}`);
+      if (itemIds.length === 0) return;
+      const first = document.getElementById(`${anchorPrefix}${itemIds[0]}`);
       if (!first) return;
       const line = (parseFloat(getComputedStyle(first).scrollMarginTop) || 96) + READING_SLACK;
       let lo = 0;
-      let hi = items.length - 1;
+      let hi = itemIds.length - 1;
       let ans = 0;
       while (lo <= hi) {
         const mid = (lo + hi) >> 1;
-        const el = document.getElementById(`entry-${items[mid].id}`);
+        const el = document.getElementById(`${anchorPrefix}${itemIds[mid]}`);
         if (el && el.getBoundingClientRect().top <= line) {
           ans = mid;
           lo = mid + 1;
@@ -264,7 +281,7 @@ export const EntriesTimeline = memo(function EntriesTimeline({
       // 列表已到底：最后几篇滚不到阅读线，最后一篇整篇进入视口即算读到最后一篇。
       // 只在页面确实滚动过时生效（整页放得下时不算）；不用 scrollHeight，彩蛋下拉会改变它
       const root = document.documentElement;
-      const lastEl = document.getElementById(`entry-${items[items.length - 1].id}`);
+      const lastEl = document.getElementById(`${anchorPrefix}${itemIds[itemIds.length - 1]}`);
       if (
         !hasMore &&
         lastEl &&
@@ -272,8 +289,8 @@ export const EntriesTimeline = memo(function EntriesTimeline({
         root.scrollHeight - window.innerHeight > 4 &&
         lastEl.getBoundingClientRect().bottom <= window.innerHeight
       )
-        ans = items.length - 1;
-      const idx = indexById.get(items[ans].id);
+        ans = itemIds.length - 1;
+      const idx = indexById.get(itemIds[ans]);
       if (idx !== undefined) setActive(idx);
     };
     const schedule = () => {
@@ -303,7 +320,7 @@ export const EntriesTimeline = memo(function EntriesTimeline({
       recomputeRef.current = () => {};
       ro?.disconnect();
     };
-  }, [enabled, items, hasMore, indexById]);
+  }, [enabled, itemIds, hasMore, indexById, anchorPrefix]);
 
   /* ── 轨道隐藏后再出现（缩放/改窗口宽度跨过 1080px）：清掉悬停与焦点残留，并淡入 ── */
   useEffect(() => {
@@ -429,17 +446,17 @@ export const EntriesTimeline = memo(function EntriesTimeline({
     lockRef.current = null;
     recomputeRef.current();
     setFailedId(id);
-    setLiveMsg("未能载入这篇文章");
+    setLiveMsg(messages.failed);
     if (failTimerRef.current) clearTimeout(failTimerRef.current);
     failTimerRef.current = setTimeout(() => {
       failTimerRef.current = null;
       setFailedId((cur) => (cur === id ? null : cur));
     }, FAIL_SHOW_MS);
-  }, []);
+  }, [messages.failed]);
 
   const jump = useCallback(
     (i: number) => {
-      const row = outline[i];
+      const row = rows[i];
       if (!row) return;
       // 地址栏残留的 #entry- 会让深链逻辑在之后每次翻页时把页面拉回旧锚点
       if (window.location.hash.startsWith("#entry-")) {
@@ -450,41 +467,41 @@ export const EntriesTimeline = memo(function EntriesTimeline({
       cancelScrollRef.current?.();
       lockRef.current = { index: i, settledY: null };
       setActive(i);
-      const el = document.getElementById(`entry-${row.id}`);
+      const el = document.getElementById(`${anchorPrefix}${row.id}`);
       if (el) {
         setJumpingId(null);
-        requestEntry(null);
-        startScroll(el, rows[i]?.label ?? "");
+        requestId(null);
+        startScroll(el, row.label);
         return;
       }
       landingRef.current = false;
       setJumpingId(row.id);
-      requestEntry(row.id);
-      setLiveMsg("正在载入更早的文章");
+      requestId(row.id);
+      setLiveMsg(messages.loading);
     },
-    [outline, rows, requestEntry, startScroll],
+    [rows, anchorPrefix, requestId, startScroll, messages.loading],
   );
 
   /* ── 等待补页：加载到就滚过去；hook 放弃或已无更多页就失败 ── */
   useEffect(() => {
     if (!jumpingId) return;
     const raf = requestAnimationFrame(() => {
-      const el = document.getElementById(`entry-${jumpingId}`);
+      const el = document.getElementById(`${anchorPrefix}${jumpingId}`);
       if (el) {
         setJumpingId(null);
-        requestEntry(null);
+        requestId(null);
         setLiveMsg("");
         landingRef.current = true;
         const i = indexById.get(jumpingId);
         startScroll(el, i === undefined ? "" : (rows[i]?.label ?? ""));
-      } else if (pendingEntryId !== jumpingId || !hasMore) {
+      } else if (pendingId !== jumpingId || !hasMore) {
         setJumpingId(null);
-        requestEntry(null);
+        requestId(null);
         fail(jumpingId);
       }
     });
     return () => cancelAnimationFrame(raf);
-  }, [jumpingId, items, pendingEntryId, hasMore, requestEntry, startScroll, fail, indexById, rows]);
+  }, [jumpingId, itemIds, pendingId, hasMore, requestId, startScroll, fail, indexById, rows, anchorPrefix]);
 
   /* ── 等待期间：超时失败；用户在页面上继续阅读（滚轮、触摸、点击、滚动页面）或按 Esc 即取消 ── */
   useEffect(() => {
@@ -496,7 +513,7 @@ export const EntriesTimeline = memo(function EntriesTimeline({
       recomputeRef.current();
       setJumpingId(null);
       setLiveMsg("");
-      requestEntry(null);
+      requestId(null);
     };
     const cancel = (e: Event) => {
       if (landingRef.current) return;
@@ -517,7 +534,7 @@ export const EntriesTimeline = memo(function EntriesTimeline({
     };
     const timer = setTimeout(() => {
       setJumpingId(null);
-      requestEntry(null);
+      requestId(null);
       fail(jumpingId);
     }, JUMP_TIMEOUT_MS);
     window.addEventListener("wheel", cancel, { passive: true });
@@ -533,7 +550,7 @@ export const EntriesTimeline = memo(function EntriesTimeline({
       window.removeEventListener("scroll", cancel);
       window.removeEventListener("keydown", cancel);
     };
-  }, [jumpingId, requestEntry, fail]);
+  }, [jumpingId, requestId, fail]);
 
   if (!enabled) return null;
 
@@ -608,7 +625,7 @@ export const EntriesTimeline = memo(function EntriesTimeline({
   };
 
   const onRowClick = (e: MouseEvent<HTMLAnchorElement>, i: number) => {
-    // 修饰键或非左键：交给浏览器（新标签页打开 #entry-，由深链逻辑定位）
+    // 修饰键或非左键：交给浏览器（新标签页打开 hrefFor 给的地址）
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     viaKeyboardRef.current = e.detail === 0; // Enter 触发的 click 没有点击次数
@@ -617,15 +634,9 @@ export const EntriesTimeline = memo(function EntriesTimeline({
 
   const tabStop = focusIdx ?? active;
   const tipRow = tip ? rows[tip.i] : undefined;
-  const tipText = tipRow
-    ? tipRow.id === jumpingId
-      ? "载入中…"
-      : tipRow.id === failedId
-        ? "未能载入"
-        : [tipRow.pinned ? "置顶" : "", tipRow.date, tipRow.words > 0 ? `${tipRow.words.toLocaleString("zh-CN")} 字` : "", tipRow.isPublic === false ? "私密" : ""]
-            .filter(Boolean)
-            .join(" · ")
-    : "";
+  const tipStatus = tipRow?.id === jumpingId ? "载入中…" : tipRow?.id === failedId ? "未能载入" : null;
+  const tipLine1 = tipStatus ?? tipRow?.line1 ?? "";
+  const tipLine2 = tipStatus ? undefined : tipRow?.line2;
   const mask =
     edges.up || edges.down
       ? `linear-gradient(to bottom, ${edges.up ? "transparent" : "#000"}, #000 24px, #000 calc(100% - 24px), ${edges.down ? "transparent" : "#000"})`
@@ -634,8 +645,8 @@ export const EntriesTimeline = memo(function EntriesTimeline({
   return (
     <nav
       ref={navRef}
-      data-entries-timeline
-      aria-label="文章时间轴"
+      data-scroll-timeline
+      aria-label={ariaLabel}
       inert={!visible}
       className={`fixed left-0 top-1/2 z-40 w-14 -translate-y-1/2 transition-opacity duration-500 motion-reduce:transition-none ${
         visible && appeared ? "opacity-100" : "opacity-0"
@@ -667,13 +678,13 @@ export const EntriesTimeline = memo(function EntriesTimeline({
             const isLoading = r.id === jumpingId;
             const color = isActive || isLoading
               ? "bg-zinc-900/85 dark:bg-white/90 forced-colors:bg-[Highlight]"
-              : r.isPublic === false
+              : r.muted
                 ? "bg-zinc-900/10 group-hover:bg-zinc-900/50 group-focus-visible:bg-zinc-900/50 dark:bg-white/10 dark:group-hover:bg-white/55 dark:group-focus-visible:bg-white/55 forced-colors:bg-[GrayText]"
                 : "bg-zinc-900/20 group-hover:bg-zinc-900/50 group-focus-visible:bg-zinc-900/50 dark:bg-white/20 dark:group-hover:bg-white/55 dark:group-focus-visible:bg-white/55 forced-colors:bg-[CanvasText]";
             return (
               <li key={r.id} className={r.gapBefore ? "mt-2" : undefined}>
                 <a
-                  href={`#entry-${r.id}`}
+                  href={hrefFor(r.id)}
                   data-i={i}
                   tabIndex={i === tabStop ? 0 : -1}
                   aria-label={r.label}
@@ -706,7 +717,8 @@ export const EntriesTimeline = memo(function EntriesTimeline({
         }`}
         style={{ top: tip?.top ?? 0 }}
       >
-        {tipText}
+        <span className="block">{tipLine1}</span>
+        {tipLine2 && <span className="block text-zinc-500 dark:text-zinc-400">{tipLine2}</span>}
       </div>
       <p className="sr-only" aria-live="polite">
         {liveMsg}

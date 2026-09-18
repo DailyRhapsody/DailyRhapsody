@@ -21,10 +21,12 @@ export async function GET(req: Request) {
   const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
 
   try {
-    const { items, total, hasMore } = await listMoments({
+    const { items, total, hasMore, outline } = await listMoments({
       limit,
       offset,
       includePrivate: false,
+      // 时间轴大纲只随首页下发
+      withOutline: offset === 0 && url.searchParams.get("outline") === "1",
     });
 
     return withAntiScrapeHeaders(
@@ -33,6 +35,7 @@ export async function GET(req: Request) {
         total,
         hasMore,
         nextOffset: offset + items.length,
+        ...(outline ? { outline } : {}),
       })
     );
   } catch (e) {

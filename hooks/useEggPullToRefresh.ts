@@ -77,7 +77,7 @@ export function useEggPullToRefresh(enabled: boolean): UseEggPullToRefresh {
     const onWheel = (e: WheelEvent) => {
       if (!enabledRef.current) return;
       // 在时间轴上滚轮滚的是时间轴本身，不累计彩蛋拉力
-      if ((e.target as Element | null)?.closest?.("[data-entries-timeline]")) return;
+      if ((e.target as Element | null)?.closest?.("[data-scroll-timeline]")) return;
       if (!isAtBottom()) return;
       if (e.deltaY === 0) return;
 

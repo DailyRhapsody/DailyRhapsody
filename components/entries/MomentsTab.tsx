@@ -66,7 +66,8 @@ export function MomentsTab({
           return (
             <article
               key={row.rowKey}
-              className="border-b border-zinc-100 px-3 py-4 dark:border-zinc-800/50 sm:px-4"
+              id={row.rowKey}
+              className="scroll-mt-24 border-b border-zinc-100 px-3 py-4 dark:border-zinc-800/50 sm:px-4"
             >
               <p className="mb-2 text-[13px] leading-none text-zinc-400 dark:text-zinc-500">
                 {formatMomentDate(m.createdAt)}
@@ -86,7 +87,8 @@ export function MomentsTab({
         return (
           <article
             key={row.rowKey}
-            className="border-b border-zinc-100 px-3 py-4 dark:border-zinc-800/50 sm:px-4"
+            id={row.rowKey}
+            className="scroll-mt-24 border-b border-zinc-100 px-3 py-4 dark:border-zinc-800/50 sm:px-4"
           >
             <p className="mb-2 text-[13px] leading-none text-zinc-400 dark:text-zinc-500">
               {formatMomentDate(m.createdAt)}
