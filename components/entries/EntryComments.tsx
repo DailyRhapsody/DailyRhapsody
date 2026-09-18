@@ -2,32 +2,16 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
-import { bumpCommentCount, syncCommentCount } from "@/hooks/useCommentCounts";
-import { COMMENT_AVATAR_COUNT, CommentAvatar, randomCommentAvatar } from "./CommentAvatar";
+import { syncCommentCount } from "@/hooks/useCommentCounts";
+import { useCommentIdentity } from "@/hooks/useCommentIdentity";
+import { loadCommentThread, updateCachedThread } from "@/lib/comment-threads";
+import { COMMENT_AVATAR_COUNT, CommentAvatar } from "./CommentAvatar";
 import { DefaultAvatar } from "./DefaultAvatar";
 import type { Comment } from "./types";
 
-const NAME_KEY = "dr:comment-name";
-const AVATAR_KEY = "dr:comment-avatar";
 const MAX_CONTENT = 2000;
 const MAX_NAME = 32;
 const TEXTAREA_MAX_PX = 160;
-
-function readLocal(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeLocal(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // 隐私模式等写不进去：只是下次不记得昵称 / 头像
-  }
-}
 
 /** 旧评论没有头像字段：按 id 固定挑一个 */
 function avatarOf(c: Comment): number {
@@ -76,14 +60,24 @@ export type EntryCommentsProps = {
   variant: "margin" | "inline";
   /** 线程最高不超过文章本身；超出时评论列表折叠 */
   maxHeight: number;
-  /** 递增时聚焦输入框（菜单里点「评论」、右侧「评论」按钮） */
-  focusToken: number;
+  /** 读者刚点了「评论」：聚焦输入框一次，随后调 onAutoFocused 清掉，重挂载时不再抢焦点 */
+  autoFocus: boolean;
+  onAutoFocused: () => void;
   /** 关掉线程：inline 的「收起」；没有评论时的「取消」/ 点到别处 */
   onClose: () => void;
   canEdit: boolean;
   authorName: string;
   authorAvatarSrc: string;
 };
+
+function mergeThread(fetched: Comment[], local: Comment[] | null, posted: Set<string>): Comment[] {
+  // 读取在途时刚发表的评论，返回结果里可能还没有：保留下来
+  const extra = (local ?? []).filter((c) => posted.has(c.id) && !fetched.some((f) => f.id === c.id));
+  if (extra.length === 0) return fetched;
+  return [...fetched, ...extra].sort(
+    (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)
+  );
+}
 
 /**
  * 文章评论线程（类 Notion 评论）：头像 + 昵称 + 相对时间，头像之间竖线相连；
@@ -94,7 +88,8 @@ export function EntryComments({
   count,
   variant,
   maxHeight,
-  focusToken,
+  autoFocus,
+  onAutoFocused,
   onClose,
   canEdit,
   authorName,
@@ -105,12 +100,15 @@ export function EntryComments({
   const [reloadKey, setReloadKey] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
+  /** 评论列表的最高高度：线程总高不超过 maxHeight，扣掉输入框等固定部分后留给列表的空间 */
+  const [listMax, setListMax] = useState(maxHeight);
   // 宽屏旁注按需拉取：线程接近视口才请求，不在首屏把每篇的评论都拉一遍
   const [near, setNear] = useState(variant === "inline");
   const rootRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
   const hasDraftRef = useRef(false);
   const scrollToEndRef = useRef(false);
+  const postedRef = useRef(new Set<string>());
 
   useEffect(() => {
     if (near) return;
@@ -120,7 +118,7 @@ export function EntryComments({
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) setNear(true);
       },
-      { rootMargin: "800px 0px" }
+      { rootMargin: "600px 0px" }
     );
     io.observe(el);
     return () => io.disconnect();
@@ -129,14 +127,11 @@ export function EntryComments({
   useEffect(() => {
     if (!near) return;
     let cancelled = false;
-    setLoadFailed(false);
-    fetchWithTimeout(`/api/diaries/${encodeURIComponent(diaryId)}/comments`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((data: unknown) => {
+    loadCommentThread(diaryId, { fresh: reloadKey > 0 })
+      .then((fetched) => {
         if (cancelled) return;
-        const list = Array.isArray(data) ? (data as Comment[]) : [];
-        setComments(list);
-        syncCommentCount(diaryId, list.length);
+        setLoadFailed(false);
+        setComments((prev) => mergeThread(fetched, prev, postedRef.current));
       })
       .catch(() => {
         if (!cancelled) setLoadFailed(true);
@@ -146,38 +141,84 @@ export function EntryComments({
     };
   }, [near, diaryId, reloadKey]);
 
-  // 评论列表是否超出线程高度：超出才显示「展开 / 收起」
+  // 线程变了（拉到、发表、删除）就同步计数与缓存：计数以线程为准，重挂载时读到的是最新线程
+  useEffect(() => {
+    if (comments === null) return;
+    syncCommentCount(diaryId, comments.length);
+    updateCachedThread(diaryId, comments);
+  }, [comments, diaryId]);
+
+  const list = comments ?? [];
+  // 还没有任何评论的线程（含加载中、加载失败）可以直接关掉；有评论的线程常驻
+  const dismissable = list.length === 0 && count === 0;
+
+  // 点到线程外面就收起空线程。用 click 而不是失焦：Safari 点按钮不给焦点，失焦判断会把
+  // 线程里的点击当成点到外面；在 pointerdown 时收起又会让下面的文章上移，这次点击落空。
+  // 捕获阶段注册：打开线程的那次点击冒泡到 document 时不会被当成「点到外面」
+  useEffect(() => {
+    if (!dismissable) return;
+    function onClick(e: MouseEvent) {
+      if (hasDraftRef.current) return;
+      if (rootRef.current?.contains(e.target as Node)) return;
+      onClose();
+    }
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [dismissable, onClose]);
+
+  // 线程总高不超过 maxHeight：量出列表以外部分（输入框、展开按钮、内边距）的高度，剩下的给列表
   useLayoutEffect(() => {
-    const list = listRef.current;
-    if (!list) {
+    const root = rootRef.current;
+    if (!root) return;
+    const measure = () => {
+      const chrome = root.offsetHeight - (listRef.current?.offsetHeight ?? 0);
+      const next = Math.max(Math.round(maxHeight - chrome), 48);
+      setListMax((prev) => (prev === next ? prev : next));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(root);
+    return () => ro.disconnect();
+  }, [maxHeight]);
+
+  // 评论列表是否超出可用高度：超出才显示「展开 / 收起」
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) {
       setOverflowing(false);
       return;
     }
-    const check = () => setOverflowing(list.scrollHeight > list.clientHeight + 1);
+    const check = () => setOverflowing(el.scrollHeight > el.clientHeight + 1);
     check();
     const ro = new ResizeObserver(check);
-    ro.observe(list);
-    for (const child of list.children) ro.observe(child);
+    ro.observe(el);
+    for (const child of el.children) ro.observe(child);
     return () => ro.disconnect();
-  }, [comments, maxHeight, expanded]);
+  }, [comments, listMax, expanded]);
 
   // 刚发表的评论落在折叠区外时，展开并滚到最后一条
   useEffect(() => {
     if (!scrollToEndRef.current) return;
-    const list = listRef.current;
-    if (!list) return;
-    if (list.scrollHeight > list.clientHeight + 1 && !expanded) {
+    const el = listRef.current;
+    if (!el) return;
+    if (el.scrollHeight > el.clientHeight + 1 && !expanded) {
       setExpanded(true);
       return;
     }
     scrollToEndRef.current = false;
-    list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [comments, expanded]);
+
+  function toggleExpanded() {
+    // 收起时回到第一条：overflow 改成 hidden 不会重置滚动位置，否则折叠后停在中间、前几条看不到
+    if (expanded && listRef.current) listRef.current.scrollTop = 0;
+    setExpanded((v) => !v);
+  }
 
   function handlePosted(c: Comment) {
     scrollToEndRef.current = true;
+    postedRef.current.add(c.id);
     setComments((prev) => [...(prev ?? []), c]);
-    bumpCommentCount(diaryId, 1);
   }
 
   async function handleDelete(c: Comment) {
@@ -189,27 +230,22 @@ export function EntryComments({
       );
       if (!res.ok && res.status !== 404) throw new Error(String(res.status));
       setComments((prev) => (prev ?? []).filter((x) => x.id !== c.id));
-      if (res.ok) bumpCommentCount(diaryId, -1);
     } catch {
       window.alert("删除失败，请稍后再试");
     }
   }
 
-  const list = comments ?? [];
-  const empty = comments !== null && list.length === 0;
-
   return (
     <section
       ref={rootRef}
       aria-label="评论"
-      style={{ maxHeight }}
       onBlur={(e) => {
-        // 还没有评论、也没写字：点到线程外面就收起这个空线程
-        if (!empty || hasDraftRef.current) return;
-        if (rootRef.current?.contains(e.relatedTarget as Node | null)) return;
-        onClose();
+        // 键盘 Tab 到线程外：同样收起空线程（鼠标点击由上面的 click 监听处理）
+        const next = e.relatedTarget as Node | null;
+        if (!dismissable || hasDraftRef.current || !next) return;
+        if (!rootRef.current?.contains(next)) onClose();
       }}
-      className={`flex min-h-0 flex-col text-left ${
+      className={`flex flex-col text-left ${
         variant === "margin"
           ? "rounded-xl bg-white/90 p-3 shadow-sm ring-1 ring-zinc-900/5 backdrop-blur-md dark:bg-zinc-900/85 dark:ring-white/10"
           : "rounded-xl bg-zinc-50/80 p-3 ring-1 ring-zinc-900/5 dark:bg-zinc-800/40 dark:ring-white/10"
@@ -251,7 +287,8 @@ export function EntryComments({
         <>
           <ol
             ref={listRef}
-            className={`min-h-0 flex-1 ${
+            style={{ maxHeight: listMax }}
+            className={
               expanded
                 ? "overflow-y-auto overscroll-contain [scrollbar-width:thin]"
                 : `overflow-hidden ${
@@ -259,7 +296,7 @@ export function EntryComments({
                       ? "[mask-image:linear-gradient(to_bottom,black_calc(100%-2.5rem),transparent)]"
                       : ""
                   }`
-            }`}
+            }
           >
             {list.map((c, i) => (
               <CommentItem
@@ -275,8 +312,8 @@ export function EntryComments({
           {overflowing && (
             <button
               type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="mt-1 w-fit shrink-0 text-[0.72rem] text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              onClick={toggleExpanded}
+              className="mt-1 w-fit text-[0.72rem] text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
             >
               {expanded ? "收起" : `展开全部 ${list.length} 条`}
             </button>
@@ -287,11 +324,12 @@ export function EntryComments({
       <CommentComposer
         diaryId={diaryId}
         divided={list.length > 0}
-        focusToken={focusToken}
+        autoFocus={autoFocus}
+        onAutoFocused={onAutoFocused}
         canEdit={canEdit}
         authorName={authorName}
         authorAvatarSrc={authorAvatarSrc}
-        showCancel={empty}
+        showCancel={dismissable}
         onCancel={onClose}
         onDraftChange={(has) => {
           hasDraftRef.current = has;
@@ -372,7 +410,8 @@ function CommentItem({
 function CommentComposer({
   diaryId,
   divided,
-  focusToken,
+  autoFocus,
+  onAutoFocused,
   canEdit,
   authorName,
   authorAvatarSrc,
@@ -383,7 +422,8 @@ function CommentComposer({
 }: {
   diaryId: string;
   divided: boolean;
-  focusToken: number;
+  autoFocus: boolean;
+  onAutoFocused: () => void;
   canEdit: boolean;
   authorName: string;
   authorAvatarSrc: string;
@@ -393,14 +433,7 @@ function CommentComposer({
   onPosted: (c: Comment) => void;
 }) {
   const [content, setContent] = useState("");
-  const [name, setName] = useState(() => readLocal(NAME_KEY) ?? "");
-  const [avatar, setAvatar] = useState(() => {
-    const saved = Number(readLocal(AVATAR_KEY));
-    if (Number.isInteger(saved) && saved >= 1 && saved <= COMMENT_AVATAR_COUNT) return saved;
-    const n = randomCommentAvatar();
-    writeLocal(AVATAR_KEY, String(n));
-    return n;
-  });
+  const { name, avatar, setName, shuffleAvatar } = useCommentIdentity();
   const [focused, setFocused] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -410,8 +443,10 @@ function CommentComposer({
   const active = focused || content !== "";
 
   useEffect(() => {
-    if (focusToken > 0) textareaRef.current?.focus();
-  }, [focusToken]);
+    if (!autoFocus) return;
+    textareaRef.current?.focus();
+    onAutoFocused();
+  }, [autoFocus, onAutoFocused]);
 
   useEffect(() => {
     onDraftChange(content.trim() !== "");
@@ -446,7 +481,6 @@ function CommentComposer({
         setError(data?.error || "发送失败，请稍后再试");
         return;
       }
-      writeLocal(NAME_KEY, name.trim());
       setContent("");
       onPosted(data);
     } catch {
@@ -476,11 +510,7 @@ function CommentComposer({
       ) : (
         <button
           type="button"
-          onClick={() => {
-            const n = randomCommentAvatar(avatar);
-            setAvatar(n);
-            writeLocal(AVATAR_KEY, String(n));
-          }}
+          onClick={shuffleAvatar}
           title="换一个头像"
           aria-label="换一个头像"
           className="shrink-0 rounded-full transition-apple hover:scale-110 hover:ring-2 hover:ring-zinc-300 dark:hover:ring-zinc-600"
@@ -497,12 +527,14 @@ function CommentComposer({
             if (error) setError(null);
           }}
           onKeyDown={(e) => {
+            // 输入法候选框打开时的回车 / Esc 属于输入法（确认、取消候选），不当作发送或关闭
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
             if (e.key === "Escape") {
               e.currentTarget.blur();
               if (!content && showCancel) onCancel();
               return;
             }
-            if (e.key !== "Enter" || e.nativeEvent.isComposing || e.keyCode === 229) return;
+            if (e.key !== "Enter") return;
             // 桌面端回车发送、Shift+回车换行（同 Notion）；触屏回车换行，用按钮发送
             const send =
               e.metaKey ||

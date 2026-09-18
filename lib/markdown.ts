@@ -151,6 +151,16 @@ function escapeAttr(text: string) {
  */
 const CAPTION_RE = /^[图表]\s*\d+(?:[.-]\d+)*(?:\s*[:：、.]\s*|\s+)[^\n，。；！？,;!?]{1,40}$/;
 
+/** 段落 token 的文本已被 highlightHashtagsForRender 转义并给 #标签 包了 span，判断图注前还原成可见文字 */
+function visibleText(text: string): string {
+  return text
+    .replace(/<span class="dr-md-editor-tag">([\s\S]*?)<\/span>/g, "$1")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&amp;", "&")
+    .trim();
+}
+
 marked.use({
   gfm: true,
   breaks: true,
@@ -161,7 +171,7 @@ marked.use({
   },
   renderer: {
     paragraph({ text, tokens }) {
-      if (!CAPTION_RE.test(text.trim())) return false;
+      if (!CAPTION_RE.test(visibleText(text))) return false;
       return `<p class="dr-caption">${this.parser.parseInline(tokens)}</p>\n`;
     },
     link({ href, title, tokens }) {

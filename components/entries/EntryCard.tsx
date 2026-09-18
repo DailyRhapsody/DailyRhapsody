@@ -20,7 +20,7 @@ const SHARE_TIMEOUT_MS = 20_000;
  * 更窄时评论在文章下方展开。
  */
 const MARGIN_COMMENTS_QUERY = "(min-width: 1440px)";
-/** 旁注线程的最低高度：短文章也要放得下一条评论和输入框 */
+/** 旁注线程可用高度的下限：短文章也要放得下一条评论和输入框 */
 const MARGIN_THREAD_MIN_PX = 176;
 /** 文章下方线程的最低高度 */
 const INLINE_THREAD_MIN_PX = 240;
@@ -40,6 +40,15 @@ function shareCardScale(width: number, height: number): number {
   return Math.min(3, Math.sqrt(16_000_000 / (width * height)), 32_000 / height);
 }
 
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("share-read"));
+    reader.readAsDataURL(blob);
+  });
+}
+
 export function EntryCard({
   item,
   authorName,
@@ -56,7 +65,8 @@ export function EntryCard({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [commentFocus, setCommentFocus] = useState(0);
+  /** 读者点了「评论」：线程挂上后聚焦输入框一次 */
+  const [commentFocus, setCommentFocus] = useState(false);
   const commentCount = useCommentCount(item.id);
   const marginComments = useSyncExternalStore(
     subscribeMarginComments,
@@ -68,6 +78,9 @@ export function EntryCard({
   // 线程最高不超过文章本身：量正文部分（不含下方展开的评论）的高度
   const postRef = useRef<HTMLDivElement>(null);
   const [postHeight, setPostHeight] = useState(0);
+  // 旁注线程是绝对定位的，比文章高时会压到下一篇的线程上：量出实际高度，把文章撑到至少这么高
+  const marginRef = useRef<HTMLDivElement>(null);
+  const [marginHeight, setMarginHeight] = useState(0);
   const [sharing, setSharing] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [sharePreviewSrc, setSharePreviewSrc] = useState<string | null>(null);
@@ -81,9 +94,8 @@ export function EntryCard({
   const shareUrlRef = useRef("");
   /** 每次生成 / 关闭都 +1：关闭弹窗即取消，迟到的生成结果按代号丢弃 */
   const shareGenRef = useRef(0);
+  /** 系统分享用的图片文件；预览与下载用 data URL（微信等内置浏览器长按保存取不到 blob: 地址） */
   const shareBlobRef = useRef<Blob | null>(null);
-  /** 预览图的 blob URL，换图、关闭、卸载时释放 */
-  const sharePreviewUrlRef = useRef<string | null>(null);
   const menuRootRef = useRef<HTMLDivElement | null>(null);
   // 正文里独占一行的图片并入首图，正文只留文字
   const { text: bodyText, images: bodyImages } = useMemo(
@@ -106,11 +118,28 @@ export function EntryCard({
     return () => ro.disconnect();
   }, [marginThread, inlineThread]);
 
+  useEffect(() => {
+    const el = marginRef.current;
+    if (!marginThread || !el) {
+      setMarginHeight(0);
+      return;
+    }
+    const measure = () => setMarginHeight(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [marginThread]);
+
   const openComments = useCallback(() => {
     setCommentsOpen(true);
-    setCommentFocus((n) => n + 1);
+    setCommentFocus(true);
   }, []);
-  const closeComments = useCallback(() => setCommentsOpen(false), []);
+  const closeComments = useCallback(() => {
+    setCommentsOpen(false);
+    setCommentFocus(false);
+  }, []);
+  const consumeCommentFocus = useCallback(() => setCommentFocus(false), []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -132,31 +161,24 @@ export function EntryCard({
     };
   }, [menuOpen]);
 
-  const setSharePreview = useCallback((blob: Blob | null) => {
-    if (sharePreviewUrlRef.current) URL.revokeObjectURL(sharePreviewUrlRef.current);
-    sharePreviewUrlRef.current = blob ? URL.createObjectURL(blob) : null;
-    shareBlobRef.current = blob;
-    setSharePreviewSrc(sharePreviewUrlRef.current);
-  }, []);
-
   const closeShareModal = useCallback(() => {
     shareGenRef.current += 1;
+    shareBlobRef.current = null;
     setSharing(false);
     setShareModalOpen(false);
-    setSharePreview(null);
+    setSharePreviewSrc(null);
     setShareModalError(null);
     setCopyLinkHint(null);
     if (copyLinkHintTimerRef.current) {
       clearTimeout(copyLinkHintTimerRef.current);
       copyLinkHintTimerRef.current = null;
     }
-  }, [setSharePreview]);
+  }, []);
 
-  // 卸载时作废在途生成、释放预览图
+  // 卸载时作废在途生成
   useEffect(
     () => () => {
       shareGenRef.current += 1;
-      if (sharePreviewUrlRef.current) URL.revokeObjectURL(sharePreviewUrlRef.current);
     },
     []
   );
@@ -205,7 +227,8 @@ export function EntryCard({
     const gen = ++shareGenRef.current;
     setMenuOpen(false);
     setShareModalOpen(true);
-    setSharePreview(null);
+    shareBlobRef.current = null;
+    setSharePreviewSrc(null);
     setShareModalError(null);
     setSharing(true);
 
@@ -253,7 +276,10 @@ export function EntryCard({
       ]);
       if (gen !== shareGenRef.current) return;
       if (!blob) throw new Error("share-empty");
-      setSharePreview(blob);
+      const dataUrl = await Promise.race([blobToDataUrl(blob), timeout]);
+      if (gen !== shareGenRef.current) return;
+      shareBlobRef.current = blob;
+      setSharePreviewSrc(dataUrl);
     } catch (err) {
       if (gen !== shareGenRef.current) return;
       const timedOut = (err as Error).message === "share-timeout";
@@ -314,7 +340,8 @@ export function EntryCard({
     <article
       id={`entry-${item.id}`}
       className="group relative flex flex-col gap-3 rounded-2xl px-3 py-4 transition-apple scroll-mt-24 hover:bg-zinc-100/70 hover:shadow-md dark:hover:bg-zinc-900/80 dark:hover:shadow-black/10"
-      style={marginThread ? { minHeight: MARGIN_THREAD_MIN_PX + 32 } : undefined}
+      // 线程距文章顶 16px（top-4），再留出与底边同样的 16px
+      style={marginThread && marginHeight > 0 ? { minHeight: marginHeight + 32 } : undefined}
     >
       <div ref={postRef} className="flex flex-col gap-3">
         <div className="flex items-start gap-3">
@@ -463,7 +490,8 @@ export function EntryCard({
           count={commentCount}
           variant="inline"
           maxHeight={Math.max(postHeight, INLINE_THREAD_MIN_PX)}
-          focusToken={commentFocus}
+          autoFocus={commentFocus}
+          onAutoFocused={consumeCommentFocus}
           onClose={closeComments}
           canEdit={canEdit}
           authorName={authorName}
@@ -472,14 +500,18 @@ export function EntryCard({
       )}
       {/* 宽屏：正文右侧的旁注列，与文章顶端对齐 */}
       {marginComments && (
-        <div className="absolute left-[calc(100%+1.25rem)] top-4 w-[min(20rem,calc((100vw-56rem)/2-2.5rem))]">
+        <div
+          ref={marginRef}
+          className="absolute left-[calc(100%+1.25rem)] top-4 w-[min(20rem,calc((100vw-56rem)/2-2.5rem))]"
+        >
           {marginThread ? (
             <EntryComments
               diaryId={item.id}
               count={commentCount}
               variant="margin"
               maxHeight={Math.max(postHeight, MARGIN_THREAD_MIN_PX)}
-              focusToken={commentFocus}
+              autoFocus={commentFocus}
+              onAutoFocused={consumeCommentFocus}
               onClose={closeComments}
               canEdit={canEdit}
               authorName={authorName}

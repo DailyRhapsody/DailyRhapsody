@@ -5,7 +5,7 @@ import {
   addComment,
   COMMENT_AVATAR_COUNT,
   CommentLimitError,
-  getComments,
+  CommentsUnavailableError,
 } from "@/lib/comments-store";
 import { getCachedDiaries } from "@/lib/notion";
 import { getProfile } from "@/lib/profile-store";
@@ -21,8 +21,8 @@ function json(body: unknown, status = 200) {
 }
 
 /**
- * 只有日记库里存在的篇目才能读写评论，私密篇只对站长开放；否则任意 id 都能在 Redis 里开新键。
- * 只读缓存、不触发 Notion 重拉。缓存缺失（冷启动）时读放行、写拒绝。
+ * 只有日记库里存在的篇目才能评论，私密篇只对站长开放；否则任意 id 都能在 Redis 里开新键。
+ * 只读缓存、不触发 Notion 重拉。缓存读不到时无法判断公开与否：访客拒绝，站长照常。
  */
 async function diaryAccess(diaryId: string, admin: boolean): Promise<"ok" | "missing" | "unknown"> {
   const diaries = await getCachedDiaries();
@@ -32,31 +32,30 @@ async function diaryAccess(diaryId: string, admin: boolean): Promise<"ok" | "mis
   return "ok";
 }
 
-/** 去掉控制字符与零宽 / 方向控制符（保留换行，制表符换成空格），连续空行压成一个 */
+/**
+ * 去掉控制字符和不可见的格式字符（零宽、方向控制、软连字符等，保留拼 emoji 用的 U+200D），
+ * 保留换行、制表符换成空格，连续空行压成一个
+ */
 function cleanText(s: string, max: number): string {
   return s
     .replace(/\r\n?/g, "\n")
     .replace(/\t/g, " ")
-    .replace(/[\u0000-\u0008\u000b-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, "")
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
+    .replace(/(?!\u200d)\p{Cf}/gu, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
     .slice(0, max);
 }
 
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const blocked = await guardApiRequest(req, {
-    scope: "comments:list",
-    limit: 40,
-    windowMs: 60_000,
-  });
-  if (blocked) return blocked;
-  const { id: diaryId } = await params;
-  if (!diaryId) return json({ error: "Invalid id" }, 400);
-  if ((await diaryAccess(diaryId, await isAdmin())) === "missing") {
-    return json({ error: "Not found" }, 404);
-  }
-  return json(await getComments(diaryId));
+/** 比较昵称用：兼容字形归一，去掉一切不可见字符和空白，忽略大小写 */
+function nameKey(s: string): string {
+  return s
+    .normalize("NFKC")
+    .replace(/[\p{Cf}\p{Default_Ignorable_Code_Point}\s]/gu, "")
+    .toLowerCase();
 }
+
+// 读评论走批量接口 GET /api/diaries/comments?ids=…（app/api/diaries/comments/route.ts）
 
 export async function POST(
   req: Request,
@@ -83,6 +82,9 @@ export async function POST(
   } catch {
     return json({ error: "Invalid body" }, 400);
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return json({ error: "Invalid body" }, 400);
+  }
   // 蜜罐字段：表单里对真人不可见，脚本按字段名填了就拒收
   if (typeof body.website === "string" && body.website.trim() !== "") {
     return json({ error: "Invalid body" }, 400);
@@ -93,7 +95,7 @@ export async function POST(
   const admin = await isAdmin();
   const access = await diaryAccess(diaryId, admin);
   if (access === "missing") return json({ error: "文章不存在" }, 404);
-  if (access === "unknown") return json({ error: "服务暂时不可用，请稍后再试" }, 503);
+  if (access === "unknown" && !admin) return json({ error: "服务暂时不可用，请稍后再试" }, 503);
 
   // 单 IP 每天上限：分钟级限流挡不住慢速刷屏
   if (!admin && !(await limitByIp("comments:create:day", getClientIpFromRequest(req), 40, "1 d"))) {
@@ -107,8 +109,8 @@ export async function POST(
     author = profile.name;
   } else {
     author = cleanText(typeof body.author === "string" ? body.author : "", MAX_AUTHOR).replace(/\s+/g, " ");
-    // 访客不能冒用站长的名字
-    if (author.toLowerCase() === profile.name.trim().toLowerCase()) author = "";
+    // 访客不能冒用站长的名字（夹杂不可见字符、全角半角变体也算）
+    if (nameKey(author) === nameKey(profile.name)) author = "";
     author ||= "匿名";
     const a = Number(body.avatar);
     avatar =
@@ -127,6 +129,7 @@ export async function POST(
     return json(comment);
   } catch (e) {
     if (e instanceof CommentLimitError) return json({ error: "这篇的评论已满" }, 409);
+    if (e instanceof CommentsUnavailableError) return json({ error: "评论暂不可用" }, 503);
     throw e;
   }
 }

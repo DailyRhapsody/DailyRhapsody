@@ -5,7 +5,7 @@ import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
 /**
  * 各篇评论数：整页共用一份，第一张卡片订阅时拉一次 /api/diaries/comment-counts。
- * 每张卡片只订阅自己那篇的数字，发表 / 删除后本地增减，不必整份重拉。
+ * 每张卡片只订阅自己那篇的数字；线程拉到、发表、删除后由线程同步回来，不必整份重拉。
  */
 let counts: Readonly<Record<string, number>> = {};
 let state: "idle" | "loading" | "done" = "idle";
@@ -22,7 +22,7 @@ function load() {
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
     .then((data: { counts?: Record<string, number> }) => {
       const server = data?.counts ?? {};
-      // 请求在途时本地刚发表的评论，服务端返回里可能还没算上：取两者较大值
+      // 请求在途时线程已同步过的数字（刚发表的评论），服务端返回里可能还没算上：取两者较大值
       const merged: Record<string, number> = { ...server };
       for (const [id, n] of Object.entries(counts)) merged[id] = Math.max(n, server[id] ?? 0);
       counts = merged;
@@ -51,11 +51,6 @@ export function useCommentCount(diaryId: string): number {
     () => counts[diaryId] ?? 0,
     () => 0
   );
-}
-
-export function bumpCommentCount(diaryId: string, delta: number) {
-  counts = { ...counts, [diaryId]: Math.max(0, (counts[diaryId] ?? 0) + delta) };
-  emit();
 }
 
 /** 线程拉到的真实条数与计数不一致时（计数漂移、别人刚发了评论）以线程为准 */

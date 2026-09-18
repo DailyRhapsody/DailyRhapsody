@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import { Redis } from "@upstash/redis";
 
 export type Comment = {
@@ -21,12 +19,15 @@ export const COMMENT_AVATAR_COUNT = 36;
 export const MAX_COMMENTS_PER_DIARY = 500;
 
 export class CommentLimitError extends Error {}
+export class CommentsUnavailableError extends Error {}
 
 /**
- * 与 profile-store 同理：Vercel serverless 的部署目录只读、实例间不共享也不持久，写本地文件的
- * 评论在生产从来存不住（发表必 500，读永远为空）。有 KV 凭证时一律走 Upstash Redis：
- * 每篇一个 hash（field 为评论 id），另有一个计数 hash 供列表页一次取回各篇评论数。
- * 无凭证的环境（离线本地）退回文件存储。
+ * 评论存 Upstash：每篇一个 hash（field 为评论 id）。旧实现写 data/comments.json，
+ * Vercel serverless 部署目录只读、实例间不共享，生产上发表必失败、读永远为空。
+ *
+ * 各篇评论数不单独记计数器（删最后一条与新发表并发时计数会丢），而是记一个只增不减的
+ * 「有过评论的篇目」集合，取数时逐篇 HLEN，数字永远与线程一致。
+ * 没有 KV 凭证时评论不可用：读返回空、写报不可用。
  */
 const redisUrl = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
 const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
@@ -37,7 +38,11 @@ const redis =
     : null;
 
 const threadKey = (diaryId: string) => `dr:comments:${diaryId}`;
-const COUNTS_KEY = "dr:comment-counts";
+const INDEX_KEY = "dr:comments:index";
+
+export function isCommentsStoreConfigured(): boolean {
+  return redis !== null;
+}
 
 function parseComment(raw: unknown): Comment | null {
   if (typeof raw !== "string") return null;
@@ -60,16 +65,10 @@ function parseComment(raw: unknown): Comment | null {
   }
 }
 
-/** 关闭自动反序列化后 HGETALL 返回扁平数组 [field, value, …]，这里统一成对象 */
-function hashEntries(raw: unknown): [string, string][] {
-  if (Array.isArray(raw)) {
-    const out: [string, string][] = [];
-    for (let i = 0; i + 1 < raw.length; i += 2) out.push([String(raw[i]), String(raw[i + 1])]);
-    return out;
-  }
-  if (raw && typeof raw === "object") {
-    return Object.entries(raw as Record<string, unknown>).map(([k, v]) => [k, String(v)]);
-  }
+/** 关闭自动反序列化后 HGETALL 返回扁平数组 [field, value, …] */
+function hashValues(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw.filter((_, i) => i % 2 === 1);
+  if (raw && typeof raw === "object") return Object.values(raw as Record<string, unknown>);
   return [];
 }
 
@@ -77,91 +76,66 @@ function byTime(a: Comment, b: Comment): number {
   return a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
 }
 
-/* ── 离线本地：文件存储 ── */
-
-const DATA_DIR = join(process.cwd(), "data");
-const DATA_FILE = join(DATA_DIR, "comments.json");
-
-async function readFromFile(): Promise<Comment[]> {
-  try {
-    const data = JSON.parse(await readFile(DATA_FILE, "utf8"));
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeToFile(comments: Comment[]): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(DATA_FILE, JSON.stringify(comments, null, 2), "utf8");
-}
-
-/* ── 对外接口 ── */
-
-export async function getComments(diaryId: string): Promise<Comment[]> {
-  if (!redis) {
-    return (await readFromFile()).filter((c) => c.diaryId === diaryId).sort(byTime);
-  }
-  return hashEntries(await redis.hgetall(threadKey(diaryId)))
-    .map(([, v]) => parseComment(v))
+function toThread(raw: unknown): Comment[] {
+  return hashValues(raw)
+    .map(parseComment)
     .filter((c): c is Comment => c !== null)
     .sort(byTime);
+}
+
+/** 一次取回多篇的评论（一个 pipeline 请求）；列表页按批加载，避免每篇各发一次请求撞上限流 */
+export async function getCommentsMany(diaryIds: string[]): Promise<Record<string, Comment[]>> {
+  const out: Record<string, Comment[]> = {};
+  if (!redis || diaryIds.length === 0) {
+    for (const id of diaryIds) out[id] = [];
+    return out;
+  }
+  const pipe = redis.pipeline();
+  for (const id of diaryIds) pipe.hgetall(threadKey(id));
+  const raws = await pipe.exec();
+  diaryIds.forEach((id, i) => {
+    out[id] = toThread(raws[i]);
+  });
+  return out;
 }
 
 export async function addComment(
   input: Omit<Comment, "id" | "createdAt">
 ): Promise<Comment> {
+  if (!redis) throw new CommentsUnavailableError();
+  const key = threadKey(input.diaryId);
+  if ((await redis.hlen(key)) >= MAX_COMMENTS_PER_DIARY) throw new CommentLimitError();
   const comment: Comment = {
     ...input,
     id: `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`,
     createdAt: new Date().toISOString(),
   };
-  if (!redis) {
-    const all = await readFromFile();
-    if (all.filter((c) => c.diaryId === input.diaryId).length >= MAX_COMMENTS_PER_DIARY) {
-      throw new CommentLimitError();
-    }
-    all.push(comment);
-    await writeToFile(all);
-    return comment;
-  }
-  const key = threadKey(input.diaryId);
-  if ((await redis.hlen(key)) >= MAX_COMMENTS_PER_DIARY) throw new CommentLimitError();
   await redis
     .multi()
     .hset(key, { [comment.id]: JSON.stringify(comment) })
-    .hincrby(COUNTS_KEY, input.diaryId, 1)
+    .sadd(INDEX_KEY, input.diaryId)
     .exec();
   return comment;
 }
 
 /** 删除成功返回 true；评论不存在返回 false */
 export async function deleteComment(diaryId: string, commentId: string): Promise<boolean> {
-  if (!redis) {
-    const all = await readFromFile();
-    const rest = all.filter((c) => !(c.diaryId === diaryId && c.id === commentId));
-    if (rest.length === all.length) return false;
-    await writeToFile(rest);
-    return true;
-  }
-  const removed = await redis.hdel(threadKey(diaryId), commentId);
-  if (removed === 0) return false;
-  const left = await redis.hincrby(COUNTS_KEY, diaryId, -1);
-  if (left <= 0) await redis.hdel(COUNTS_KEY, diaryId);
-  return true;
+  if (!redis) return false;
+  return (await redis.hdel(threadKey(diaryId), commentId)) > 0;
 }
 
 /** 各篇评论数（只含有评论的篇目） */
 export async function getCommentCounts(): Promise<Record<string, number>> {
-  if (!redis) {
-    const counts: Record<string, number> = {};
-    for (const c of await readFromFile()) counts[c.diaryId] = (counts[c.diaryId] ?? 0) + 1;
-    return counts;
-  }
+  if (!redis) return {};
+  const ids = (await redis.smembers(INDEX_KEY)).map(String);
+  if (ids.length === 0) return {};
+  const pipe = redis.pipeline();
+  for (const id of ids) pipe.hlen(threadKey(id));
+  const lens = await pipe.exec();
   const counts: Record<string, number> = {};
-  for (const [id, v] of hashEntries(await redis.hgetall(COUNTS_KEY))) {
-    const n = Number(v);
+  ids.forEach((id, i) => {
+    const n = Number(lens[i]);
     if (Number.isFinite(n) && n > 0) counts[id] = n;
-  }
+  });
   return counts;
 }
