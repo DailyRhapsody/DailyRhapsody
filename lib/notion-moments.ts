@@ -20,6 +20,7 @@ import type {
   PageObjectResponse,
 } from "@notionhq/client/build/src/api-endpoints";
 import { mediaProxyPath } from "@/lib/notion-media";
+import { assertNotionFetchAllowed, isNotionFetchAllowed, runWithRefreshLock } from "@/lib/notion-quota";
 import type { MomentOutlineItem } from "@/components/entries/types";
 
 // Match the frontend PublicMoment / PublicMedia types
@@ -55,6 +56,7 @@ export type MomentsItem = {
 let _client: Client | null = null;
 
 function getClient(): Client {
+  assertNotionFetchAllowed();
   if (!_client) {
     const token = process.env.NOTION_TOKEN?.trim();
     if (!token) throw new Error("NOTION_TOKEN is required");
@@ -92,6 +94,8 @@ async function getRedis() {
 const CACHE_KEY = "notion:moments:v2";
 const LEGACY_CACHE_KEY = "notion:moments";
 const INVALIDATED_KEY = "notion:moments:v2:invalidatedAt";
+// 跨实例刷新锁（lib/notion-quota.ts）
+const REFRESH_LOCK_KEY = "notion:moments:v2:refreshLock";
 const CACHE_STALE_MS = (Number(process.env.NOTION_CACHE_STALE_S) || 300) * 1000;
 // 48h + 下限钳制：与 lib/notion.ts 同因（NOTION_CACHE_TTL 曾被误配为 300 压塌 SWR）。
 const CACHE_HARD_TTL_S = 48 * 60 * 60;
@@ -354,22 +358,39 @@ async function refreshMomentsFromNotion(): Promise<(PublicMoment & { isPublic: b
   return items;
 }
 
-// 正在进行的重拉任务（后台 SWR 与同步冷路径共用），避免多请求并发触发多次重拉
-let _pendingRefresh: Promise<(PublicMoment & { isPublic: boolean })[]> | null = null;
+// 正在进行的重拉任务（后台 SWR 与同步冷路径共用），避免多请求并发触发多次重拉；跨实例去重靠 Redis 锁
+let _pendingRefresh: Promise<(PublicMoment & { isPublic: boolean })[] | null> | null = null;
 
-function ensureRefreshTask(): Promise<(PublicMoment & { isPublic: boolean })[]> {
+/** 返回 null：后台刷新没拿到跨实例锁（见 lib/notion.ts 同名函数）。 */
+function ensureRefreshTask(force: boolean): Promise<(PublicMoment & { isPublic: boolean })[] | null> {
   if (!_pendingRefresh) {
-    _pendingRefresh = refreshMomentsFromNotion().finally(() => {
-      _pendingRefresh = null;
-    });
+    _pendingRefresh = getRedis()
+      .then((redis) => {
+        // 配置缺失在拿锁前抛出，不给共享的锁写冷却期（见 lib/notion.ts 同位置）
+        getClient();
+        getDatabaseId();
+        return runWithRefreshLock(redis, REFRESH_LOCK_KEY, force, refreshMomentsFromNotion);
+      })
+      .finally(() => {
+        _pendingRefresh = null;
+      });
   }
   return _pendingRefresh;
 }
 
+/** 同步路径（冷启动、Cron）一定要拿到数据（见 lib/notion.ts 同名函数）。 */
+async function refreshNow(): Promise<(PublicMoment & { isPublic: boolean })[]> {
+  for (;;) {
+    const items = await ensureRefreshTask(true);
+    if (items !== null) return items;
+  }
+}
+
 function triggerBackgroundRefresh(): void {
   if (_pendingRefresh) return;
+  if (!isNotionFetchAllowed()) return;
   // 错误只在后台路径吞掉；同步冷路径复用同一任务时失败仍向上抛（见 notion.ts 同位置注释）
-  const task = ensureRefreshTask().catch((e) => {
+  const task = ensureRefreshTask(false).catch((e) => {
     console.warn("[notion-moments] background refresh failed:", e);
     return [] as (PublicMoment & { isPublic: boolean })[];
   });
@@ -396,12 +417,12 @@ export async function getMoments(): Promise<(PublicMoment & { isPublic: boolean 
     }
     return cached.data;
   }
-  return ensureRefreshTask();
+  return refreshNow();
 }
 
 /** Cron 预热入口：强制重拉并写缓存，返回条数。与用户请求共享 in-flight 去重。 */
 export async function warmMomentsCache(): Promise<number> {
-  const items = await ensureRefreshTask();
+  const items = await refreshNow();
   return items.length;
 }
 

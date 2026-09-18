@@ -35,13 +35,9 @@ export async function GET(req: NextRequest) {
   const result: Record<string, number | string> = {};
 
   // 顺序执行而不是并发：三个源共享同一 Notion token 的速率配额（约 3 req/s），
-  // 并发只会互相拖慢；预热对时延不敏感。
-  try {
-    result.diaries = await warmDiariesCache();
-  } catch (e) {
-    console.warn("[cron/warm-cache] diaries failed:", e);
-    result.diaries = "failed";
-  }
+  // 并发只会互相拖慢；预热对时延不敏感。diaries 放最后：它连同持锁补跑最长可到约 290s
+  // （lib/notion.ts CATCH_UP_DEADLINE_MS），moments / reference 几秒就完，先跑完并释放各自的锁，
+  // 不会因为本次调用超时被截断在持锁状态。
   try {
     result.moments = await warmMomentsCache();
   } catch (e) {
@@ -53,6 +49,12 @@ export async function GET(req: NextRequest) {
   } catch (e) {
     console.warn("[cron/warm-cache] reference failed:", e);
     result.reference = "failed";
+  }
+  try {
+    result.diaries = await warmDiariesCache();
+  } catch (e) {
+    console.warn("[cron/warm-cache] diaries failed:", e);
+    result.diaries = "failed";
   }
 
   const failed = Object.values(result).includes("failed");

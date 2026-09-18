@@ -3,6 +3,10 @@ import { isAdmin } from "@/lib/auth";
 import { getDiaryById, isNotionConfigured } from "@/lib/notion";
 import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
 
+// SWR 后台重拉（waitUntil）跑在本次函数调用里，受 maxDuration 约束；与 /api/diaries 对齐，
+// 让全量刷新（预算见 lib/notion.ts REFRESH_BUDGET_MS）能在截断前写进缓存。
+export const maxDuration = 300;
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
