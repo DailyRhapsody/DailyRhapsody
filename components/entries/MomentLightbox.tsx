@@ -53,17 +53,29 @@ export function MomentLightbox({
       aria-modal="true"
       aria-label="图片预览"
     >
+      {/* 点图片以外的任何地方都关闭：内容层不接收点击（pointer-events-none），点击落到这层背景上 */}
       <button
         type="button"
+        tabIndex={-1}
+        aria-hidden
         className="absolute inset-0 cursor-default border-0 bg-transparent"
-        aria-label="关闭"
         onClick={onClose}
       />
-      <div className="relative z-10 flex max-h-[min(92vh,900px)] max-w-[min(96vw,1200px)] flex-1 items-center justify-center">
+      <button
+        type="button"
+        className="absolute right-3 top-3 z-20 rounded-full bg-white/10 p-2 text-white backdrop-blur-sm transition-colors hover:bg-white/20 sm:right-5 sm:top-5"
+        onClick={onClose}
+        aria-label="关闭"
+      >
+        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
+      <div className="pointer-events-none relative z-10 flex max-h-[min(92vh,900px)] max-w-[min(96vw,1200px)] flex-1 items-center justify-center">
         {urls.length > 1 && (
           <button
             type="button"
-            className="absolute left-0 top-1/2 z-20 -translate-y-1/2 rounded-full bg-white/10 p-3 text-white backdrop-blur-sm disabled:opacity-30 sm:left-2"
+            className="pointer-events-auto absolute left-0 top-1/2 z-20 -translate-y-1/2 rounded-full bg-white/10 p-3 text-white backdrop-blur-sm disabled:opacity-30 sm:left-2"
             disabled={i <= 0}
             onClick={(e) => {
               e.stopPropagation();
@@ -76,7 +88,7 @@ export function MomentLightbox({
             </svg>
           </button>
         )}
-        <div className="relative mx-10 flex max-h-full w-full justify-center" onClick={(e) => e.stopPropagation()}>
+        <div className="relative mx-10 flex max-h-full w-full justify-center">
           {failed.has(src) ? (
             <p className="py-24 text-center text-sm text-white/70">图片无法加载</p>
           ) : (
@@ -84,7 +96,7 @@ export function MomentLightbox({
             <img
               src={src}
               alt=""
-              className="max-h-[min(92vh,900px)] w-auto max-w-full object-contain"
+              className="pointer-events-auto max-h-[min(92vh,900px)] w-auto max-w-full object-contain"
               onError={() => setFailed((prev) => new Set(prev).add(src))}
             />
           )}
@@ -92,7 +104,7 @@ export function MomentLightbox({
         {urls.length > 1 && (
           <button
             type="button"
-            className="absolute right-0 top-1/2 z-20 -translate-y-1/2 rounded-full bg-white/10 p-3 text-white backdrop-blur-sm disabled:opacity-30 sm:right-2"
+            className="pointer-events-auto absolute right-0 top-1/2 z-20 -translate-y-1/2 rounded-full bg-white/10 p-3 text-white backdrop-blur-sm disabled:opacity-30 sm:right-2"
             disabled={i >= urls.length - 1}
             onClick={(e) => {
               e.stopPropagation();

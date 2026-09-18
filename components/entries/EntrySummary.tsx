@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { markdownPreviewProseClass, renderMarkdown } from "@/lib/markdown";
 import { renderMermaidIn } from "@/lib/mermaid-render";
 import { MAX_SUMMARY_LINES } from "./utils";
@@ -24,7 +24,14 @@ export function EntrySummary({ text }: { text: string }) {
     () => false
   );
 
-  // rendered 变化时 React 会重置 innerHTML，需要重新把 mermaid 代码块换成图
+  // 正文 HTML 只在内容变化时写入，不用 dangerouslySetInnerHTML：mermaid 会把代码块就地换成 SVG，
+  // 而 React 在展开/收起、打开灯箱等重渲染时会按 dangerouslySetInnerHTML 重写整块 HTML，把图换回源码
+  useLayoutEffect(() => {
+    const root = contentRef.current;
+    if (root) root.innerHTML = rendered;
+  }, [rendered]);
+
+  // 内容写入后（或切换深浅色时）把 mermaid 代码块渲染成图
   useEffect(() => {
     const root = contentRef.current;
     if (!root) return;
@@ -45,11 +52,7 @@ export function EntrySummary({ text }: { text: string }) {
           expanded ? "" : "max-h-36 overflow-hidden"
         }`}
       >
-        <div
-          ref={contentRef}
-          className="space-y-[1.15em]"
-          dangerouslySetInnerHTML={{ __html: rendered }}
-        />
+        <div ref={contentRef} className="space-y-[1.15em]" />
       </div>
       {needsExpand && (
         <button
