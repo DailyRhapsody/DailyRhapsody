@@ -27,7 +27,7 @@ Reference 库的字段约定：`Name`(title)、`URL`(url)、`Source`(select)、`
 1. 访问页面时中间件签发 `dr_seed` cookie（4 段格式 `exp.nonce.ipBucket.sig`，HMAC 绑定 IP bucket，5 分钟有效）
 2. 客户端 `GateClient` 读取 nonce，算 PoW（`sha256(nonce + ":" + counter)` 前 N 位为 0）
 3. `POST /api/gate/issue` 校验 PoW + `Sec-Fetch-*` 指纹 + 同源，通过后签发 `dr_gate`
-4. 受保护接口（`/api/diaries`、`/api/moments`、`/api/reference`、`/api/profile`）只认 `dr_gate` 或管理员 session
+4. 受保护接口（`/api/diaries`、`/api/moments`、`/api/reference`、`/api/profile`、`/api/chat`）只认 `dr_gate` 或管理员 session
 
 搜索引擎、RSS 阅读器、社交分享卡片 bot 在 UA 白名单里，不会被拦。
 
@@ -76,6 +76,7 @@ Notion 数据库自动化的配置：触发条件选页面新增 / 属性修改�
 - 环境变量清单见 [`.env.example`](./.env.example)
 - 自定义域名 / Cloudflare 边缘防护：[docs/custom-domain-cloudflare.md](./docs/custom-domain-cloudflare.md)
 - 后台 Markdown 的 AI 辅助（可选，需 `OPENAI_API_KEY`）：[docs/ai-assistant.md](./docs/ai-assistant.md)
+- 右下角 AI 数字人（默认关闭，`NEXT_PUBLIC_PET_MODE` 控制）：[docs/pet-digital-twin.md](./docs/pet-digital-twin.md)
 
 ## 关于存储
 

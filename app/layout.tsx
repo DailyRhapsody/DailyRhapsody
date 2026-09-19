@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AnalyticsCollector } from "@/components/AnalyticsCollector";
 import { GateClient } from "@/components/GateClient";
+import { PetLauncher } from "@/components/pet/PetLauncher";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -48,6 +49,7 @@ export default function RootLayout({
         {children}
         <GateClient />
         <AnalyticsCollector />
+        <PetLauncher />
         {/* Anti-Scrape Honeypot。rel=nofollow 让守规矩的搜索引擎不追这个链接
             （追了也只会被 route 的 UA 白名单拒绝而非封禁，双保险） */}
         <a

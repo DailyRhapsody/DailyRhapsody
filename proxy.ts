@@ -16,6 +16,7 @@ import { isIpBlocked, recordViolation } from "@/lib/honeypot";
 import { limitByIp } from "@/lib/upstash-rate-limit";
 import { getClientIpFromRequest } from "@/lib/client-ip";
 import { verifyAdminCookieValue } from "@/lib/auth";
+import { isGateIssuingPath } from "@/lib/gate-pages";
 
 const ADMIN_COOKIE = "admin_session";
 
@@ -42,6 +43,8 @@ function passPublicDataApi(req: NextRequest): boolean {
 
 function isProtectedPublicApi(pathname: string, method: string): boolean {
   if (method === "GET" && pathname === "/api/profile") return true;
+  // 数字人对话：花钱的接口，必须先过 PoW 握手
+  if ((method === "GET" || method === "POST") && pathname === "/api/chat") return true;
   if (method === "GET" && pathname.startsWith("/api/moments")) return true;
   if (method === "GET" && pathname.startsWith("/api/reference")) return true;
   if (!pathname.startsWith("/api/diaries")) return false;
@@ -54,13 +57,7 @@ function isProtectedPublicApi(pathname: string, method: string): boolean {
 
 function isGateIssuingPage(pathname: string, method: string): boolean {
   if (method !== "GET") return false;
-  if (pathname.startsWith("/reference")) return true;
-  return (
-    pathname === "/" ||
-    pathname === "/entries" ||
-    pathname === "/the-moment" ||
-    pathname === "/about"
-  );
+  return isGateIssuingPath(pathname);
 }
 
 /**
@@ -239,6 +236,7 @@ export const config = {
     "/api/reference",
     "/api/reference/:path*",
     "/api/profile",
+    "/api/chat",
     "/api/analytics/collect",
     "/api/gate/:path*",
     "/api/honeypot",

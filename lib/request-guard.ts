@@ -200,6 +200,7 @@ export async function guardApiRequest(
     blockSuspicious = true,
     checkOrigin = true,
     checkSecFetch = true,
+    recordRateLimitViolation = true,
   }: {
     scope: string;
     limit: number;
@@ -208,6 +209,8 @@ export async function guardApiRequest(
     checkOrigin?: boolean;
     /** 是否要求 Sec-Fetch-Site=same-origin。默认开启；analytics/sendBeacon 等需要时可关闭。 */
     checkSecFetch?: boolean;
+    /** 超频是否记违规。数字人对话这类读者会反复点「发送」的接口关掉，免得正常读者被累计封 IP。 */
+    recordRateLimitViolation?: boolean;
   }
 ): Promise<NextResponse | null> {
   const ip = getClientIpFromRequest(req);
@@ -237,7 +240,7 @@ export async function guardApiRequest(
   // 拼出来的 string 必须显式断言一下才能塞回去
   const allowed = await limitByIp(scope, ip, limit, `${windowMs} ms` as `${number} ms`);
   if (!allowed) {
-    await recordViolation(ip, `rate limit scope=${scope}`);
+    if (recordRateLimitViolation) await recordViolation(ip, `rate limit scope=${scope}`);
     return tooManyRequests(Date.now() + 60_000);
   }
 
@@ -254,7 +257,7 @@ export async function guardApiRequest(
   buckets.set(key, bucket);
 
   if (bucket.count > limit) {
-    await recordViolation(ip, `local bucket scope=${scope}`);
+    if (recordRateLimitViolation) await recordViolation(ip, `local bucket scope=${scope}`);
     return tooManyRequests(bucket.resetAt);
   }
 
