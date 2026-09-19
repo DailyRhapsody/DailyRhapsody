@@ -696,7 +696,7 @@ export const ScrollTimeline = memo(function ScrollTimeline({
                   // 年份写在该年第一条横线上方（跨年间隙里），字号与博客正文一致；读屏的每条标签里已带日期
                   <span
                     aria-hidden
-                    className={`block pb-1 pl-4 text-[0.82rem] leading-4 tabular-nums transition-colors duration-200 motion-reduce:transition-none ${
+                    className={`block pb-1 pl-4 text-[0.8125rem] leading-4 tabular-nums transition-colors duration-200 motion-reduce:transition-none ${
                       r.year === activeYear ? "text-zinc-600 dark:text-zinc-300" : "text-zinc-400 dark:text-zinc-500"
                     }`}
                   >

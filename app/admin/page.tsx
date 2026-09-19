@@ -65,7 +65,7 @@ function AdminSummary({ text }: { text: string }) {
   return (
     <div>
       <div
-        className={`${markdownPreviewProseClass} text-[0.82rem] leading-relaxed text-zinc-600 dark:text-zinc-400 ${
+        className={`${markdownPreviewProseClass} text-[0.8125rem] leading-relaxed text-zinc-600 dark:text-zinc-400 ${
           expanded ? "" : "line-clamp-6"
         }`}
       >
