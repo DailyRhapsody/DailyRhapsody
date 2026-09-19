@@ -177,6 +177,8 @@ export function EntryCard({
 
   useEffect(() => {
     setActionsHeight(marginHoverEntry ? (actionsRef.current?.offsetHeight ?? 0) : 0);
+    // 切到右侧按钮列时 ⋯ 菜单随之卸载，打开状态要清掉，否则回到窄屏时菜单自己弹开
+    if (marginHoverEntry) setMenuOpen(false);
   }, [marginHoverEntry, canEdit]);
 
   const openComments = useCallback(() => {
@@ -572,7 +574,8 @@ export function EntryCard({
                 {sharing ? "生成中…" : "分享"}
               </button>
               {canEdit && (
-                <Link href={`/admin/diaries/${item.id}/edit`} className={marginActionClass}>
+                // 按钮列常驻在每篇旁边，不预取：否则每篇进入视口都去预取一次后台编辑页
+                <Link href={`/admin/diaries/${item.id}/edit`} prefetch={false} className={marginActionClass}>
                   <EditIcon />
                   编辑
                 </Link>
