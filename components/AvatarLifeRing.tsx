@@ -206,8 +206,12 @@ export default function AvatarLifeRing({
           } as React.CSSProperties
         }
       >
-        <span />
-        <span />
+        <span className="dr-pet-avatar-ring-glow">
+          <span />
+        </span>
+        <span className="dr-pet-avatar-ring-line">
+          <span />
+        </span>
       </span>
       <div
         className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full ${imageClass}`}
