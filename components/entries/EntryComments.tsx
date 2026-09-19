@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { syncCommentCount } from "@/hooks/useCommentCounts";
 import { useCommentIdentity } from "@/hooks/useCommentIdentity";
@@ -22,6 +22,33 @@ function avatarOf(c: Comment): number {
   let h = 0;
   for (const ch of c.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return 1 + (h % COMMENT_AVATAR_COUNT);
+}
+
+/**
+ * 整页共用的分钟节拍：「刚刚」「N 分钟前」「昨天」这类相对时间要随时间刷新。
+ * 页面不再随滚动整页重渲染，这里让评论的时间每分钟重算一次（只重渲染评论条目本身）
+ */
+let minuteTick = 0;
+const tickListeners = new Set<() => void>();
+let tickTimer: ReturnType<typeof setInterval> | null = null;
+
+function subscribeMinuteTick(onTick: () => void) {
+  tickListeners.add(onTick);
+  tickTimer ??= setInterval(() => {
+    minuteTick += 1;
+    for (const l of tickListeners) l();
+  }, 60_000);
+  return () => {
+    tickListeners.delete(onTick);
+    if (tickListeners.size === 0 && tickTimer) {
+      clearInterval(tickTimer);
+      tickTimer = null;
+    }
+  };
+}
+
+function useMinuteTick(): number {
+  return useSyncExternalStore(subscribeMinuteTick, () => minuteTick, () => 0);
 }
 
 function formatCommentTime(iso: string): string {
@@ -395,6 +422,7 @@ function CommentItem({
   onDelete: (c: Comment) => void;
 }) {
   const full = new Date(c.createdAt).toLocaleString("zh-CN", { hour12: false });
+  useMinuteTick();
   return (
     <li className={`group/comment relative flex gap-2 ${last ? "pb-1" : "pb-3"}`}>
       {/* 头像之间的竖线，把同一篇的评论串成一条线程 */}
