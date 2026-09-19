@@ -221,6 +221,15 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     return () => ctrl.abort();
   }, [selectedTag, loadPage, gateGen]);
 
+  /* 同页 hash 跳转（例如数字人回复里的文章链接）不会重载页面：递增一下让深链 effect
+   * 立即处理新锚点，否则要等下一次翻页才生效，把读者从当前位置拉回去 */
+  const [hashGen, setHashGen] = useState(0);
+  useEffect(() => {
+    const onHashChange = () => setHashGen((g) => g + 1);
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
   /* ── hash 深链 #entry-N / 时间轴跳转：目标文章不在已加载列表里时逐页 append ──
    * 时间轴跳转（pendingEntryId）只负责补页，加载到后的滚动由时间轴自己做。 */
   useEffect(() => {
@@ -295,7 +304,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
       });
     // 不在 cleanup 里 abort：本 effect 因 loadingMore/items 变化而重建，
     // 若随 cleanup 中止会把刚发起的请求自己取消掉（见 appendCtrlRef 注释）。
-  }, [loading, items, outline, total, hasMore, loadingMore, selectedTag, loadPage, pendingEntryId, appendRetryGen]);
+  }, [loading, items, outline, total, hasMore, loadingMore, selectedTag, loadPage, pendingEntryId, appendRetryGen, hashGen]);
 
   /* ── 无限滚动：sentinel 进视窗就 append ── */
   useEffect(() => {

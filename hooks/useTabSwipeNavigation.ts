@@ -10,6 +10,11 @@ const WHEEL_SAME_DIR_COOLDOWN_MS = 300;
 const TOUCH_AXIS_LOCK_DELTA = 10;
 const TOUCH_TRIGGER_DELTA = 50;
 
+/** 监听挂在 document 上，React 里 stopPropagation 挡不住，只能按目标元素豁免 */
+function isInPetChat(target: EventTarget | null): boolean {
+  return !!(target as Element | null)?.closest?.("[data-pet-chat]");
+}
+
 /**
  * 让任意位置的横向滚轮（trackpad / 鼠标横滚）和触屏左右滑动都能切顶部 tab。
  *
@@ -47,6 +52,8 @@ export function useTabSwipeNavigation(
     let lastTriggerDir: 1 | -1 | 0 = 0;
 
     function onWheel(e: WheelEvent) {
+      // 数字人面板里的横滚留给面板自己（代码块、表格横向滚动）
+      if (isInPetChat(e.target)) return;
       // 只关心横向意图：deltaX 的绝对值要大于 deltaY 才算横滚
       if (!(Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 2)) return;
       e.preventDefault();
@@ -91,14 +98,16 @@ export function useTabSwipeNavigation(
     let startX = 0;
     let startY = 0;
     let isHz: boolean | null = null;
+    let inPetChat = false;
 
     function onTouchStart(e: TouchEvent) {
       startX = e.touches[0]?.clientX ?? 0;
       startY = e.touches[0]?.clientY ?? 0;
       isHz = null;
+      inPetChat = isInPetChat(e.target);
     }
     function onTouchMove(e: TouchEvent) {
-      if (isHz === false) return;
+      if (inPetChat || isHz === false) return;
       const dx = (e.touches[0]?.clientX ?? startX) - startX;
       const dy = (e.touches[0]?.clientY ?? startY) - startY;
       if (
@@ -110,7 +119,7 @@ export function useTabSwipeNavigation(
       if (isHz) e.preventDefault();
     }
     function onTouchEnd(e: TouchEvent) {
-      if (!isHz || !enabledRef.current) return;
+      if (inPetChat || !isHz || !enabledRef.current) return;
       const dx = (e.changedTouches[0]?.clientX ?? startX) - startX;
       if (Math.abs(dx) > TOUCH_TRIGGER_DELTA) {
         setTab((prev) =>

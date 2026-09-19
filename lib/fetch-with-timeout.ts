@@ -23,19 +23,50 @@ function gateAlreadyDone(): boolean {
   }
 }
 
-function waitForGateReady(): Promise<boolean> {
+function abortError(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException("Aborted", "AbortError");
+}
+
+/** 可被调用方 signal 打断的等待：握手等待与退避期间点「停止」要立即生效 */
+function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(abortError(signal));
+    const t = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(t);
+      reject(abortError(signal!));
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function waitForGateReady(signal?: AbortSignal | null): Promise<boolean> {
   if (typeof window === "undefined") return Promise.resolve(false);
+  if (signal?.aborted) return Promise.reject(abortError(signal));
   if (gateAlreadyDone()) return Promise.resolve(true);
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let done = false;
-    function finish(ok: boolean) {
-      if (done) return;
+    function cleanup() {
       done = true;
       clearTimeout(timer);
       clearInterval(poll);
       window.removeEventListener(GATE_READY_EVENT, onReady as EventListener);
+      signal?.removeEventListener("abort", onAbort);
+    }
+    function finish(ok: boolean) {
+      if (done) return;
+      cleanup();
       resolve(ok);
     }
+    function onAbort() {
+      if (done) return;
+      cleanup();
+      reject(abortError(signal!));
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
     function onReady() { finish(true); }
     // 关键：除了监听事件，再开一个轮询兜底。
     // 因为 fetchWithTimeout 第一次拿到 403 后才进入这里 addEventListener，
@@ -76,7 +107,7 @@ function isProtectedApi(input: RequestInfo | URL): boolean {
   if (typeof input === "string") url = input;
   else if (input instanceof URL) url = input.toString();
   else if (input && typeof (input as Request).url === "string") url = (input as Request).url;
-  return /\/api\/(diaries|moments|profile)/.test(url);
+  return /\/api\/(diaries|moments|profile|chat)/.test(url);
 }
 
 export async function fetchWithTimeout(
@@ -96,7 +127,7 @@ export async function fetchWithTimeout(
   // 退避重试最多 3 次（间隔 400ms / 1200ms / 2500ms），每次重试前重新检查
   // sessionStorage 标记，避免单次重试错过握手完成的窗口。
   if (res.status === 403 && isProtectedApi(input) && typeof window !== "undefined") {
-    const ready = await waitForGateReady();
+    const ready = await waitForGateReady(init.signal);
     if (ready) {
       const retryDelays = [400, 1200, 2500];
       // 重试圈沿用 timeoutMs（默认 30s）：重试发生在握手刚完成的首帧，服务端
@@ -124,9 +155,9 @@ export async function fetchWithTimeout(
       for (let i = 0; i < retryDelays.length; i++) {
         if (lastRes && (lastRes as Response).status !== 403) return lastRes;
         if (Date.now() >= deadline) break;
-        await new Promise((r) => setTimeout(r, retryDelays[i]));
+        await sleep(retryDelays[i], init.signal);
         if (!gateAlreadyDone()) {
-          const reReady = await waitForGateReady();
+          const reReady = await waitForGateReady(init.signal);
           if (!reReady) break;
         }
         await attempt();

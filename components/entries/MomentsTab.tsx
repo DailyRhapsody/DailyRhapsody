@@ -4,6 +4,7 @@ import { type RefObject } from "react";
 import { MomentsVideoCell } from "./MomentsVideoCell";
 import { momentsGridClass } from "./utils";
 import type { MomentsTimelineRow } from "./types";
+import { getPetMode } from "@/lib/persona/config";
 
 /** 把 ISO 字符串渲染成本地 YYYY-MM-DD（按本地时区，不含时分秒） */
 function formatMomentDate(iso: string): string {
@@ -144,6 +145,8 @@ export function MomentsTab({
         );
       })}
       {hasMore && <div ref={sentinelRef} className="h-8" aria-hidden />}
+      {/* 右下角宠物常驻：滚到底时给最后一条动态让出位置（博客 tab 底部本来就有留白） */}
+      {!hasMore && getPetMode() !== "off" && <div className="h-28" aria-hidden />}
       {loadingMore && (
         <div className="flex justify-center py-6">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600 dark:border-zinc-600 dark:border-t-zinc-300" />

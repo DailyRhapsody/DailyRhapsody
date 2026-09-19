@@ -76,8 +76,8 @@ export function useEggPullToRefresh(enabled: boolean): UseEggPullToRefresh {
 
     const onWheel = (e: WheelEvent) => {
       if (!enabledRef.current) return;
-      // 在时间轴上滚轮滚的是时间轴本身，不累计彩蛋拉力
-      if ((e.target as Element | null)?.closest?.("[data-scroll-timeline]")) return;
+      // 在时间轴或数字人面板上滚轮滚的是它们自己，不累计彩蛋拉力
+      if ((e.target as Element | null)?.closest?.("[data-scroll-timeline], [data-pet-chat]")) return;
       if (!isAtBottom()) return;
       if (e.deltaY === 0) return;
 
@@ -107,6 +107,7 @@ export function useEggPullToRefresh(enabled: boolean): UseEggPullToRefresh {
     };
     const onTouchMove = (e: TouchEvent) => {
       if (!enabledRef.current) return;
+      if ((e.target as Element | null)?.closest?.("[data-pet-chat]")) return;
       if (!isAtBottom()) return;
       const y = e.touches[0]?.clientY ?? 0;
       if (touchLastYRef.current === 0) touchLastYRef.current = y;

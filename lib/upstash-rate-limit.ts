@@ -11,15 +11,19 @@ const redis =
 
 const limiters = new Map<string, Ratelimit>();
 
-function getLimiter(scope: string, limit: number = 60, window: Duration = "1 m") {
+/** 失败即拒绝的实例用的超时：库默认 5s 超时后放行，花钱的接口宁可拒绝 */
+const FAIL_CLOSED_TIMEOUT_MS = 3000;
+
+function getLimiter(scope: string, limit: number = 60, window: Duration = "1 m", failClosed = false) {
   if (!redis) return null;
-  const key = `${scope}:${limit}:${window}`;
+  const key = `${scope}:${limit}:${window}:${failClosed ? "closed" : "open"}`;
   if (!limiters.has(key)) {
     limiters.set(key, new Ratelimit({
       redis,
       limiter: Ratelimit.slidingWindow(limit, window),
       prefix: `dr:rl:${scope}`,
       analytics: false,
+      ...(failClosed ? { timeout: FAIL_CLOSED_TIMEOUT_MS } : {}),
     }));
   }
   return limiters.get(key)!;
@@ -29,9 +33,20 @@ export function isUpstashConfigured(): boolean {
   return !!redis;
 }
 
-export async function limitByIp(scope: string, ip: string, limit?: number, window?: Duration): Promise<boolean> {
-  const l = getLimiter(scope, limit, window);
+/**
+ * failClosed：Redis 迟滞超时按「拒绝」处理（库默认超时放行）；Redis 报错照常抛出，由调用方决定。
+ * 只给花钱的接口用，其他作用域保持原有的超时放行。
+ */
+export async function limitByIp(
+  scope: string,
+  ip: string,
+  limit?: number,
+  window?: Duration,
+  opts?: { failClosed?: boolean },
+): Promise<boolean> {
+  const failClosed = !!opts?.failClosed;
+  const l = getLimiter(scope, limit, window, failClosed);
   if (!l) return true;
-  const { success } = await l.limit(ip);
-  return success;
+  const { success, reason } = await l.limit(ip);
+  return failClosed ? success && reason !== "timeout" : success;
 }
