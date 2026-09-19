@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import RainbowBrushTrail from "@/components/RainbowBrushTrail";
+import ConfettiBurst from "@/components/ConfettiBurst";
 import StickyProfileHeader from "@/components/StickyProfileHeader";
 import { MomentLightbox } from "@/components/entries/MomentLightbox";
 import { CalendarHeatmap } from "@/components/entries/CalendarHeatmap";
@@ -124,6 +125,22 @@ export default function EntriesPageClient({
     return () => clearTimeout(t);
   }, []);
 
+  /* ── 禁止复制：键盘、右键菜单的复制与剪切都拦下；输入框里（写评论）照常，
+        「复制文章链接」走剪贴板接口或临时 textarea，不受影响 ── */
+  useEffect(() => {
+    const block = (e: ClipboardEvent) => {
+      const el = e.target instanceof Element ? e.target : document.activeElement;
+      if (el?.closest("input, textarea, [contenteditable='true']")) return;
+      e.preventDefault();
+    };
+    document.addEventListener("copy", block);
+    document.addEventListener("cut", block);
+    return () => {
+      document.removeEventListener("copy", block);
+      document.removeEventListener("cut", block);
+    };
+  }, []);
+
   /* ── 横向滚轮 / 触屏左右滑动切 tab + 屏蔽浏览器自带的左右回退 ── */
   useTabSwipeNavigation(setActiveTopTab, { min: 0, max: 1, enabled: lightbox == null });
 
@@ -133,8 +150,10 @@ export default function EntriesPageClient({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-100 to-white font-sans text-zinc-900 dark:from-black dark:via-zinc-950 dark:to-black dark:text-zinc-50">
+    // 整页文字不可选中（输入框除外，访客写评论时照常能选）
+    <div className="min-h-screen select-none bg-gradient-to-b from-zinc-100 to-white font-sans text-zinc-900 dark:from-black dark:via-zinc-950 dark:to-black dark:text-zinc-50 [&_:is(input,textarea,[contenteditable=true])]:select-text">
       <RainbowBrushTrail />
+      <ConfettiBurst />
       {/* 必须在 entries-flip-wrapper 之外：它的 perspective/transform 会让 fixed 相对 main 定位 */}
       {activeTopTab === 0 ? (
         <ScrollTimeline
