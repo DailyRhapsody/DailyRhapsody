@@ -70,7 +70,9 @@ function Launcher() {
         }}
         aria-label={open ? "收起对话" : "和滕君的 AI 分身聊聊"}
         aria-expanded={open}
-        style={{ bottom: "max(1.25rem, env(safe-area-inset-bottom))", transitionProperty: "opacity, translate" }}
+        // 不用 env(safe-area-inset-*)：页面没有 viewport-fit=cover，它恒为 0。宠物上线后 Safari 26
+        // 顶栏下方出现白缝，这是当时全站唯一新增的 safe-area 引用，去掉无副作用
+        style={{ bottom: "1.25rem", transitionProperty: "opacity, translate" }}
         // block + leading-none：去掉行盒基线余量，按钮高度稳定，不压到面板
         className={`group fixed right-4 z-[100] block rounded-2xl p-1.5 font-sans leading-none outline-offset-4 transition-apple hover:-translate-y-0.5 motion-reduce:hover:translate-y-0 sm:right-6 ${
           open ? "max-lg:invisible" : ""

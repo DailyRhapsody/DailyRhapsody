@@ -235,7 +235,8 @@ export function PetChatPanel({
             ref={listRef}
             onScroll={onScroll}
             className={`pointer-events-auto min-h-0 overflow-y-auto overscroll-contain leading-relaxed text-zinc-900 [mask-image:linear-gradient(to_bottom,transparent,black_40px)] [scrollbar-width:none] dark:text-zinc-100 ${
-              gutter ? "text-[15px]" : "max-h-[52vh] text-[16px]"
+              // 与博客正文同字号同行高（EntrySummary：0.82rem、leading-relaxed）
+              gutter ? "text-[0.82rem]" : "max-h-[52vh] text-[0.82rem]"
             } ${hasContent ? "pb-4 pt-10" : ""}`}
           >
             <div className="space-y-5">
@@ -243,7 +244,7 @@ export function PetChatPanel({
                 m.role === "user" ? (
                   <p
                     key={m.id}
-                    className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words text-right text-[14px] text-zinc-500 dark:text-zinc-400"
+                    className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words text-right text-[0.82rem] text-zinc-500 dark:text-zinc-400"
                   >
                     {m.content}
                   </p>
@@ -267,7 +268,7 @@ export function PetChatPanel({
                 </div>
               )}
               {chat.error && (
-                <div role="alert" className="flex items-center gap-2 text-[14px] text-zinc-500 dark:text-zinc-400">
+                <div role="alert" className="flex items-center gap-2 text-[0.8rem] text-zinc-500 dark:text-zinc-400">
                   <span>{chat.error.message}</span>
                   {chat.error.retryable && (
                     <button
@@ -288,10 +289,7 @@ export function PetChatPanel({
           </p>
 
           {/* 输入胶囊：半透明，不做白底框 */}
-          <div
-            className="pointer-events-auto mt-2 flex items-end gap-2 rounded-[22px] bg-white/55 py-2 pl-4 pr-2 shadow-[0_2px_20px_rgba(0,0,0,0.06)] ring-1 ring-black/5 backdrop-blur-xl transition-apple focus-within:bg-white/70 dark:bg-zinc-800/55 dark:ring-white/10 dark:focus-within:bg-zinc-800/70"
-            style={{ marginBottom: small ? "env(safe-area-inset-bottom)" : undefined }}
-          >
+          <div className="pointer-events-auto mt-2 flex items-end gap-2 rounded-[22px] bg-white/55 py-2 pl-4 pr-2 shadow-[0_2px_20px_rgba(0,0,0,0.06)] ring-1 ring-black/5 backdrop-blur-xl transition-apple focus-within:bg-white/70 dark:bg-zinc-800/55 dark:ring-white/10 dark:focus-within:bg-zinc-800/70">
             <textarea
               ref={inputRef}
               rows={1}
@@ -306,7 +304,7 @@ export function PetChatPanel({
               style={{ outline: "none" }}
               // 上下各 2px 内边距，单行时文字与右侧 28px 的按钮垂直居中；
               // 手机上字号不低于 16px，否则 iOS 聚焦时会整页放大
-              className="block max-h-[124px] min-h-7 flex-1 resize-none bg-transparent py-0.5 text-base leading-6 text-zinc-900 placeholder:text-zinc-500 disabled:cursor-not-allowed dark:text-zinc-100 dark:placeholder:text-zinc-400 sm:text-[15px]"
+              className="block max-h-[124px] min-h-7 flex-1 resize-none bg-transparent py-0.5 text-base leading-6 text-zinc-900 placeholder:text-zinc-500 disabled:cursor-not-allowed dark:text-zinc-100 dark:placeholder:text-zinc-400 sm:text-[0.82rem]"
             />
             {chat.streaming ? (
               <button
