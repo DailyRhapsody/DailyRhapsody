@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import RainbowBrushTrail from "@/components/RainbowBrushTrail";
-import FlowerBurst from "@/components/FlowerBurst";
+import ConfettiBurst from "@/components/ConfettiBurst";
 import StickyProfileHeader from "@/components/StickyProfileHeader";
 import { MomentLightbox } from "@/components/entries/MomentLightbox";
 import { CalendarHeatmap } from "@/components/entries/CalendarHeatmap";
@@ -153,7 +153,7 @@ export default function EntriesPageClient({
     // 整页文字不可选中（输入框除外，访客写评论时照常能选）
     <div className="min-h-screen select-none bg-gradient-to-b from-zinc-100 to-white font-sans text-zinc-900 dark:from-black dark:via-zinc-950 dark:to-black dark:text-zinc-50 [&_:is(input,textarea,[contenteditable=true])]:select-text">
       <RainbowBrushTrail />
-      <FlowerBurst />
+      <ConfettiBurst />
       {/* 必须在 entries-flip-wrapper 之外：它的 perspective/transform 会让 fixed 相对 main 定位 */}
       {activeTopTab === 0 ? (
         <ScrollTimeline
