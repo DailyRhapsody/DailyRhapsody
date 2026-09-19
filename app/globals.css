@@ -245,3 +245,60 @@ input[type="number"] {
     display: none;
   }
 }
+
+/* 数字人对话时屏幕四周的彩色光晕（仿 Apple Intelligence 的 Siri）：
+   外层整体模糊成柔光，内层只保留一圈边框并让渐变角度旋转 */
+@property --dr-glow-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.dr-pet-glow {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+  pointer-events: none;
+  filter: blur(12px);
+  opacity: 0;
+  transition: opacity 500ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.dr-pet-glow[data-state="idle"] {
+  opacity: 0.85;
+}
+.dr-pet-glow[data-state="active"] {
+  opacity: 1;
+}
+.dr-pet-glow-ring {
+  position: absolute;
+  inset: 0;
+  padding: 7px;
+  background: conic-gradient(
+    from var(--dr-glow-angle),
+    #fb923c,
+    #f472b6,
+    #a78bfa,
+    #60a5fa,
+    #2dd4bf,
+    #fb923c
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: dr-pet-glow-spin 6s linear infinite;
+}
+.dr-pet-glow[data-state="off"] .dr-pet-glow-ring {
+  animation-play-state: paused;
+}
+.dr-pet-glow[data-state="active"] .dr-pet-glow-ring {
+  animation-duration: 2.4s;
+}
+@keyframes dr-pet-glow-spin {
+  to {
+    --dr-glow-angle: 360deg;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dr-pet-glow-ring {
+    animation: none;
+  }
+}

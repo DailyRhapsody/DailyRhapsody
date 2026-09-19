@@ -39,8 +39,8 @@ function Launcher() {
   const [everOpened, setEverOpened] = useState(false);
   const [thinking, setThinking] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  // 面板关闭时它的内容会变成 inert，焦点会掉到 body：交还给宠物按钮。
-  // 等按钮恢复可见（面板打开时按钮是隐藏的）再聚焦
+  // 对话关闭时它的内容会变成 inert，焦点会掉到 body：交还给宠物按钮。
+  // 等按钮恢复可见（窄屏对话打开时按钮隐藏，免得压住输入胶囊）再聚焦
   const close = useCallback(() => {
     const panel = document.querySelector('[role="dialog"][data-pet-chat]');
     const focusInPanel = !!panel?.contains(document.activeElement);
@@ -64,7 +64,7 @@ function Launcher() {
         style={{ bottom: "max(1.25rem, env(safe-area-inset-bottom))", transitionProperty: "opacity, translate" }}
         // block + leading-none：去掉行盒基线余量，按钮高度稳定，不压到面板
         className={`group fixed right-4 z-[100] block rounded-2xl p-1.5 font-sans leading-none outline-offset-4 transition-apple hover:-translate-y-0.5 motion-reduce:hover:translate-y-0 sm:right-6 ${
-          open ? "invisible" : ""
+          open ? "max-lg:invisible" : ""
         }`}
       >
         <PixelAstronaut scale={3} thinking={thinking} />

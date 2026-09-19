@@ -7,24 +7,21 @@ import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
 type Status = { ready: boolean; tier: string };
 
-/** 侧栏宽度；宽屏时页面整体让出这么宽，侧栏不盖住正文 */
-const PANEL_WIDTH = 400;
-
 const AssistantText = memo(function AssistantText({ text }: { text: string }) {
   const html = useMemo(() => renderChatMarkdown(text), [text]);
   return <div className={chatProseClass} dangerouslySetInnerHTML={{ __html: html }} />;
 });
 
 /**
- * 手机上全屏面板要躲开软键盘：iOS 弹键盘时不缩布局视口，
- * 只能跟着 visualViewport 算出可见区域的高度与顶部偏移。
+ * 手机上贴底的输入胶囊要躲开软键盘：iOS 弹键盘时不缩布局视口，
+ * 只能跟着 visualViewport 算出键盘占掉的底部高度。
  */
-function useVisualViewportBox(active: boolean) {
-  const [box, setBox] = useState<{ height: number; top: number } | null>(null);
+function useKeyboardInset(active: boolean) {
+  const [inset, setInset] = useState(0);
   useEffect(() => {
     const vv = typeof window !== "undefined" ? window.visualViewport : null;
     if (!active || !vv) return;
-    const update = () => setBox({ height: vv.height, top: vv.offsetTop });
+    const update = () => setInset(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
     update();
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
@@ -33,7 +30,7 @@ function useVisualViewportBox(active: boolean) {
       vv.removeEventListener("scroll", update);
     };
   }, [active]);
-  return box;
+  return active ? inset : 0;
 }
 
 function useMediaQuery(query: string) {
@@ -49,8 +46,8 @@ function useMediaQuery(query: string) {
 }
 
 /**
- * 右侧对话侧栏，形态同 Notion AI：贴右边、从顶到底；宽屏时页面让位，手机上全屏。
- * 不做毛玻璃、大阴影与装饰，只留标题、消息与输入框。
+ * 仿 Apple Intelligence 新版 Siri：没有面板和白框，对话文字直接浮在页面底部，
+ * 背后只有一层边缘渐隐的柔化；输入是底部居中的半透明胶囊；打开时屏幕四周泛起彩色光晕。
  */
 export function PetChatPanel({
   open,
@@ -69,12 +66,11 @@ export function PetChatPanel({
   const stickToBottom = useRef(true);
   const statusRequested = useRef(false);
   const small = useMediaQuery("(max-width: 639px)");
-  const wide = useMediaQuery("(min-width: 1024px)");
-  const vvBox = useVisualViewportBox(open && small);
+  const keyboardInset = useKeyboardInset(open && small);
 
   useEffect(() => onThinkingChange(chat.streaming), [chat.streaming, onThinkingChange]);
 
-  // 首次打开时查询可用性，只查一次：握手没过的 403 会记违规，不能每次开面板都重来。
+  // 首次打开时查询可用性，只查一次：握手没过的 403 会记违规，不能每次打开都重来。
   // 查询失败不阻塞输入，发送时服务端会给出具体原因
   useEffect(() => {
     if (!open || statusRequested.current) return;
@@ -91,32 +87,6 @@ export function PetChatPanel({
     if (!open || small) return;
     const t = setTimeout(() => inputRef.current?.focus(), 180);
     return () => clearTimeout(t);
-  }, [open, small]);
-
-  // 宽屏：页面整体向左让出侧栏宽度，正文不被盖住；关闭时还原
-  useEffect(() => {
-    if (!open || !wide) return;
-    const body = document.body;
-    const prev = { padding: body.style.paddingRight, transition: body.style.transition };
-    body.style.transition = "padding-right 200ms cubic-bezier(0.25, 0.1, 0.25, 1)";
-    body.style.paddingRight = `${PANEL_WIDTH}px`;
-    return () => {
-      body.style.paddingRight = prev.padding;
-      // 等收回动画走完再撤掉过渡，免得影响页面别处
-      setTimeout(() => {
-        body.style.transition = prev.transition;
-      }, 220);
-    };
-  }, [open, wide]);
-
-  // 手机上面板全屏：锁住背后页面，免得在标题栏、输入区拖动时带着页面滚
-  useEffect(() => {
-    if (!open || !small) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
   }, [open, small]);
 
   // 用户往上翻看历史时不强行拉回底部
@@ -136,7 +106,7 @@ export function PetChatPanel({
     return () => ro.disconnect();
   }, []);
 
-  // Esc 只在焦点位于面板内时关闭：页面上评论框、菜单的 Esc 不连带关掉面板；
+  // Esc 只在焦点位于对话内时关闭：页面上评论框、菜单的 Esc 不连带关掉；
   // 输入法组字时的 Esc 是取消候选词
   const onPanelKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "Escape" || e.nativeEvent.isComposing || e.keyCode === 229) return;
@@ -168,169 +138,172 @@ export function PetChatPanel({
     submit();
   };
 
-  // 输入框随内容长高，最多约 6 行。面板刚挂载时布局与字体可能还没就绪，量出来会偏高，
+  // 输入框随内容长高，最多约 5 行。刚挂载时布局与字体可能还没就绪，量出来会偏高，
   // 所以每次打开都在下一帧重量一次
   useEffect(() => {
     const fit = () => {
       const el = inputRef.current;
       if (!el || el.clientWidth === 0) return;
       el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, 148)}px`;
+      el.style.height = `${Math.min(el.scrollHeight, 124)}px`;
     };
     fit();
     const raf = requestAnimationFrame(fit);
     return () => cancelAnimationFrame(raf);
   }, [draft, open]);
 
-  const owner = (chat.tier ?? status?.tier) === "owner";
   const last = chat.messages[chat.messages.length - 1];
   const waitingFirstToken = chat.streaming && last?.role === "assistant" && !last.content;
-
-  const mobileStyle = small && vvBox ? { top: vvBox.top, height: vvBox.height } : undefined;
+  const hasContent = chat.messages.length > 0 || !!chat.error;
 
   return (
-    <div
-      role="dialog"
-      aria-label="滕君的 AI 分身"
-      aria-hidden={!open}
-      inert={!open}
-      data-pet-chat
-      onKeyDown={onPanelKeyDown}
-      // Tailwind v4 的 translate-x-* 走独立的 translate 属性，transition-apple 只过渡 transform，这里补上
-      style={{ ...mobileStyle, transitionProperty: "translate, visibility" }}
-      className={`fixed right-0 top-0 z-[100] flex h-[100dvh] w-full flex-col border-l border-zinc-200/80 bg-white font-sans text-zinc-900 transition-apple motion-reduce:transition-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 sm:w-[400px] ${
-        open ? "visible translate-x-0" : "invisible translate-x-full"
-      }`}
-    >
-      <header className="flex h-12 shrink-0 items-center gap-1.5 pl-4 pr-2">
-        <span className="text-[15px] font-medium">滕君</span>
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">AI 分身</span>
-        {owner && <span className="text-xs text-zinc-500 dark:text-zinc-400">· 本人模式</span>}
-        <div className="ml-auto flex items-center">
-          <button
-            type="button"
-            onClick={chat.reset}
-            disabled={chat.messages.length === 0}
-            className="rounded-md p-2 text-zinc-500 transition-apple hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            aria-label="新对话"
-            title="新对话"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <path d="M8 3v10M3 8h10" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-2 text-zinc-500 transition-apple hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            aria-label="收起"
-            title="收起"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
-          </button>
-        </div>
-      </header>
+    <>
+      {/* 屏幕四周的彩色光晕：打开时淡淡一圈，生成回复时更亮、转得更快 */}
+      <div
+        aria-hidden="true"
+        className="dr-pet-glow"
+        data-state={!open ? "off" : chat.streaming ? "active" : "idle"}
+      >
+        <div className="dr-pet-glow-ring" />
+      </div>
 
       <div
-        ref={listRef}
-        onScroll={onScroll}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 text-[15px] leading-relaxed"
+        role="dialog"
+        aria-label="滕君的 AI 分身"
+        aria-hidden={!open}
+        inert={!open}
+        data-pet-chat
+        onKeyDown={onPanelKeyDown}
+        style={{ bottom: keyboardInset, transitionProperty: "opacity, translate" }}
+        className={`pointer-events-none fixed inset-x-0 z-[100] font-sans transition-apple transition-apple-slow motion-reduce:translate-y-0 motion-reduce:transition-none ${
+          open ? "translate-y-0 opacity-100" : "invisible translate-y-4 opacity-0"
+        }`}
       >
-        <div className="space-y-4 pt-2">
-          {chat.messages.map((m) =>
-            m.role === "user" ? (
-              <div
-                key={m.id}
-                className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-zinc-100 px-3.5 py-2 dark:bg-zinc-800"
-              >
-                {m.content}
-              </div>
-            ) : (
-              <div key={m.id}>
-                {m.content ? <AssistantText text={m.content} /> : null}
-                {m.interrupted && <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">（回复中断）</p>}
-              </div>
-            ),
-          )}
-          {waitingFirstToken && (
-            <div className="flex gap-1 py-1" role="status">
-              <span className="sr-only">正在思考</span>
-              {[0, 1, 2].map((i) => (
-                <span
-                  key={i}
-                  className="dr-pet-dot h-1.5 w-1.5 rounded-full bg-zinc-400"
-                  style={{ animationDelay: `${i * 160}ms` }}
-                />
-              ))}
-            </div>
-          )}
-          {chat.error && (
-            <div role="alert" className="flex items-center gap-2 text-[13px] text-zinc-500 dark:text-zinc-400">
-              <span>{chat.error.message}</span>
-              {chat.error.retryable && (
-                <button
-                  type="button"
-                  onClick={chat.retry}
-                  className="rounded-md px-2 py-0.5 text-zinc-900 underline decoration-zinc-400 underline-offset-2 dark:text-zinc-100"
-                >
-                  重试
-                </button>
+        {/* 文字背后的柔化：没有边框，向上渐隐到完全透明，只让压在文字下面的页面内容退后 */}
+        <div
+          aria-hidden="true"
+          className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-white/85 via-white/55 to-transparent backdrop-blur-md [mask-image:linear-gradient(to_top,black_55%,transparent)] dark:from-black/80 dark:via-black/50 ${
+            hasContent ? "-top-24" : "-top-10"
+          }`}
+        />
+
+        <div className="relative mx-auto flex w-full max-w-[640px] flex-col px-4 pb-4 sm:pb-6">
+          <div
+            ref={listRef}
+            onScroll={onScroll}
+            className={`pointer-events-auto max-h-[52vh] overflow-y-auto overscroll-contain text-[16px] leading-relaxed text-zinc-900 [mask-image:linear-gradient(to_bottom,transparent,black_40px)] [scrollbar-width:none] dark:text-zinc-100 ${
+              hasContent ? "pb-4 pt-10" : ""
+            }`}
+          >
+            <div className="space-y-5">
+              {chat.messages.map((m) =>
+                m.role === "user" ? (
+                  <p
+                    key={m.id}
+                    className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words text-right text-[14px] text-zinc-500 dark:text-zinc-400"
+                  >
+                    {m.content}
+                  </p>
+                ) : (
+                  <div key={m.id}>
+                    {m.content ? <AssistantText text={m.content} /> : null}
+                    {m.interrupted && <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">（回复中断）</p>}
+                  </div>
+                ),
+              )}
+              {waitingFirstToken && (
+                <div className="flex gap-1 py-1" role="status">
+                  <span className="sr-only">正在思考</span>
+                  {[0, 1, 2].map((i) => (
+                    <span
+                      key={i}
+                      className="dr-pet-dot h-1.5 w-1.5 rounded-full bg-zinc-400"
+                      style={{ animationDelay: `${i * 160}ms` }}
+                    />
+                  ))}
+                </div>
+              )}
+              {chat.error && (
+                <div role="alert" className="flex items-center gap-2 text-[14px] text-zinc-500 dark:text-zinc-400">
+                  <span>{chat.error.message}</span>
+                  {chat.error.retryable && (
+                    <button
+                      type="button"
+                      onClick={chat.retry}
+                      className="px-1 text-zinc-900 underline decoration-zinc-400 underline-offset-2 dark:text-zinc-100"
+                    >
+                      重试
+                    </button>
+                  )}
+                </div>
               )}
             </div>
-          )}
+          </div>
+
+          <p className="sr-only" aria-live="polite">
+            {chat.streaming ? "" : last?.role === "assistant" && last.content ? "已回复" : ""}
+          </p>
+
+          {/* 输入胶囊：半透明，不做白底框 */}
+          <div
+            className="pointer-events-auto mt-2 flex items-end gap-2 rounded-[22px] bg-white/55 py-2 pl-4 pr-2 shadow-[0_2px_20px_rgba(0,0,0,0.06)] ring-1 ring-black/5 backdrop-blur-xl transition-apple focus-within:bg-white/70 dark:bg-zinc-800/55 dark:ring-white/10 dark:focus-within:bg-zinc-800/70"
+            style={{ marginBottom: small ? "env(safe-area-inset-bottom)" : undefined }}
+          >
+            <textarea
+              ref={inputRef}
+              rows={1}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={onKeyDown}
+              maxLength={2000}
+              disabled={notReady}
+              placeholder={notReady ? "还在准备中" : "问问滕君的 AI 分身"}
+              aria-label="输入消息"
+              // 全局 :focus-visible 轮廓不在 layer 里，工具类盖不过
+              style={{ outline: "none" }}
+              // 上下各 2px 内边距，单行时文字与右侧 28px 的按钮垂直居中；
+              // 手机上字号不低于 16px，否则 iOS 聚焦时会整页放大
+              className="block max-h-[124px] min-h-7 flex-1 resize-none bg-transparent py-0.5 text-base leading-6 text-zinc-900 placeholder:text-zinc-500 disabled:cursor-not-allowed dark:text-zinc-100 dark:placeholder:text-zinc-400 sm:text-[15px]"
+            />
+            {chat.streaming ? (
+              <button
+                type="button"
+                onClick={chat.stop}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white transition-apple hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+                aria-label="停止生成"
+                title="停止生成"
+              >
+                <span className="h-2.5 w-2.5 rounded-[2px] bg-current" />
+              </button>
+            ) : draft.trim() ? (
+              <button
+                type="button"
+                onClick={() => submit()}
+                disabled={notReady}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white transition-apple hover:bg-zinc-700 disabled:opacity-40 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+                aria-label="发送"
+                title="发送"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M7 12V2M2.5 6.5L7 2l4.5 4.5" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-zinc-500 transition-apple hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100"
+                aria-label="收起"
+                title="收起"
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                  <path d="M4 4l8 8M12 4l-8 8" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
       </div>
-
-      <p className="sr-only" aria-live="polite">
-        {chat.streaming ? "" : last?.role === "assistant" && last.content ? "已回复" : ""}
-      </p>
-
-      <div className="shrink-0 px-3 pb-3 pt-1" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
-        <div className="flex items-end gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 transition-apple focus-within:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:focus-within:border-zinc-500">
-          <textarea
-            ref={inputRef}
-            rows={1}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKeyDown}
-            maxLength={2000}
-            disabled={notReady}
-            placeholder={notReady ? "还在准备中" : "想问点什么？"}
-            aria-label="输入消息"
-            // 全局 :focus-visible 轮廓不在 layer 里，工具类盖不过；焦点态由外框表达
-            style={{ outline: "none" }}
-            // 上下各 2px 内边距，单行时文字与右侧 28px 的按钮垂直居中；
-            // 手机上字号不低于 16px，否则 iOS 聚焦时会整页放大
-            className="block max-h-[148px] min-h-7 flex-1 resize-none bg-transparent py-0.5 text-base leading-6 placeholder:text-zinc-500 disabled:cursor-not-allowed dark:placeholder:text-zinc-400 sm:text-[15px]"
-          />
-          {chat.streaming ? (
-            <button
-              type="button"
-              onClick={chat.stop}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white transition-apple hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
-              aria-label="停止生成"
-              title="停止生成"
-            >
-              <span className="h-2.5 w-2.5 rounded-[2px] bg-current" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => submit()}
-              disabled={!draft.trim() || notReady}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white transition-apple hover:bg-zinc-700 disabled:bg-zinc-200 disabled:text-white dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200 dark:disabled:bg-zinc-700 dark:disabled:text-zinc-900"
-              aria-label="发送"
-              title="发送"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M7 12V2M2.5 6.5L7 2l4.5 4.5" />
-              </svg>
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+    </>
   );
 }
