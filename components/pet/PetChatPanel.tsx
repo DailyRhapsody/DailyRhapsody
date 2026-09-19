@@ -43,7 +43,7 @@ const GUTTER_MAX_WIDTH = 480;
  * 按当前页面 main 的右边缘实时计算，窗口缩放、换页后重算。
  */
 function useGutterBox(active: boolean, pathname: string | null) {
-  const [box, setBox] = useState<{ left: number; width: number } | null>(null);
+  const [box, setBox] = useState<{ left: number; width: number; railLeft: number } | null>(null);
   useEffect(() => {
     if (!active) return;
     const measure = () => {
@@ -57,8 +57,8 @@ function useGutterBox(active: boolean, pathname: string | null) {
         return;
       }
       const width = Math.min(room, GUTTER_MAX_WIDTH);
-      // 空白栏比上限还宽时居中摆放
-      setBox({ left: start + Math.round((room - width) / 2), width });
+      // 空白栏比上限还宽时居中摆放。railLeft 是玻璃层的左边：落在正文列与右侧评论之间的空隙里
+      setBox({ left: start + Math.round((room - width) / 2), width, railLeft: Math.round(contentRight + 8) });
     };
     measure();
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
@@ -200,9 +200,13 @@ export function PetChatPanel({
   const waitingFirstToken = chat.streaming && last?.role === "assistant" && !last.content;
   const hasContent = chat.messages.length > 0 || !!chat.error;
   const glass = !!gutter && hasContent;
-  // 苹果式玻璃：底色很淡、模糊半径小，背后内容以虚化轮廓透出。不做描边、圆角与投影，
-  // 整条右侧栏铺成一层，边缘用径向蒙版淡出，看不出起止
-  const glassSurface = "bg-white/20 backdrop-blur-md backdrop-saturate-[1.8] dark:bg-zinc-900/20";
+  // 苹果式玻璃：底色很淡、模糊半径小，背后内容以虚化轮廓透出。不做描边、圆角与投影。
+  // 玻璃铺成贴着窗口右、上、下三边的一整条，左边界落在正文列与评论之间的空隙里。
+  // 拆成两层：模糊层不带底色（矩形边界压在纯色背景上看不出来），底色层用渐变从左往右淡入。
+  // 不能用蒙版收边——Safari 里带 backdrop-filter 的元素会忽略 mask，会露出硬边
+  const glassBlur = "backdrop-blur-md backdrop-saturate-[1.8]";
+  const glassTint =
+    "bg-[linear-gradient(to_right,transparent,rgba(255,255,255,0.22)_160px)] dark:bg-[linear-gradient(to_right,transparent,rgba(24,24,27,0.22)_160px)]";
   const glassTransition =
     "transition-[background-color,-webkit-backdrop-filter,backdrop-filter] duration-[350ms] ease-[cubic-bezier(0.25,0.1,0.25,1)] motion-reduce:transition-none";
   // 淡入淡出不放在根节点、也不放在磨砂卡片上：Chrome 里元素自身或祖先透明度小于 1 时 backdrop-filter 不生效，
@@ -215,6 +219,22 @@ export function PetChatPanel({
     : { left: 0, right: 0, bottom: keyboardInset, transitionProperty: "translate" };
 
   return (
+    <>
+      {/* 玻璃层：贴着窗口右、上、下三边，z 低于对话与右下角宠物，宠物不会被模糊 */}
+      {glass && gutter && (
+        <>
+          <div
+            aria-hidden="true"
+            style={{ left: gutter.railLeft }}
+            className={`pointer-events-none fixed inset-y-0 right-0 z-[99] ${glassTransition} ${open ? glassBlur : ""}`}
+          />
+          <div
+            aria-hidden="true"
+            style={{ left: gutter.railLeft }}
+            className={`pointer-events-none fixed inset-y-0 right-0 z-[99] ${glassTint} ${fade}`}
+          />
+        </>
+      )}
     <div
       role="dialog"
       aria-label="滕君的 AI 分身"
@@ -233,17 +253,6 @@ export function PetChatPanel({
           aria-hidden="true"
           className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-white/85 via-white/55 to-transparent backdrop-blur-md [mask-image:linear-gradient(to_top,black_55%,transparent)] dark:from-black/80 dark:via-black/50 ${fade} ${
             hasContent ? "-top-24" : "-top-10"
-          }`}
-        />
-      )}
-
-      {/* 整条右侧栏的玻璃层：比文字范围向外扩一圈，边缘径向淡出，看不到边界。
-          纯装饰，不挡点击；评论等内容从下面经过时透出虚化轮廓 */}
-      {glass && (
-        <div
-          aria-hidden="true"
-          className={`pointer-events-none absolute -inset-x-6 -top-6 -bottom-8 [mask-image:radial-gradient(115%_92%_at_50%_50%,black_58%,transparent_100%)] ${glassTransition} ${
-            open ? glassSurface : ""
           }`}
         />
       )}
@@ -319,7 +328,7 @@ export function PetChatPanel({
 
           {/* 输入胶囊：半透明，不做白底框 */}
           <div
-            className={`pointer-events-auto mt-2 flex items-end gap-2 rounded-[22px] py-2 pl-4 pr-2 ${glassSurface} ${glassTransition} focus-within:bg-white/35 dark:focus-within:bg-white/10 ${fade}`}
+            className={`pointer-events-auto mt-2 flex items-end gap-2 rounded-[22px] bg-white/25 py-2 pl-4 pr-2 focus-within:bg-white/40 dark:bg-white/[0.06] dark:focus-within:bg-white/10 ${fade}`}
           >
             <textarea
               ref={inputRef}
@@ -376,5 +385,6 @@ export function PetChatPanel({
           </div>
       </div>
     </div>
+    </>
   );
 }

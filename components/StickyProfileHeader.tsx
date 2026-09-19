@@ -394,11 +394,15 @@ export default function StickyProfileHeader({
         }}
       />
       <div className="absolute inset-0 bg-black/50" />
-      {/* 始终在 DOM，用 visibility 控制显隐，保持 sm 头像 CSS 动画与 lg 同步 */}
+      {/* 始终在 DOM 且始终可见，保持 sm 头像 CSS 动画与 lg 同步。
+          隐藏用透明度，不用 visibility：WebKit 会冻结 visibility:hidden 元素上的动画，
+          收起后小头像会停在原地不转。展开时用 inert 把它排除在焦点与读屏之外 */}
         <div
           ref={collapsedBarRef}
-          className={`absolute inset-0 z-10 flex items-stretch justify-center px-5 ${
-            isCollapsed ? "visible" : "invisible pointer-events-none"
+          aria-hidden={!isCollapsed}
+          inert={!isCollapsed}
+          className={`absolute inset-0 z-10 flex items-stretch justify-center px-5 transition-opacity duration-150 motion-reduce:transition-none ${
+            isCollapsed ? "opacity-100" : "pointer-events-none opacity-0"
           }`}
         >
           <button
