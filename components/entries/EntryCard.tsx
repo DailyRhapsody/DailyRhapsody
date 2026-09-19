@@ -21,10 +21,31 @@ const SHARE_TIMEOUT_MS = 20_000;
  */
 const MARGIN_COMMENTS_QUERY = "(min-width: 1440px)";
 /**
- * 宽屏且能悬停时，正文右侧悬停就有「评论」入口，⋯ 菜单里不再重复放；
- * 窄屏、触屏（没有悬停）时菜单是给还没有评论的文章写第一条的入口，保留
+ * 宽屏且能悬停时，操作（评论、分享、编辑）竖排在正文右侧、悬停文章时出现，不再用 ⋯ 菜单；
+ * 窄屏、触屏（没有悬停）时右侧没有位置或悬停不了，仍用 ⋯ 菜单
  */
 const MARGIN_HOVER_QUERY = `${MARGIN_COMMENTS_QUERY} and (hover: hover)`;
+/** 右侧操作按钮与下方评论线程之间的间距（mt-3） */
+const MARGIN_ACTIONS_GAP_PX = 12;
+
+const marginActionClass =
+  "flex h-5 items-center gap-1 rounded px-1.5 text-[0.72rem] leading-none text-zinc-400 transition-apple hover:bg-zinc-100 hover:text-zinc-600 disabled:opacity-50 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300";
+
+function ShareIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V4m0 0L8 8m4-4 4 4M6 12v7a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-7" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4" />
+    </svg>
+  );
+}
 /** 旁注线程可用高度的下限：短文章也要放得下一条评论和输入框 */
 const MARGIN_THREAD_MIN_PX = 176;
 /** 文章下方线程的最低高度 */
@@ -101,6 +122,9 @@ export function EntryCard({
   // 旁注线程是绝对定位的，比文章高时会压到下一篇的线程上：量出实际高度，把文章撑到至少这么高
   const marginRef = useRef<HTMLDivElement>(null);
   const [marginHeight, setMarginHeight] = useState(0);
+  // 右侧操作按钮的高度：线程排在它下面，线程可用高度要扣掉这一段
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const [actionsHeight, setActionsHeight] = useState(0);
   const [sharing, setSharing] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [sharePreviewSrc, setSharePreviewSrc] = useState<string | null>(null);
@@ -150,6 +174,10 @@ export function EntryCard({
     ro.observe(el);
     return () => ro.disconnect();
   }, [marginThread]);
+
+  useEffect(() => {
+    setActionsHeight(marginHoverEntry ? (actionsRef.current?.offsetHeight ?? 0) : 0);
+  }, [marginHoverEntry, canEdit]);
 
   const openComments = useCallback(() => {
     setCommentsOpen(true);
@@ -380,32 +408,32 @@ export function EntryCard({
               </span>
             )}
           </div>
-          <div ref={menuRootRef} className="relative shrink-0">
-            <button
-              type="button"
-              onClick={() => setMenuOpen((o) => !o)}
-              className="rounded-full p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-              aria-label="更多"
-            >
-              <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="6" r="1.5" />
-                <circle cx="12" cy="12" r="1.5" />
-                <circle cx="12" cy="18" r="1.5" />
-              </svg>
-            </button>
-            {menuOpen && (
-              <>
-                <div className="absolute right-0 top-full z-50 mt-1 min-w-[6rem] rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-                  {canEdit && (
-                    <Link
-                      href={`/admin/diaries/${item.id}/edit`}
-                      className="block w-full px-3 py-2 text-left text-[0.8rem] text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                      onClick={() => setMenuOpen(false)}
-                    >
-                      编辑
-                    </Link>
-                  )}
-                  {!marginHoverEntry && (
+          {!marginHoverEntry && (
+            <div ref={menuRootRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setMenuOpen((o) => !o)}
+                className="rounded-full p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+                aria-label="更多"
+              >
+                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="6" r="1.5" />
+                  <circle cx="12" cy="12" r="1.5" />
+                  <circle cx="12" cy="18" r="1.5" />
+                </svg>
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="absolute right-0 top-full z-50 mt-1 min-w-[6rem] rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                    {canEdit && (
+                      <Link
+                        href={`/admin/diaries/${item.id}/edit`}
+                        className="block w-full px-3 py-2 text-left text-[0.8rem] text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        编辑
+                      </Link>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -416,19 +444,19 @@ export function EntryCard({
                     >
                       评论
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleShare()}
-                    disabled={sharing}
-                    className="w-full px-3 py-2 text-left text-[0.8rem] text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  >
-                    {sharing ? "生成中…" : "分享"}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+                    <button
+                      type="button"
+                      onClick={() => handleShare()}
+                      disabled={sharing}
+                      className="w-full px-3 py-2 text-left text-[0.8rem] text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    >
+                      {sharing ? "生成中…" : "分享"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
         {images.length > 0 && (
           // p-1/-m-1 给键盘焦点框留出位置，否则会被 overflow-hidden 裁掉
@@ -528,31 +556,49 @@ export function EntryCard({
           ref={marginRef}
           className="absolute left-[calc(100%+1.25rem)] top-4 w-[min(20rem,calc((100vw-56rem)/2-2.5rem))]"
         >
-          {marginThread ? (
-            <EntryComments
-              diaryId={item.id}
-              count={commentCount}
-              variant="margin"
-              maxHeight={Math.max(postHeight, MARGIN_THREAD_MIN_PX)}
-              autoFocus={commentFocus}
-              onAutoFocused={consumeCommentFocus}
-              onClose={closeComments}
-              onEngage={engageComments}
-              canEdit={canEdit}
-              authorName={authorName}
-              authorAvatarSrc={avatarSrc}
-            />
-          ) : (
-            // 没有评论的文章：悬停时在右侧露出「评论」，点开即写。左侧伪元素补上与正文之间的空隙，
-            // 鼠标从正文移过来时不会因离开文章而让按钮淡出
-            <button
-              type="button"
-              onClick={openComments}
-              className="relative flex items-center gap-1 rounded-full px-2 py-1 text-[0.72rem] text-zinc-400 opacity-0 transition-apple before:absolute before:inset-y-0 before:-left-6 before:w-6 hover:bg-zinc-100 hover:text-zinc-600 focus-visible:opacity-100 group-hover:opacity-100 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+          {marginHoverEntry && (
+            // 操作按钮竖排，悬停文章时出现：与头像顶端对齐，两个按钮合起来与头像同高。
+            // 左侧伪元素补上与正文之间的空隙，鼠标从正文移过来时不会因离开文章而淡出
+            <div
+              ref={actionsRef}
+              className="relative flex w-fit flex-col items-start opacity-0 transition-apple before:absolute before:inset-y-0 before:-left-5 before:w-5 focus-within:opacity-100 group-hover:opacity-100"
             >
-              <CommentBubbleIcon />
-              评论
-            </button>
+              <button type="button" onClick={openComments} className={marginActionClass}>
+                <CommentBubbleIcon />
+                评论
+              </button>
+              <button type="button" onClick={() => handleShare()} disabled={sharing} className={marginActionClass}>
+                <ShareIcon />
+                {sharing ? "生成中…" : "分享"}
+              </button>
+              {canEdit && (
+                <Link href={`/admin/diaries/${item.id}/edit`} className={marginActionClass}>
+                  <EditIcon />
+                  编辑
+                </Link>
+              )}
+            </div>
+          )}
+          {marginThread && (
+            // 有操作按钮时线程排在按钮下面，起点与正文第一行齐平
+            <div className={marginHoverEntry ? "mt-3" : ""}>
+              <EntryComments
+                diaryId={item.id}
+                count={commentCount}
+                variant="margin"
+                maxHeight={Math.max(
+                  postHeight - (marginHoverEntry ? actionsHeight + MARGIN_ACTIONS_GAP_PX : 0),
+                  MARGIN_THREAD_MIN_PX
+                )}
+                autoFocus={commentFocus}
+                onAutoFocused={consumeCommentFocus}
+                onClose={closeComments}
+                onEngage={engageComments}
+                canEdit={canEdit}
+                authorName={authorName}
+                authorAvatarSrc={avatarSrc}
+              />
+            </div>
           )}
         </div>
       )}
