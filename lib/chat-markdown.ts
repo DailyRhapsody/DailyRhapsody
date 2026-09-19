@@ -49,7 +49,7 @@ const OPTIONS: sanitizeHtml.IOptions = {
   allowedSchemes: ["http", "https", "mailto"],
   allowProtocolRelative: false,
   transformTags: {
-    // 链接的统一出口：站内文章（/entries#entry-…）在当前页跳转，其余一律新标签页打开，
+    // 链接的统一出口：站内文章（/blog#entry-…）在当前页跳转，其余一律新标签页打开，
     // 丢弃模型给出的 target/rel
     a: (tagName, attribs) => {
       const href = attribs.href ?? "";

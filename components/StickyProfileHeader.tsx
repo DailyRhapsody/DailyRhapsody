@@ -14,7 +14,7 @@ export type StickyProfileHeaderData = {
 };
 
 /**
- * 与 /entries 文章列表页一致的粘性顶栏：背景图、滚动收缩、点击栏展开、头像与签名。
+ * 与 /blog 文章列表页一致的粘性顶栏：背景图、滚动收缩、点击栏展开、头像与签名。
  * 传入 `entriesBgmSrc` 时（仅文章页）：进入后尝试播放该音频，头像慢转；点头像暂停/继续，点昵称回首页。
  */
 export default function StickyProfileHeader({

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, type SetStateAction } from "react";
+import { usePathname } from "next/navigation";
 import Image from "next/image";
 import RainbowBrushTrail from "@/components/RainbowBrushTrail";
 import ConfettiBurst from "@/components/ConfettiBurst";
@@ -20,10 +21,12 @@ import { useTabSwipeNavigation } from "@/hooks/useTabSwipeNavigation";
 import { useEntries } from "@/hooks/useEntries";
 import { useEggPullToRefresh } from "@/hooks/useEggPullToRefresh";
 
-// 修饰键点击（新标签页）打开的地址。文章用绝对地址：页面带 ?tab=moments 时相对 hash 会落在动态 tab；
+// 修饰键点击（新标签页）打开的地址。文章用绝对地址：在 /moments 上用相对 hash 会落在动态 tab；
 // 动态没有深链定位，只打开动态 tab
-const entryHref = (id: string) => `/entries#entry-${id}`;
-const momentHref = () => "/entries?tab=moments";
+const entryHref = (id: string) => `/blog#entry-${id}`;
+const momentHref = () => "/moments";
+/** 顶部两个 tab 对应的地址：切 tab 时同步到地址栏，刷新、分享都落回同一个 tab */
+const TAB_PATHS = ["/blog", "/moments"] as const;
 const ENTRY_MESSAGES = { loading: "正在载入更早的文章", failed: "未能载入这篇文章" };
 const MOMENT_MESSAGES = { loading: "正在载入更早的动态", failed: "未能载入这条动态" };
 
@@ -51,7 +54,27 @@ export default function EntriesPageClient({
   const totalPosts = total;
   const currentEntries = items;
 
-  const [activeTopTab, setActiveTopTab] = useState(0); // 0=博客, 1=动态
+  /* ── 顶部 tab 以地址为唯一来源：/moments 是动态，其余是博客。
+       切 tab 只用 replaceState 改地址栏（不重载、不新增历史记录），Next 会同步 usePathname，
+       浏览器前进后退时也按该条历史的真实地址落回对应 tab ── */
+  const pathname = usePathname();
+  const activeTopTab = pathname === "/moments" ? 1 : 0; // 0=博客, 1=动态
+  const activeTabRef = useRef(activeTopTab);
+  useEffect(() => {
+    activeTabRef.current = activeTopTab;
+  }, [activeTopTab]);
+  const setActiveTopTab = useCallback((next: SetStateAction<number>) => {
+    const current = activeTabRef.current;
+    const value = typeof next === "function" ? next(current) : next;
+    if (value === current) return;
+    activeTabRef.current = value;
+    const params = new URLSearchParams(window.location.search);
+    params.delete("tab");
+    const query = params.toString();
+    // 博客的 #entry- 深链只在博客 tab 保留；切到动态时去掉，免得回到博客后被拉回旧锚点
+    const hash = value === 0 ? window.location.hash : "";
+    window.history.replaceState(null, "", `${TAB_PATHS[value === 1 ? 1 : 0]}${query ? `?${query}` : ""}${hash}`);
+  }, []);
   const {
     moments,
     hasMore: momentsHasMore,
@@ -108,16 +131,14 @@ export default function EntriesPageClient({
     };
   }, []);
 
-  /* ── 读取 ?tab=moments 初始化顶部 tab，让封面动态链接能直接落到动态卡上。
-       这是「读取一次外部 URL 状态、写回 React 状态」的合法用法，
-       react-hooks/set-state-in-effect 的启发式会误报，这里显式关掉。 */
+  /* ── 旧链接 /entries?tab=moments 跳转后地址里残留 tab 参数：只去掉它，
+       utm 等其余查询串原样保留，访问统计要读 ── */
   useEffect(() => {
-    if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("tab") === "moments" || params.get("tab") === "gallery") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setActiveTopTab(1);
-    }
+    if (!params.has("tab")) return;
+    params.delete("tab");
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
   }, []);
 
   useEffect(() => {

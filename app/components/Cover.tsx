@@ -35,7 +35,7 @@ export default function Cover() {
     const timer = window.setTimeout(() => {
       if (done) return;
       done = true;
-      router.replace("/entries");
+      router.replace("/blog");
     }, AUTO_ENTER_MS);
 
     const cancel = () => {
@@ -114,14 +114,14 @@ export default function Cover() {
           aria-label="Primary"
         >
           <Link
-            href="/entries"
+            href="/blog"
             className="rounded transition-opacity duration-200 ease-out hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-white/50 focus:ring-offset-2 focus:ring-offset-transparent"
           >
             Blog
           </Link>
           <span className="text-white/50" aria-hidden>·</span>
           <Link
-            href="/entries?tab=moments"
+            href="/moments"
             className="rounded transition-opacity duration-200 ease-out hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-white/50 focus:ring-offset-2 focus:ring-offset-transparent"
           >
             Moments
@@ -145,7 +145,7 @@ export default function Cover() {
 
       {/* 进入博客列表 - 苹果风：带圈、透明背景、细边框 */}
       <Link
-        href="/entries"
+        href="/blog"
         className="absolute bottom-8 left-1/2 z-10 flex h-11 w-11 -translate-x-1/2 items-center justify-center rounded-full border border-white/40 bg-transparent text-white/80 transition-all duration-200 ease-out hover:scale-105 hover:border-white/70 hover:bg-white/20 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/50 focus:ring-offset-2 focus:ring-offset-transparent"
         aria-label="Enter blog"
       >

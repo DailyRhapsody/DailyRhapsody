@@ -237,7 +237,7 @@ export function EntryCard({
 
   async function openShareImageModal() {
     if (typeof window === "undefined") return;
-    const shareUrl = `${window.location.origin}${window.location.pathname}#entry-${item.id}`;
+    const shareUrl = `${window.location.origin}/blog#entry-${item.id}`;
     shareUrlRef.current = shareUrl;
     const gen = ++shareGenRef.current;
     setMenuOpen(false);
