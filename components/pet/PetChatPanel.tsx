@@ -235,8 +235,8 @@ export function PetChatPanel({
             ref={listRef}
             onScroll={onScroll}
             className={`pointer-events-auto min-h-0 overflow-y-auto overscroll-contain leading-relaxed text-zinc-900 [mask-image:linear-gradient(to_bottom,transparent,black_40px)] [scrollbar-width:none] dark:text-zinc-100 ${
-              // 与博客正文同字号同行高（EntrySummary：0.82rem、leading-relaxed）
-              gutter ? "text-[0.82rem]" : "max-h-[52vh] text-[0.82rem]"
+              // 与博客正文同字号同行高（EntrySummary：0.8125rem 即 13px、leading-relaxed）
+              gutter ? "text-[0.8125rem]" : "max-h-[52vh] text-[0.8125rem]"
             } ${hasContent ? "pb-4 pt-10" : ""}`}
           >
             <div className="space-y-5">
@@ -244,7 +244,7 @@ export function PetChatPanel({
                 m.role === "user" ? (
                   <p
                     key={m.id}
-                    className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words text-right text-[0.82rem] text-zinc-500 dark:text-zinc-400"
+                    className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words text-right text-[0.8125rem] text-zinc-500 dark:text-zinc-400"
                   >
                     {m.content}
                   </p>
@@ -304,7 +304,7 @@ export function PetChatPanel({
               style={{ outline: "none" }}
               // 上下各 2px 内边距，单行时文字与右侧 28px 的按钮垂直居中；
               // 手机上字号不低于 16px，否则 iOS 聚焦时会整页放大
-              className="block max-h-[124px] min-h-7 flex-1 resize-none bg-transparent py-0.5 text-base leading-6 text-zinc-900 placeholder:text-zinc-500 disabled:cursor-not-allowed dark:text-zinc-100 dark:placeholder:text-zinc-400 sm:text-[0.82rem]"
+              className="block max-h-[124px] min-h-7 flex-1 resize-none bg-transparent py-0.5 text-base leading-6 text-zinc-900 placeholder:text-zinc-500 disabled:cursor-not-allowed dark:text-zinc-100 dark:placeholder:text-zinc-400 sm:text-[0.8125rem]"
             />
             {chat.streaming ? (
               <button

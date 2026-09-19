@@ -141,7 +141,12 @@ export type TimelineRow = {
   /** 淡色显示（管理员看到的私密文章） */
   muted?: boolean;
 };
-type Row = TimelineRow & { gapBefore: boolean };
+type Row = TimelineRow & {
+  gapBefore: boolean;
+  year: number | null;
+  /** 该年第一条（置顶之外）：上方标出年份 */
+  showYear: boolean;
+};
 type Tip = { i: number; top: number; shown: boolean };
 
 /**
@@ -193,9 +198,11 @@ export const ScrollTimeline = memo(function ScrollTimeline({
     };
     return inputRows.map((o, i) => {
       const prev = inputRows[i - 1];
+      const year = yearOf(o.at);
       const gapBefore =
-        !!prev && ((!!prev.pinned && !o.pinned) || (!o.pinned && yearOf(o.at) !== yearOf(prev.at)));
-      return { ...o, gapBefore };
+        !!prev && ((!!prev.pinned && !o.pinned) || (!o.pinned && year !== yearOf(prev.at)));
+      const showYear = !o.pinned && year !== null && (!prev || !!prev.pinned || year !== yearOf(prev.at));
+      return { ...o, gapBefore, year, showYear };
     });
   }, [inputRows]);
   const indexById = useMemo(() => new Map(inputRows.map((o, i) => [o.id, i])), [inputRows]);
@@ -633,6 +640,8 @@ export const ScrollTimeline = memo(function ScrollTimeline({
   };
 
   const tabStop = focusIdx ?? active;
+  // 当前读到的那一年，年份标签加深
+  const activeYear = rows[active] && !rows[active].pinned ? rows[active].year : null;
   const tipRow = tip ? rows[tip.i] : undefined;
   const tipStatus = tipRow?.id === jumpingId ? "载入中…" : tipRow?.id === failedId ? "未能载入" : null;
   const tipLine1 = tipStatus ?? tipRow?.line1 ?? "";
@@ -683,6 +692,17 @@ export const ScrollTimeline = memo(function ScrollTimeline({
                 : "bg-zinc-900/20 group-hover:bg-zinc-900/50 group-focus-visible:bg-zinc-900/50 dark:bg-white/20 dark:group-hover:bg-white/55 dark:group-focus-visible:bg-white/55 forced-colors:bg-[CanvasText]";
             return (
               <li key={r.id} className={r.gapBefore ? "mt-2" : undefined}>
+                {r.showYear && (
+                  // 年份写在该年第一条横线上方（跨年间隙里），字号与博客正文一致；读屏的每条标签里已带日期
+                  <span
+                    aria-hidden
+                    className={`block pb-1 pl-4 text-[0.8125rem] leading-4 tabular-nums transition-colors duration-200 motion-reduce:transition-none ${
+                      r.year === activeYear ? "text-zinc-600 dark:text-zinc-300" : "text-zinc-400 dark:text-zinc-500"
+                    }`}
+                  >
+                    {r.year}
+                  </span>
+                )}
                 <a
                   href={hrefFor(r.id)}
                   data-i={i}
