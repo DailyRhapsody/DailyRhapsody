@@ -85,8 +85,10 @@ function useMediaQuery(query: string) {
 }
 
 /**
- * 仿 Apple Intelligence 新版 Siri：没有面板和白框，对话文字直接浮在页面上。
- * 宽屏放进正文右侧的空白栏（从顶部到宠物上方）；空白栏不够宽时浮在页面底部，背后加一层渐隐柔化。
+ * 仿 Apple Intelligence 新版 Siri：没有白框，对话浮在页面上。
+ * 宽屏放进正文右侧的空白栏（从顶部到宠物上方），有内容时垫一层磨砂半透明底：
+ * 评论线程也在这条栏里，不垫的话两边文字会叠在一起。
+ * 空白栏不够宽时浮在页面底部，背后加一层渐隐柔化。
  * 对话期间左上角头像的呼吸灯变成彩色光环（由 PetLauncher 在根节点打标记）。
  */
 export function PetChatPanel({
@@ -197,11 +199,15 @@ export function PetChatPanel({
   const last = chat.messages[chat.messages.length - 1];
   const waitingFirstToken = chat.streaming && last?.role === "assistant" && !last.content;
   const hasContent = chat.messages.length > 0 || !!chat.error;
+  const glass = !!gutter && hasContent;
+  // 淡入淡出不放在根节点、也不放在磨砂卡片上：Chrome 里元素自身或祖先透明度小于 1 时 backdrop-filter 不生效，
+  // 打开的过渡期间背后评论会清晰透出。磨砂卡片改为底色与模糊一起渐入，文字等其余部分各自淡入
+  const fade = `transition-apple transition-apple-slow motion-reduce:transition-none ${open ? "opacity-100" : "opacity-0"}`;
 
   // 宽屏：正文右侧空白栏，从顶部到宠物上方（宠物占底部约 104px）；否则浮在页面底部
   const rootStyle = gutter
-    ? { left: gutter.left, width: gutter.width, top: 24, bottom: 120, transitionProperty: "opacity, translate" }
-    : { left: 0, right: 0, bottom: keyboardInset, transitionProperty: "opacity, translate" };
+    ? { left: gutter.left, width: gutter.width, top: 24, bottom: 120, transitionProperty: "translate" }
+    : { left: 0, right: 0, bottom: keyboardInset, transitionProperty: "translate" };
 
   return (
     <div
@@ -213,14 +219,14 @@ export function PetChatPanel({
       onKeyDown={onPanelKeyDown}
       style={rootStyle}
       className={`pointer-events-none fixed z-[100] flex flex-col justify-end font-sans transition-apple transition-apple-slow motion-reduce:translate-y-0 motion-reduce:transition-none ${
-        open ? "translate-y-0 opacity-100" : "invisible translate-y-4 opacity-0"
+        open ? "translate-y-0" : "invisible translate-y-4"
       }`}
     >
-      {/* 浮在正文上方时才需要：文字背后一层向上渐隐的柔化，没有边框；右侧空白栏里背景本来就是空的 */}
+      {/* 浮在正文上方时：文字背后一层向上渐隐的柔化，没有边框。右侧空白栏里改由对话列表自己垫磨砂底 */}
       {!gutter && (
         <div
           aria-hidden="true"
-          className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-white/85 via-white/55 to-transparent backdrop-blur-md [mask-image:linear-gradient(to_top,black_55%,transparent)] dark:from-black/80 dark:via-black/50 ${
+          className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-white/85 via-white/55 to-transparent backdrop-blur-md [mask-image:linear-gradient(to_top,black_55%,transparent)] dark:from-black/80 dark:via-black/50 ${fade} ${
             hasContent ? "-top-24" : "-top-10"
           }`}
         />
@@ -231,56 +237,74 @@ export function PetChatPanel({
           gutter ? "h-full justify-end" : "mx-auto max-w-[640px] px-4 pb-4 sm:pb-6"
         }`}
       >
+          {/* 磨砂底：半透明白加背景模糊，盖住下面的评论；滚动渐隐只作用在里层文字上，底板边缘保持完整 */}
           <div
-            ref={listRef}
-            onScroll={onScroll}
-            className={`pointer-events-auto min-h-0 overflow-y-auto overscroll-contain leading-relaxed text-zinc-900 [mask-image:linear-gradient(to_bottom,transparent,black_40px)] [scrollbar-width:none] dark:text-zinc-100 ${
-              // 与博客正文同字号同行高（EntrySummary：0.8125rem 即 13px、leading-relaxed）
-              gutter ? "text-[0.8125rem]" : "max-h-[52vh] text-[0.8125rem]"
-            } ${hasContent ? "pb-4 pt-10" : ""}`}
+            className={`flex min-h-0 flex-col ${
+              glass
+                ? `pointer-events-auto overflow-hidden rounded-[22px] transition-[background-color,box-shadow,-webkit-backdrop-filter,backdrop-filter] duration-[350ms] ease-[cubic-bezier(0.25,0.1,0.25,1)] motion-reduce:transition-none ${
+                    open
+                      ? "bg-white/70 shadow-[0_8px_32px_rgba(0,0,0,0.08)] ring-1 ring-black/5 backdrop-blur-2xl backdrop-saturate-150 dark:bg-zinc-900/65 dark:ring-white/10"
+                      : ""
+                  }`
+                : ""
+            }`}
           >
-            <div className="space-y-5">
-              {chat.messages.map((m) =>
-                m.role === "user" ? (
-                  <p
-                    key={m.id}
-                    className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words text-right text-[0.8125rem] text-zinc-500 dark:text-zinc-400"
-                  >
-                    {m.content}
-                  </p>
-                ) : (
-                  <div key={m.id}>
-                    {m.content ? <AssistantText text={m.content} /> : null}
-                    {m.interrupted && <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">（回复中断）</p>}
-                  </div>
-                ),
-              )}
-              {waitingFirstToken && (
-                <div className="flex gap-1 py-1" role="status">
-                  <span className="sr-only">正在思考</span>
-                  {[0, 1, 2].map((i) => (
-                    <span
-                      key={i}
-                      className="dr-pet-dot h-1.5 w-1.5 rounded-full bg-zinc-400"
-                      style={{ animationDelay: `${i * 160}ms` }}
-                    />
-                  ))}
-                </div>
-              )}
-              {chat.error && (
-                <div role="alert" className="flex items-center gap-2 text-[0.8rem] text-zinc-500 dark:text-zinc-400">
-                  <span>{chat.error.message}</span>
-                  {chat.error.retryable && (
-                    <button
-                      type="button"
-                      onClick={chat.retry}
-                      className="px-1 text-zinc-900 underline decoration-zinc-400 underline-offset-2 dark:text-zinc-100"
+            <div
+              ref={listRef}
+              onScroll={onScroll}
+              className={`pointer-events-auto min-h-0 overflow-y-auto overscroll-contain leading-relaxed text-zinc-900 [scrollbar-width:none] dark:text-zinc-100 ${fade} ${
+                // 与博客正文同字号同行高（EntrySummary：0.8125rem 即 13px、leading-relaxed）
+                gutter ? "text-[0.8125rem]" : "max-h-[52vh] text-[0.8125rem]"
+              } ${
+                glass
+                  ? // 内边距放在滚动容器上：卡片边缘也能滚动对话，键盘焦点框不被裁掉
+                    "p-4 [mask-image:linear-gradient(to_bottom,transparent,black_16px)]"
+                  : `[mask-image:linear-gradient(to_bottom,transparent,black_40px)] ${hasContent ? "pb-4 pt-10" : ""}`
+              }`}
+            >
+              <div className="space-y-5">
+                {chat.messages.map((m) =>
+                  m.role === "user" ? (
+                    <p
+                      key={m.id}
+                      className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words text-right text-[0.8125rem] text-zinc-500 dark:text-zinc-400"
                     >
-                      重试
-                    </button>
-                  )}
-                </div>
-              )}
+                      {m.content}
+                    </p>
+                  ) : (
+                    <div key={m.id}>
+                      {m.content ? <AssistantText text={m.content} /> : null}
+                      {m.interrupted && <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">（回复中断）</p>}
+                    </div>
+                  ),
+                )}
+                {waitingFirstToken && (
+                  <div className="flex gap-1 py-1" role="status">
+                    <span className="sr-only">正在思考</span>
+                    {[0, 1, 2].map((i) => (
+                      <span
+                        key={i}
+                        className="dr-pet-dot h-1.5 w-1.5 rounded-full bg-zinc-400"
+                        style={{ animationDelay: `${i * 160}ms` }}
+                      />
+                    ))}
+                  </div>
+                )}
+                {chat.error && (
+                  <div role="alert" className="flex items-center gap-2 text-[0.8rem] text-zinc-500 dark:text-zinc-400">
+                    <span>{chat.error.message}</span>
+                    {chat.error.retryable && (
+                      <button
+                        type="button"
+                        onClick={chat.retry}
+                        className="px-1 text-zinc-900 underline decoration-zinc-400 underline-offset-2 dark:text-zinc-100"
+                      >
+                        重试
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -289,7 +313,9 @@ export function PetChatPanel({
           </p>
 
           {/* 输入胶囊：半透明，不做白底框 */}
-          <div className="pointer-events-auto mt-2 flex items-end gap-2 rounded-[22px] bg-white/55 py-2 pl-4 pr-2 shadow-[0_2px_20px_rgba(0,0,0,0.06)] ring-1 ring-black/5 backdrop-blur-xl transition-apple focus-within:bg-white/70 dark:bg-zinc-800/55 dark:ring-white/10 dark:focus-within:bg-zinc-800/70">
+          <div
+            className={`pointer-events-auto mt-2 flex items-end gap-2 rounded-[22px] bg-white/55 py-2 pl-4 pr-2 shadow-[0_2px_20px_rgba(0,0,0,0.06)] ring-1 ring-black/5 backdrop-blur-xl focus-within:bg-white/70 dark:bg-zinc-800/55 dark:ring-white/10 dark:focus-within:bg-zinc-800/70 ${fade}`}
+          >
             <textarea
               ref={inputRef}
               rows={1}
