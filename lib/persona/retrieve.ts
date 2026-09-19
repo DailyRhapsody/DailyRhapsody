@@ -57,6 +57,23 @@ function firstLine(text: string): string {
   return line.replace(/^#+\s*/, "").slice(0, 40);
 }
 
+/** 编号小标题（「1 背景与定位」「2.1 xxx」）与 markdown 标题行不适合当文章标题 */
+const HEADING_LINE = /^(#+\s|\d+(\.\d+)*\s)/;
+
+/**
+ * 日记没有独立标题字段：取正文第一行正文（跳过标题与编号小标题），截到第一句，最长 24 字
+ */
+export function postTitle(d: Diary): string {
+  const lines = cleanBody(d.summary ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const prose = lines.find((l) => !HEADING_LINE.test(l)) ?? lines[0] ?? "";
+  const text = prose.replace(/^([-*>]|\d+[.)、])\s*/, "");
+  const sentence = text.split(/[。！？!?：:]/)[0] || text;
+  return sentence.length > 24 ? `${sentence.slice(0, 24)}…` : sentence;
+}
+
 function buildIndex(diaries: Diary[], notes: PersonaNote[]) {
   const docs: Doc[] = [];
   for (const d of diaries) {

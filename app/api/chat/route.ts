@@ -4,6 +4,7 @@ import { getClientIpFromRequest } from "@/lib/client-ip";
 import { getCachedDiaries } from "@/lib/notion";
 import { CHAT_LIMITS, getPetMode } from "@/lib/persona/config";
 import { isLlmConfigured, LlmError, streamChat, type LlmMessage } from "@/lib/persona/llm";
+import { buildBlogFacts } from "@/lib/persona/facts";
 import { buildSystemPrompt } from "@/lib/persona/prompt";
 import { retrieveSnippets } from "@/lib/persona/retrieve";
 import { loadPersona } from "@/lib/persona/store";
@@ -135,10 +136,17 @@ export async function POST(req: Request) {
         );
   const lastQuestion = messages[messages.length - 1].content;
   const snippets = retrieveSnippets(lastQuestion.slice(-QUERY_TAIL_CHARS), visible, bundle.notes);
+  // 篇数按页面同口径统计（访客只算公开文章）；回避主题只从「最近几篇」「常用标签」里隐去
+  const counted = tier === "owner" ? diaries : diaries.filter((d) => d.isPublic !== false);
+  const facts = buildBlogFacts(
+    counted,
+    tier === "owner" ? { tags: new Set(), ids: new Set() } : { tags: avoidTags, ids: avoidIds },
+    tier === "owner" ? diaries.filter((d) => d.isPublic === false).length : 0,
+  );
 
   try {
     const stream = await streamChat({
-      system: buildSystemPrompt(bundle, snippets, tier),
+      system: buildSystemPrompt(bundle, snippets, tier, facts),
       messages,
       maxTokens: tier === "owner" ? CHAT_LIMITS.maxOutputTokensOwner : CHAT_LIMITS.maxOutputTokensPublic,
       // 访客关页即中止上游，停止计费

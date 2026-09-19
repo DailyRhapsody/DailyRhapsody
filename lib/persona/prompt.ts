@@ -1,5 +1,6 @@
 import type { PersonaBundle, PersonaTier } from "@/lib/persona/types";
 import type { Snippet } from "@/lib/persona/retrieve";
+import { renderBlogFacts, type BlogFacts } from "@/lib/persona/facts";
 
 /**
  * 组装 system prompt。人设正文来自人设包；这里只放与内容无关的框架与硬规则，
@@ -76,6 +77,7 @@ export function buildSystemPrompt(
   bundle: PersonaBundle,
   snippets: Snippet[],
   tier: PersonaTier,
+  facts: BlogFacts | null = null,
 ): string {
   const owner = tier === "owner";
   return [
@@ -87,6 +89,7 @@ export function buildSystemPrompt(
     section("我记得的事", bundle.memory),
     section("边界", bundle.boundaries),
     renderExemplars(bundle),
+    facts ? renderBlogFacts(facts) : "",
     renderSnippets(snippets),
     owner ? OWNER_RULES : PUBLIC_RULES,
   ]
