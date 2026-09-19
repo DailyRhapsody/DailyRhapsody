@@ -1,5 +1,5 @@
 /**
- * 顶栏布局常量，由 /entries 与 StickyProfileHeader 共享。
+ * 顶栏布局常量，由 /blog 与 StickyProfileHeader 共享。
  * 修改值时两处会同步生效，避免再次出现手抄数字不一致导致的滚动吸收量错位。
  */
 

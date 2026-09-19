@@ -7,8 +7,8 @@ export function isGateIssuingPath(pathname: string): boolean {
   if (pathname.startsWith("/reference")) return true;
   return (
     pathname === "/" ||
-    pathname === "/entries" ||
-    pathname === "/the-moment" ||
+    pathname === "/blog" ||
+    pathname === "/moments" ||
     pathname === "/about"
   );
 }

@@ -25,7 +25,7 @@ export const metadata: Metadata = {
 };
 
 // 关键：禁止 Next.js / Vercel CDN 预渲染缓存任何页面响应。
-// 原因：middleware (proxy.ts) attachSeed 给 /, /entries, /the-moment, /about
+// 原因：middleware (proxy.ts) attachSeed 给 /, /blog, /moments, /about
 // 下发 dr_seed cookie，并明确 Cache-Control: no-store。但若页面本身被
 // 预渲染（x-vercel-cache: HIT, x-nextjs-prerender: 1），CDN 会直接返回
 // 缓存的 HTML，**根本不调用 middleware** → 真人拿不到 dr_seed →

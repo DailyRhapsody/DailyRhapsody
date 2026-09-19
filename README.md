@@ -10,9 +10,11 @@ Next.js 16（App Router）+ React 19，内容托管在 Notion，部署在 Vercel
 
 | 栏目 | 路由 | Notion 库 | 环境变量 | 数据层 |
 |---|---|---|---|---|
-| 日记 | `/entries` | Blog | `NOTION_DATABASE_ID` | `lib/notion.ts` |
-| 图片动态 | `/moments`、`/the-moment` | Moments | `NOTION_GALLERY_DATABASE_ID` | `lib/notion-moments.ts` |
+| 日记 | `/blog` | Blog | `NOTION_DATABASE_ID` | `lib/notion.ts` |
+| 图片动态 | `/moments` | Moments | `NOTION_GALLERY_DATABASE_ID` | `lib/notion-moments.ts` |
 | 收藏 | `/reference` | Reference | `NOTION_REFERENCE_DB_ID` | `lib/notion-reference.ts` |
+
+`/blog` 与 `/moments` 是同一页（`app/blog`）的两个 tab，切换时只改地址栏不重载；`/moments` 由 `next.config.ts` 重写到同一页，显示哪个 tab 由地址决定。旧地址 `/entries`（含 `#entry-…` 锚点）永久跳转到 `/blog`，`/entries?tab=moments` 与 `/the-moment` 永久跳转到 `/moments`。
 
 三个数据层结构一致：Upstash Redis 两级缓存（stale-while-revalidate + 后台刷新），软 TTL 由 `NOTION_CACHE_TTL` 控制，硬 TTL 24 小时。
 

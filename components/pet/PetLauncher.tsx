@@ -14,7 +14,7 @@ const PetChatPanel = dynamic(() => import("@/components/pet/PetChatPanel").then(
 });
 
 /**
- * 右下角数字人入口。挂在根 layout：/entries 的翻转容器带 transform，
+ * 右下角数字人入口。挂在根 layout：/blog 的翻转容器带 transform，
  * 放在页面树里 fixed 会变成相对容器定位；根 layout 跨路由不卸载，对话也不会丢。
  */
 export function PetLauncher() {
@@ -24,7 +24,9 @@ export function PetLauncher() {
   // 只放在会签发握手的页面：404 等页面拿不到 dr_gate，请求对话接口只会被拒并记违规。
   // 封面虽然签发握手，但它是全屏沉浸页且会自动跳转，不放
   if (!pathname || pathname === "/" || !isGateIssuingPath(pathname)) return null;
-  return mode === "owner" ? <OwnerOnly pathname={pathname} /> : <Launcher />;
+  // /blog 与 /moments 是同一页的两个 tab，切 tab 不算换页，不必重查会话
+  const pageKey = pathname === "/moments" ? "/blog" : pathname;
+  return mode === "owner" ? <OwnerOnly pathname={pageKey} /> : <Launcher />;
 }
 
 /** 内测阶段只给登录后的自己看。按路由重查会话：登录后客户端跳回前台时根 layout 不会重挂 */

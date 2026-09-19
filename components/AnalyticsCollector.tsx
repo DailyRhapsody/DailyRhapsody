@@ -40,12 +40,19 @@ function utmFromLocation(): {
   }
 }
 
+/** 同一页的两个 tab：/blog ↔ /moments 切换只改地址栏，不算一次新的访问 */
+const SAME_PAGE_TABS = new Set(["/blog", "/moments"]);
+
 export function AnalyticsCollector() {
   const pathname = usePathname();
   const lastRef = useRef<{ key: string; t: number }>({ key: "", t: 0 });
+  const prevPathRef = useRef<string | null>(null);
 
   useEffect(() => {
+    const prev = prevPathRef.current;
+    prevPathRef.current = pathname;
     if (!pathname || pathname.startsWith("/admin")) return;
+    if (prev && prev !== pathname && SAME_PAGE_TABS.has(prev) && SAME_PAGE_TABS.has(pathname)) return;
 
     const search = typeof window !== "undefined" ? window.location.search || "" : "";
     const hash = typeof window !== "undefined" ? window.location.hash || "" : "";

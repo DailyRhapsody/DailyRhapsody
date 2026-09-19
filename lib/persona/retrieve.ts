@@ -67,7 +67,7 @@ function buildIndex(diaries: Diary[], notes: PersonaNote[]) {
       id: d.id,
       title: firstLine(full),
       date: d.date,
-      href: `/entries#entry-${d.id}`,
+      href: `/blog#entry-${d.id}`,
       text: "",
       full,
       grams: countGrams(full),

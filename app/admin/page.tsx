@@ -585,7 +585,7 @@ export default function AdminPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  文章页顶栏背景（/entries）
+                  文章页顶栏背景（/blog）
                 </label>
                 <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
                   博客列表与单篇阅读时顶部粘性栏背景图；留空则用内置默认图
