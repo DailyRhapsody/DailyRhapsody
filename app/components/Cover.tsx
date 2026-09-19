@@ -86,13 +86,15 @@ export default function Cover() {
             unoptimized={mediaUrl!.startsWith("http")}
           />
         ) : (
+          // 与文章页顶栏同一张无损原图（NASA 哈勃极深场 XDF）；不走图片优化，否则会被转成有损格式
           <Image
-            src="/cover.png"
+            src="/hubble-xdf.webp"
             alt=""
             fill
             className="object-cover"
             priority
             sizes="100vw"
+            unoptimized
           />
         )}
         <div

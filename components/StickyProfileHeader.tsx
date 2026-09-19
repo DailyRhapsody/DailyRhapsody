@@ -9,7 +9,7 @@ export type StickyProfileHeaderData = {
   name: string;
   signature: string;
   avatar: string;
-  /** 未设置时使用默认 `/header-bg.png` */
+  /** 未设置时使用默认 `/hubble-xdf.webp` */
   headerBg?: string;
 };
 
@@ -332,7 +332,7 @@ export default function StickyProfileHeader({
 
   // headerBg 会被插进 CSS `url(...)`，只放行站内相对路径和 http(s)，
   // 挡掉 javascript: / data: 之类的协议注入。
-  const rawBgUrl = profile?.headerBg?.trim() || "/header-bg.png";
+  const rawBgUrl = profile?.headerBg?.trim() || "/hubble-xdf.webp";
   const bgUrl = (() => {
     if (rawBgUrl.startsWith("/")) return rawBgUrl;
     try {
@@ -341,7 +341,7 @@ export default function StickyProfileHeader({
     } catch {
       /* 非法 URL，落到兜底图 */
     }
-    return "/header-bg.png";
+    return "/hubble-xdf.webp";
   })();
 
   function renderAvatar(size: "sm" | "lg") {

@@ -46,7 +46,7 @@ const MAX_SUMMARY_LINES = 5;
 /** 搜索防抖：仅下方列表随防抖后的关键词请求，避免整页跟着抖 */
 const SEARCH_DEBOUNCE_MS = 320;
 /** 与 lib/profile-store 默认一致；用于后台预览是否算「自定义顶栏」 */
-const DEFAULT_ENTRY_HEADER_BG = "/header-bg.png";
+const DEFAULT_ENTRY_HEADER_BG = "/hubble-xdf.webp";
 
 function getSizeClass(count: number, maxCount: number) {
   if (maxCount <= 0) return "text-xs";
