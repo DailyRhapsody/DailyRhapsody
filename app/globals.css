@@ -263,36 +263,78 @@ input[type="number"] {
 }
 html[data-pet-chat] .dr-pet-avatar-ring {
   display: block;
-  animation: dr-sleep-led-breathe 3s ease-in-out infinite;
 }
-html[data-pet-chat="thinking"] .dr-pet-avatar-ring {
-  animation-duration: 1.4s;
+/* 两层：外层是先画好光环再整体模糊的柔光（模糊放在外层，才不会被环形遮罩裁回硬边），
+   内层是一圈细亮环；两层渐变反向旋转，颜色持续流动 */
+.dr-pet-avatar-ring-glow,
+.dr-pet-avatar-ring-line {
+  position: absolute;
+  inset: 0;
 }
-.dr-pet-avatar-ring > span {
+.dr-pet-avatar-ring-glow {
+  inset: -4px;
+  filter: blur(7px);
+  animation: dr-pet-ring-breathe 3s ease-in-out infinite;
+}
+.dr-pet-avatar-ring-line {
+  animation: dr-pet-ring-line-breathe 3s ease-in-out infinite;
+}
+.dr-pet-avatar-ring-glow > span,
+.dr-pet-avatar-ring-line > span {
   position: absolute;
   inset: 0;
   border-radius: 9999px;
-  padding: var(--dr-ring-width, 3px);
   background: conic-gradient(
     from var(--dr-glow-angle),
-    #fb923c,
-    #f472b6,
-    #a78bfa,
-    #60a5fa,
-    #2dd4bf,
-    #fb923c
+    #ffd3a8,
+    #ffb3d6,
+    #dcc4ff,
+    #b3dcff,
+    #bdf5ec,
+    #ffd3a8
   );
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  animation: dr-pet-glow-spin 5s linear infinite;
 }
-html[data-pet-chat="thinking"] .dr-pet-avatar-ring > span {
+.dr-pet-avatar-ring-glow > span {
+  padding: calc(var(--dr-ring-width, 3px) * 2.6);
+  animation: dr-pet-glow-spin 4s linear infinite;
+}
+.dr-pet-avatar-ring-line > span {
+  padding: var(--dr-ring-width, 3px);
+  animation: dr-pet-glow-spin 7s linear infinite reverse;
+}
+@keyframes dr-pet-ring-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.97);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+@keyframes dr-pet-ring-line-breathe {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+/* 生成回复时：呼吸与流动都加快 */
+html[data-pet-chat="thinking"] .dr-pet-avatar-ring-glow,
+html[data-pet-chat="thinking"] .dr-pet-avatar-ring-line {
+  animation-duration: 1.4s;
+}
+html[data-pet-chat="thinking"] .dr-pet-avatar-ring-glow > span {
   animation-duration: 1.8s;
 }
-/* 外面再叠一层模糊的同色环，形成光晕 */
-.dr-pet-avatar-ring > span:first-child {
-  filter: blur(5px);
+html[data-pet-chat="thinking"] .dr-pet-avatar-ring-line > span {
+  animation-duration: 3s;
 }
 /* 原来的绿白光晕与琥珀色进度弧在对话期间让位 */
 html[data-pet-chat] .dr-life-ring-sleep-led {
@@ -300,8 +342,10 @@ html[data-pet-chat] .dr-life-ring-sleep-led {
   opacity: 0;
 }
 @media (prefers-reduced-motion: reduce) {
-  html[data-pet-chat] .dr-pet-avatar-ring,
-  .dr-pet-avatar-ring > span {
+  .dr-pet-avatar-ring-glow,
+  .dr-pet-avatar-ring-line,
+  .dr-pet-avatar-ring-glow > span,
+  .dr-pet-avatar-ring-line > span {
     animation: none;
   }
 }
