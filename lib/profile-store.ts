@@ -13,11 +13,17 @@ export type Profile = {
   homeCoverIsVideo: boolean;
 };
 
+/**
+ * 旧默认顶栏图。保存资料时默认值会一并写进 Redis，存量 profile 里多半就是这个路径；
+ * 图已换成 /hubble-xdf.webp，读出时按默认处理。
+ */
+const LEGACY_DEFAULT_HEADER_BG = "/header-bg.png";
+
 const DEFAULT_PROFILE: Profile = {
   name: "DailyRhapsody",
   signature: "君子论迹不论心",
   avatar: "/avatar.png",
-  headerBg: "/header-bg.png",
+  headerBg: "/hubble-xdf.webp",
   homeCoverUrl: "",
   homeCoverIsVideo: false,
 };
@@ -29,7 +35,10 @@ function normalizeProfile(raw: unknown): Profile {
     name: typeof o.name === "string" ? o.name : DEFAULT_PROFILE.name,
     signature: typeof o.signature === "string" ? o.signature : DEFAULT_PROFILE.signature,
     avatar: typeof o.avatar === "string" ? o.avatar : DEFAULT_PROFILE.avatar,
-    headerBg: typeof o.headerBg === "string" ? o.headerBg : DEFAULT_PROFILE.headerBg,
+    headerBg:
+      typeof o.headerBg === "string" && o.headerBg.trim() !== LEGACY_DEFAULT_HEADER_BG
+        ? o.headerBg
+        : DEFAULT_PROFILE.headerBg,
     homeCoverUrl:
       typeof o.homeCoverUrl === "string" ? o.homeCoverUrl : DEFAULT_PROFILE.homeCoverUrl,
     homeCoverIsVideo:
