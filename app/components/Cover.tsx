@@ -86,19 +86,20 @@ export default function Cover() {
             unoptimized={mediaUrl!.startsWith("http")}
           />
         ) : (
-          // 与文章页顶栏同一张无损原图（NASA 哈勃极深场 XDF）；不走图片优化，否则会被转成有损格式
+          // 与文章页顶栏同一张无损原图（NASA 哈勃极深场 XDF）；不走图片优化，否则会被转成有损格式。
+          // 原图星系太密会抢走标题和导航的注意力，首页做成磨砂：模糊后只留星空色彩，放大一点盖住模糊后变淡的边缘
           <Image
             src="/hubble-xdf.webp"
             alt=""
             fill
-            className="object-cover"
+            className="scale-[1.06] object-cover blur-[12px]"
             priority
             sizes="100vw"
             unoptimized
           />
         )}
         <div
-          className="absolute inset-0 bg-black/40"
+          className={`absolute inset-0 ${useVideo || useCustomImage ? "bg-black/40" : "bg-black/50"}`}
           aria-hidden
         />
       </div>
