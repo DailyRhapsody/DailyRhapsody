@@ -246,32 +246,33 @@ input[type="number"] {
   }
 }
 
-/* 数字人对话时屏幕四周的彩色光晕（仿 Apple Intelligence 的 Siri）：
-   外层整体模糊成柔光，内层只保留一圈边框并让渐变角度旋转 */
+/* 数字人对话时，左上角头像原本的睡眠呼吸灯换成一圈彩色呼吸灯（仿 Apple Intelligence 的配色）：
+   根节点带 data-pet-chat 时生效；生成回复时呼吸更快、转得更快 */
 @property --dr-glow-angle {
   syntax: "<angle>";
   inherits: false;
   initial-value: 0deg;
 }
-.dr-pet-glow {
-  position: fixed;
-  inset: 0;
-  z-index: 99;
-  pointer-events: none;
-  filter: blur(12px);
-  opacity: 0;
-  transition: opacity 500ms cubic-bezier(0.25, 0.1, 0.25, 1);
+@keyframes dr-pet-glow-spin {
+  to {
+    --dr-glow-angle: 360deg;
+  }
 }
-.dr-pet-glow[data-state="idle"] {
-  opacity: 0.85;
+.dr-pet-avatar-ring {
+  display: none;
 }
-.dr-pet-glow[data-state="active"] {
-  opacity: 1;
+html[data-pet-chat] .dr-pet-avatar-ring {
+  display: block;
+  animation: dr-sleep-led-breathe 3s ease-in-out infinite;
 }
-.dr-pet-glow-ring {
+html[data-pet-chat="thinking"] .dr-pet-avatar-ring {
+  animation-duration: 1.4s;
+}
+.dr-pet-avatar-ring > span {
   position: absolute;
   inset: 0;
-  padding: 7px;
+  border-radius: 9999px;
+  padding: var(--dr-ring-width, 3px);
   background: conic-gradient(
     from var(--dr-glow-angle),
     #fb923c,
@@ -284,21 +285,23 @@ input[type="number"] {
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  animation: dr-pet-glow-spin 6s linear infinite;
+  animation: dr-pet-glow-spin 5s linear infinite;
 }
-.dr-pet-glow[data-state="off"] .dr-pet-glow-ring {
-  animation-play-state: paused;
+html[data-pet-chat="thinking"] .dr-pet-avatar-ring > span {
+  animation-duration: 1.8s;
 }
-.dr-pet-glow[data-state="active"] .dr-pet-glow-ring {
-  animation-duration: 2.4s;
+/* 外面再叠一层模糊的同色环，形成光晕 */
+.dr-pet-avatar-ring > span:first-child {
+  filter: blur(5px);
 }
-@keyframes dr-pet-glow-spin {
-  to {
-    --dr-glow-angle: 360deg;
-  }
+/* 原来的绿白光晕与琥珀色进度弧在对话期间让位 */
+html[data-pet-chat] .dr-life-ring-sleep-led {
+  animation: none;
+  opacity: 0;
 }
 @media (prefers-reduced-motion: reduce) {
-  .dr-pet-glow-ring {
+  html[data-pet-chat] .dr-pet-avatar-ring,
+  .dr-pet-avatar-ring > span {
     animation: none;
   }
 }

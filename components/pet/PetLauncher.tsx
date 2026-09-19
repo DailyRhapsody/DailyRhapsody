@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PixelAstronaut } from "@/components/pet/PixelAstronaut";
 import { useAdminSession } from "@/hooks/useAdminSession";
 import { isGateIssuingPath } from "@/lib/gate-pages";
@@ -39,6 +39,15 @@ function Launcher() {
   const [everOpened, setEverOpened] = useState(false);
   const [thinking, setThinking] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // 对话开着时在根节点打标记：左上角头像的呼吸灯据此换成彩色光环（globals.css 的 dr-pet-avatar-ring）
+  useEffect(() => {
+    const root = document.documentElement;
+    if (open) root.dataset.petChat = thinking ? "thinking" : "open";
+    return () => {
+      delete root.dataset.petChat;
+    };
+  }, [open, thinking]);
   // 对话关闭时它的内容会变成 inert，焦点会掉到 body：交还给宠物按钮。
   // 等按钮恢复可见（窄屏对话打开时按钮隐藏，免得压住输入胶囊）再聚焦
   const close = useCallback(() => {

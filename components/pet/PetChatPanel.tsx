@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { usePetChat } from "@/hooks/usePetChat";
 import { chatProseClass, renderChatMarkdown } from "@/lib/chat-markdown";
@@ -33,6 +34,44 @@ function useKeyboardInset(active: boolean) {
   return active ? inset : 0;
 }
 
+/** 右侧空白栏至少要这么宽才放得下对话；更窄（手机、小屏）时退回页面底部浮字 */
+const GUTTER_MIN_WIDTH = 200;
+const GUTTER_MAX_WIDTH = 480;
+
+/**
+ * 宽屏时把对话放进正文列右侧的空白栏：从页面顶部到右下角宠物上方。
+ * 按当前页面 main 的右边缘实时计算，窗口缩放、换页后重算。
+ */
+function useGutterBox(active: boolean, pathname: string | null) {
+  const [box, setBox] = useState<{ left: number; width: number } | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    const measure = () => {
+      const vw = document.documentElement.clientWidth;
+      const main = document.querySelector("main");
+      const contentRight = main ? main.getBoundingClientRect().right : vw;
+      const start = Math.round(contentRight + 24);
+      const room = vw - start - 24;
+      if (room < GUTTER_MIN_WIDTH) {
+        setBox(null);
+        return;
+      }
+      const width = Math.min(room, GUTTER_MAX_WIDTH);
+      // 空白栏比上限还宽时居中摆放
+      setBox({ left: start + Math.round((room - width) / 2), width });
+    };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    ro?.observe(document.body);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [active, pathname]);
+  return active ? box : null;
+}
+
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState(false);
   useEffect(() => {
@@ -46,8 +85,9 @@ function useMediaQuery(query: string) {
 }
 
 /**
- * 仿 Apple Intelligence 新版 Siri：没有面板和白框，对话文字直接浮在页面底部，
- * 背后只有一层边缘渐隐的柔化；输入是底部居中的半透明胶囊；打开时屏幕四周泛起彩色光晕。
+ * 仿 Apple Intelligence 新版 Siri：没有面板和白框，对话文字直接浮在页面上。
+ * 宽屏放进正文右侧的空白栏（从顶部到宠物上方）；空白栏不够宽时浮在页面底部，背后加一层渐隐柔化。
+ * 对话期间左上角头像的呼吸灯变成彩色光环（由 PetLauncher 在根节点打标记）。
  */
 export function PetChatPanel({
   open,
@@ -67,6 +107,8 @@ export function PetChatPanel({
   const statusRequested = useRef(false);
   const small = useMediaQuery("(max-width: 639px)");
   const keyboardInset = useKeyboardInset(open && small);
+  const pathname = usePathname();
+  const gutter = useGutterBox(open, pathname);
 
   useEffect(() => onThinkingChange(chat.streaming), [chat.streaming, onThinkingChange]);
 
@@ -156,44 +198,45 @@ export function PetChatPanel({
   const waitingFirstToken = chat.streaming && last?.role === "assistant" && !last.content;
   const hasContent = chat.messages.length > 0 || !!chat.error;
 
-  return (
-    <>
-      {/* 屏幕四周的彩色光晕：打开时淡淡一圈，生成回复时更亮、转得更快 */}
-      <div
-        aria-hidden="true"
-        className="dr-pet-glow"
-        data-state={!open ? "off" : chat.streaming ? "active" : "idle"}
-      >
-        <div className="dr-pet-glow-ring" />
-      </div>
+  // 宽屏：正文右侧空白栏，从顶部到宠物上方（宠物占底部约 104px）；否则浮在页面底部
+  const rootStyle = gutter
+    ? { left: gutter.left, width: gutter.width, top: 24, bottom: 120, transitionProperty: "opacity, translate" }
+    : { left: 0, right: 0, bottom: keyboardInset, transitionProperty: "opacity, translate" };
 
-      <div
-        role="dialog"
-        aria-label="滕君的 AI 分身"
-        aria-hidden={!open}
-        inert={!open}
-        data-pet-chat
-        onKeyDown={onPanelKeyDown}
-        style={{ bottom: keyboardInset, transitionProperty: "opacity, translate" }}
-        className={`pointer-events-none fixed inset-x-0 z-[100] font-sans transition-apple transition-apple-slow motion-reduce:translate-y-0 motion-reduce:transition-none ${
-          open ? "translate-y-0 opacity-100" : "invisible translate-y-4 opacity-0"
-        }`}
-      >
-        {/* 文字背后的柔化：没有边框，向上渐隐到完全透明，只让压在文字下面的页面内容退后 */}
+  return (
+    <div
+      role="dialog"
+      aria-label="滕君的 AI 分身"
+      aria-hidden={!open}
+      inert={!open}
+      data-pet-chat
+      onKeyDown={onPanelKeyDown}
+      style={rootStyle}
+      className={`pointer-events-none fixed z-[100] flex flex-col justify-end font-sans transition-apple transition-apple-slow motion-reduce:translate-y-0 motion-reduce:transition-none ${
+        open ? "translate-y-0 opacity-100" : "invisible translate-y-4 opacity-0"
+      }`}
+    >
+      {/* 浮在正文上方时才需要：文字背后一层向上渐隐的柔化，没有边框；右侧空白栏里背景本来就是空的 */}
+      {!gutter && (
         <div
           aria-hidden="true"
           className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-white/85 via-white/55 to-transparent backdrop-blur-md [mask-image:linear-gradient(to_top,black_55%,transparent)] dark:from-black/80 dark:via-black/50 ${
             hasContent ? "-top-24" : "-top-10"
           }`}
         />
+      )}
 
-        <div className="relative mx-auto flex w-full max-w-[640px] flex-col px-4 pb-4 sm:pb-6">
+      <div
+        className={`relative flex min-h-0 w-full flex-col ${
+          gutter ? "h-full justify-end" : "mx-auto max-w-[640px] px-4 pb-4 sm:pb-6"
+        }`}
+      >
           <div
             ref={listRef}
             onScroll={onScroll}
-            className={`pointer-events-auto max-h-[52vh] overflow-y-auto overscroll-contain text-[16px] leading-relaxed text-zinc-900 [mask-image:linear-gradient(to_bottom,transparent,black_40px)] [scrollbar-width:none] dark:text-zinc-100 ${
-              hasContent ? "pb-4 pt-10" : ""
-            }`}
+            className={`pointer-events-auto min-h-0 overflow-y-auto overscroll-contain leading-relaxed text-zinc-900 [mask-image:linear-gradient(to_bottom,transparent,black_40px)] [scrollbar-width:none] dark:text-zinc-100 ${
+              gutter ? "text-[15px]" : "max-h-[52vh] text-[16px]"
+            } ${hasContent ? "pb-4 pt-10" : ""}`}
           >
             <div className="space-y-5">
               {chat.messages.map((m) =>
@@ -302,8 +345,7 @@ export function PetChatPanel({
               </button>
             )}
           </div>
-        </div>
       </div>
-    </>
+    </div>
   );
 }
