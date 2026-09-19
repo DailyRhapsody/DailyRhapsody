@@ -4,11 +4,11 @@ import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "
 import { usePetChat } from "@/hooks/usePetChat";
 import { chatProseClass, renderChatMarkdown } from "@/lib/chat-markdown";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
-import { PixelAstronaut } from "@/components/pet/PixelAstronaut";
 
-type Status = { ready: boolean; tier: string; starters: string[] };
+type Status = { ready: boolean; tier: string };
 
-const DEFAULT_STARTERS = ["你是谁？", "最近在想什么？", "推荐一篇你写过的文章"];
+/** 侧栏宽度；宽屏时页面整体让出这么宽，侧栏不盖住正文 */
+const PANEL_WIDTH = 400;
 
 const AssistantText = memo(function AssistantText({ text }: { text: string }) {
   const html = useMemo(() => renderChatMarkdown(text), [text]);
@@ -16,16 +16,15 @@ const AssistantText = memo(function AssistantText({ text }: { text: string }) {
 });
 
 /**
- * 手机上贴底的抽屉要躲开软键盘：iOS 弹键盘时不缩布局视口，
- * 只能跟着 visualViewport 算出可见区域的高度与底部偏移。
+ * 手机上全屏面板要躲开软键盘：iOS 弹键盘时不缩布局视口，
+ * 只能跟着 visualViewport 算出可见区域的高度与顶部偏移。
  */
 function useVisualViewportBox(active: boolean) {
-  const [box, setBox] = useState<{ height: number; bottom: number } | null>(null);
+  const [box, setBox] = useState<{ height: number; top: number } | null>(null);
   useEffect(() => {
     const vv = typeof window !== "undefined" ? window.visualViewport : null;
     if (!active || !vv) return;
-    const update = () =>
-      setBox({ height: vv.height, bottom: Math.max(0, window.innerHeight - vv.height - vv.offsetTop) });
+    const update = () => setBox({ height: vv.height, top: vv.offsetTop });
     update();
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
@@ -37,18 +36,22 @@ function useVisualViewportBox(active: boolean) {
   return box;
 }
 
-function useIsSmallScreen() {
-  const [small, setSmall] = useState(false);
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(false);
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 639px)");
-    const update = () => setSmall(mq.matches);
+    const mq = window.matchMedia(query);
+    const update = () => setMatches(mq.matches);
     update();
     mq.addEventListener("change", update);
     return () => mq.removeEventListener("change", update);
-  }, []);
-  return small;
+  }, [query]);
+  return matches;
 }
 
+/**
+ * 右侧对话侧栏，形态同 Notion AI：贴右边、从顶到底；宽屏时页面让位，手机上全屏。
+ * 不做毛玻璃、大阴影与装饰，只留标题、消息与输入框。
+ */
 export function PetChatPanel({
   open,
   onClose,
@@ -65,12 +68,13 @@ export function PetChatPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottom = useRef(true);
   const statusRequested = useRef(false);
-  const small = useIsSmallScreen();
+  const small = useMediaQuery("(max-width: 639px)");
+  const wide = useMediaQuery("(min-width: 1024px)");
   const vvBox = useVisualViewportBox(open && small);
 
   useEffect(() => onThinkingChange(chat.streaming), [chat.streaming, onThinkingChange]);
 
-  // 首次打开时查询可用性与开场问题，只查一次：握手没过的 403 会记违规，不能每次开面板都重来。
+  // 首次打开时查询可用性，只查一次：握手没过的 403 会记违规，不能每次开面板都重来。
   // 查询失败不阻塞输入，发送时服务端会给出具体原因
   useEffect(() => {
     if (!open || statusRequested.current) return;
@@ -89,7 +93,23 @@ export function PetChatPanel({
     return () => clearTimeout(t);
   }, [open, small]);
 
-  // 手机上抽屉盖住大半屏：锁住背后页面，免得在标题栏、输入区拖动时带着页面滚
+  // 宽屏：页面整体向左让出侧栏宽度，正文不被盖住；关闭时还原
+  useEffect(() => {
+    if (!open || !wide) return;
+    const body = document.body;
+    const prev = { padding: body.style.paddingRight, transition: body.style.transition };
+    body.style.transition = "padding-right 200ms cubic-bezier(0.25, 0.1, 0.25, 1)";
+    body.style.paddingRight = `${PANEL_WIDTH}px`;
+    return () => {
+      body.style.paddingRight = prev.padding;
+      // 等收回动画走完再撤掉过渡，免得影响页面别处
+      setTimeout(() => {
+        body.style.transition = prev.transition;
+      }, 220);
+    };
+  }, [open, wide]);
+
+  // 手机上面板全屏：锁住背后页面，免得在标题栏、输入区拖动时带着页面滚
   useEffect(() => {
     if (!open || !small) return;
     const prev = document.body.style.overflow;
@@ -129,6 +149,8 @@ export function PetChatPanel({
     if (el) stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
   };
 
+  const notReady = !!status && !status.ready;
+
   const submit = (text = draft) => {
     if (!text.trim() || chat.streaming || notReady) return;
     stickToBottom.current = true;
@@ -153,7 +175,7 @@ export function PetChatPanel({
       const el = inputRef.current;
       if (!el || el.clientWidth === 0) return;
       el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
+      el.style.height = `${Math.min(el.scrollHeight, 148)}px`;
     };
     fit();
     const raf = requestAnimationFrame(fit);
@@ -161,14 +183,10 @@ export function PetChatPanel({
   }, [draft, open]);
 
   const owner = (chat.tier ?? status?.tier) === "owner";
-  const starters = status?.starters.length ? status.starters : DEFAULT_STARTERS;
-  const notReady = !!status && !status.ready;
   const last = chat.messages[chat.messages.length - 1];
   const waitingFirstToken = chat.streaming && last?.role === "assistant" && !last.content;
 
-  const mobileStyle = small
-    ? { height: vvBox ? Math.round(vvBox.height * 0.92) : "85dvh", bottom: vvBox?.bottom ?? 0 }
-    : undefined;
+  const mobileStyle = small && vvBox ? { top: vvBox.top, height: vvBox.height } : undefined;
 
   return (
     <div
@@ -178,29 +196,22 @@ export function PetChatPanel({
       inert={!open}
       data-pet-chat
       onKeyDown={onPanelKeyDown}
-      // Tailwind v4 的 translate-y-* 走独立的 translate 属性，transition-apple 只过渡 transform，这里补上
-      style={{ ...mobileStyle, transitionProperty: "opacity, translate" }}
-      className={`fixed z-[100] flex flex-col overflow-hidden bg-white/85 font-sans text-zinc-900 shadow-2xl ring-1 ring-black/5 backdrop-blur-xl transition-apple transition-apple-slow motion-reduce:translate-y-0 dark:bg-zinc-900/85 dark:text-zinc-100 dark:ring-white/10 max-sm:inset-x-0 max-sm:rounded-t-2xl sm:bottom-[112px] sm:right-6 sm:h-[min(600px,calc(100dvh-144px))] sm:w-[380px] sm:rounded-2xl ${
-        open ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"
+      // Tailwind v4 的 translate-x-* 走独立的 translate 属性，transition-apple 只过渡 transform，这里补上
+      style={{ ...mobileStyle, transitionProperty: "translate, visibility" }}
+      className={`fixed right-0 top-0 z-[100] flex h-[100dvh] w-full flex-col border-l border-zinc-200/80 bg-white font-sans text-zinc-900 transition-apple motion-reduce:transition-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 sm:w-[400px] ${
+        open ? "visible translate-x-0" : "invisible translate-x-full"
       }`}
     >
-      <header className="flex h-12 shrink-0 items-center gap-2 px-4">
-        <PixelAstronaut scale={1.5} still />
-        <div className="flex min-w-0 items-baseline gap-1.5">
-          <span className="text-[15px] font-medium">滕君</span>
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">AI 分身</span>
-        </div>
-        {owner && (
-          <span className="rounded-full bg-zinc-900/5 px-2 py-0.5 text-[11px] text-zinc-600 dark:bg-white/10 dark:text-zinc-300">
-            本人模式
-          </span>
-        )}
-        <div className="ml-auto flex items-center gap-0.5">
+      <header className="flex h-12 shrink-0 items-center gap-1.5 pl-4 pr-2">
+        <span className="text-[15px] font-medium">滕君</span>
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">AI 分身</span>
+        {owner && <span className="text-xs text-zinc-500 dark:text-zinc-400">· 本人模式</span>}
+        <div className="ml-auto flex items-center">
           <button
             type="button"
             onClick={chat.reset}
             disabled={chat.messages.length === 0}
-            className="rounded-full p-2 text-zinc-500 transition-apple hover:bg-black/5 hover:text-zinc-900 disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100"
+            className="rounded-md p-2 text-zinc-500 transition-apple hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
             aria-label="新对话"
             title="新对话"
           >
@@ -211,7 +222,7 @@ export function PetChatPanel({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-2 text-zinc-500 transition-apple hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100"
+            className="rounded-md p-2 text-zinc-500 transition-apple hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
             aria-label="收起"
             title="收起"
           >
@@ -225,87 +236,59 @@ export function PetChatPanel({
       <div
         ref={listRef}
         onScroll={onScroll}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 text-[15px] leading-relaxed"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 text-[15px] leading-relaxed"
       >
-        {chat.messages.length === 0 ? (
-          <div className="flex min-h-full flex-col items-center justify-center gap-3 pb-6 text-center">
-            <PixelAstronaut scale={4} />
-            <p className="text-[15px] font-medium">你好，我是滕君的 AI 分身。</p>
-            <p className="max-w-[16rem] text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-              {notReady
-                ? "还在准备中，过些天再来找我聊。"
-                : owner
-                  ? "本人模式：可以调用全部记忆，帮你回忆和梳理。"
-                  : "我依据他写过的东西说话，可能有记错的地方。"}
-            </p>
-            {!notReady && (
-              <div className="mt-2 flex flex-wrap justify-center gap-2">
-                {starters.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => submit(s)}
-                    className="rounded-full bg-zinc-900/5 px-3 py-1.5 text-[13px] text-zinc-700 transition-apple hover:bg-zinc-900/10 dark:bg-white/10 dark:text-zinc-200 dark:hover:bg-white/15"
-                  >
-                    {s}
-                  </button>
-                ))}
+        <div className="space-y-4 pt-2">
+          {chat.messages.map((m) =>
+            m.role === "user" ? (
+              <div
+                key={m.id}
+                className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-zinc-100 px-3.5 py-2 dark:bg-zinc-800"
+              >
+                {m.content}
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-4 pt-1">
-            {chat.messages.map((m) =>
-              m.role === "user" ? (
-                <div
-                  key={m.id}
-                  className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-zinc-900/5 px-3.5 py-2 dark:bg-white/10"
+            ) : (
+              <div key={m.id}>
+                {m.content ? <AssistantText text={m.content} /> : null}
+                {m.interrupted && <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">（回复中断）</p>}
+              </div>
+            ),
+          )}
+          {waitingFirstToken && (
+            <div className="flex gap-1 py-1" role="status">
+              <span className="sr-only">正在思考</span>
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="dr-pet-dot h-1.5 w-1.5 rounded-full bg-zinc-400"
+                  style={{ animationDelay: `${i * 160}ms` }}
+                />
+              ))}
+            </div>
+          )}
+          {chat.error && (
+            <div role="alert" className="flex items-center gap-2 text-[13px] text-zinc-500 dark:text-zinc-400">
+              <span>{chat.error.message}</span>
+              {chat.error.retryable && (
+                <button
+                  type="button"
+                  onClick={chat.retry}
+                  className="rounded-md px-2 py-0.5 text-zinc-900 underline decoration-zinc-400 underline-offset-2 dark:text-zinc-100"
                 >
-                  {m.content}
-                </div>
-              ) : (
-                <div key={m.id}>
-                  {m.content ? <AssistantText text={m.content} /> : null}
-                  {m.interrupted && <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">（回复中断）</p>}
-                </div>
-              ),
-            )}
-            {waitingFirstToken && (
-              <div className="flex gap-1 py-1" role="status">
-                <span className="sr-only">正在思考</span>
-                {[0, 1, 2].map((i) => (
-                  <span
-                    key={i}
-                    className="dr-pet-dot h-1.5 w-1.5 rounded-full bg-zinc-400"
-                    style={{ animationDelay: `${i * 160}ms` }}
-                  />
-                ))}
-              </div>
-            )}
-            {chat.error && (
-              <div role="alert" className="flex items-center gap-2 text-[13px] text-zinc-500 dark:text-zinc-400">
-                <span>{chat.error.message}</span>
-                {chat.error.retryable && (
-                  <button
-                    type="button"
-                    onClick={chat.retry}
-                    className="rounded-full px-2 py-0.5 text-zinc-900 underline decoration-zinc-400 underline-offset-2 dark:text-zinc-100"
-                  >
-                    重试
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+                  重试
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <p className="sr-only" aria-live="polite">
         {chat.streaming ? "" : last?.role === "assistant" && last.content ? "已回复" : ""}
       </p>
 
-      <div className="shrink-0 px-3 pb-2 pt-1">
-        <div className="flex items-end gap-2 rounded-2xl bg-white/70 px-3 py-2 ring-1 ring-black/5 transition-apple focus-within:ring-black/15 dark:bg-zinc-800/60 dark:ring-white/10 dark:focus-within:ring-white/20">
+      <div className="shrink-0 px-3 pb-3 pt-1" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+        <div className="flex items-end gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 transition-apple focus-within:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:focus-within:border-zinc-500">
           <textarea
             ref={inputRef}
             rows={1}
@@ -316,16 +299,17 @@ export function PetChatPanel({
             disabled={notReady}
             placeholder={notReady ? "还在准备中" : "想问点什么？"}
             aria-label="输入消息"
-            // 全局 :focus-visible 轮廓不在 layer 里，工具类盖不过；焦点态由外框 focus-within 表达
+            // 全局 :focus-visible 轮廓不在 layer 里，工具类盖不过；焦点态由外框表达
             style={{ outline: "none" }}
+            // 上下各 2px 内边距，单行时文字与右侧 28px 的按钮垂直居中；
             // 手机上字号不低于 16px，否则 iOS 聚焦时会整页放大
-            className="max-h-36 min-h-[24px] flex-1 resize-none bg-transparent text-base leading-6 placeholder:text-zinc-500 disabled:cursor-not-allowed dark:placeholder:text-zinc-400 sm:text-[15px]"
+            className="block max-h-[148px] min-h-7 flex-1 resize-none bg-transparent py-0.5 text-base leading-6 placeholder:text-zinc-500 disabled:cursor-not-allowed dark:placeholder:text-zinc-400 sm:text-[15px]"
           />
           {chat.streaming ? (
             <button
               type="button"
               onClick={chat.stop}
-              className="mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white transition-apple hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white transition-apple hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
               aria-label="停止生成"
               title="停止生成"
             >
@@ -336,7 +320,7 @@ export function PetChatPanel({
               type="button"
               onClick={() => submit()}
               disabled={!draft.trim() || notReady}
-              className="mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white transition-apple hover:bg-zinc-700 disabled:bg-zinc-900/15 disabled:text-white/90 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200 dark:disabled:bg-white/15 dark:disabled:text-zinc-900/60"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white transition-apple hover:bg-zinc-700 disabled:bg-zinc-200 disabled:text-white dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200 dark:disabled:bg-zinc-700 dark:disabled:text-zinc-900"
               aria-label="发送"
               title="发送"
             >
@@ -346,9 +330,6 @@ export function PetChatPanel({
             </button>
           )}
         </div>
-        <p className="mt-1.5 text-center text-[11px] text-zinc-500 dark:text-zinc-400">
-          AI 生成，可能有误，不代表本人即时观点
-        </p>
       </div>
     </div>
   );
