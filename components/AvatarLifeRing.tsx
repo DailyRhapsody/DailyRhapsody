@@ -192,6 +192,23 @@ export default function AvatarLifeRing({
           </g>
         </g>
       </svg>
+      {/* 与数字人对话时替代上面的呼吸灯：彩色光环 + 同色模糊光晕，样式与显隐在 globals.css 的 dr-pet-avatar-ring */}
+      <span
+        aria-hidden
+        className="dr-pet-avatar-ring pointer-events-none absolute"
+        style={
+          {
+            left: viewPad + 1,
+            top: viewPad + 1,
+            width: outer - 2,
+            height: outer - 2,
+            "--dr-ring-width": `${stroke}px`,
+          } as React.CSSProperties
+        }
+      >
+        <span />
+        <span />
+      </span>
       <div
         className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full ${imageClass}`}
       >
