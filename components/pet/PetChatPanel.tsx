@@ -200,6 +200,9 @@ export function PetChatPanel({
   const waitingFirstToken = chat.streaming && last?.role === "assistant" && !last.content;
   const hasContent = chat.messages.length > 0 || !!chat.error;
   const glass = !!gutter && hasContent;
+  // 苹果式玻璃：底色很淡、模糊半径小，背后内容以虚化轮廓透出；边缘靠内侧高光与极淡描边勾出，不用重投影
+  const glassSurface =
+    "bg-white/20 ring-1 ring-black/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),inset_0_0_0_1px_rgba(255,255,255,0.5),0_2px_12px_rgba(0,0,0,0.04)] backdrop-blur-md backdrop-saturate-[1.8] dark:bg-zinc-900/20 dark:ring-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.12),inset_0_0_0_1px_rgba(255,255,255,0.06),0_2px_12px_rgba(0,0,0,0.2)]";
   // 淡入淡出不放在根节点、也不放在磨砂卡片上：Chrome 里元素自身或祖先透明度小于 1 时 backdrop-filter 不生效，
   // 打开的过渡期间背后评论会清晰透出。磨砂卡片改为底色与模糊一起渐入，文字等其余部分各自淡入
   const fade = `transition-apple transition-apple-slow motion-reduce:transition-none ${open ? "opacity-100" : "opacity-0"}`;
@@ -242,9 +245,7 @@ export function PetChatPanel({
             className={`flex min-h-0 flex-col ${
               glass
                 ? `pointer-events-auto overflow-hidden rounded-[22px] transition-[background-color,box-shadow,-webkit-backdrop-filter,backdrop-filter] duration-[350ms] ease-[cubic-bezier(0.25,0.1,0.25,1)] motion-reduce:transition-none ${
-                    open
-                      ? "bg-white/70 shadow-[0_8px_32px_rgba(0,0,0,0.08)] ring-1 ring-black/5 backdrop-blur-2xl backdrop-saturate-150 dark:bg-zinc-900/65 dark:ring-white/10"
-                      : ""
+                    open ? glassSurface : ""
                   }`
                 : ""
             }`}
@@ -314,7 +315,7 @@ export function PetChatPanel({
 
           {/* 输入胶囊：半透明，不做白底框 */}
           <div
-            className={`pointer-events-auto mt-2 flex items-end gap-2 rounded-[22px] bg-white/55 py-2 pl-4 pr-2 shadow-[0_2px_20px_rgba(0,0,0,0.06)] ring-1 ring-black/5 backdrop-blur-xl focus-within:bg-white/70 dark:bg-zinc-800/55 dark:ring-white/10 dark:focus-within:bg-zinc-800/70 ${fade}`}
+            className={`pointer-events-auto mt-2 flex items-end gap-2 rounded-[22px] py-2 pl-4 pr-2 ${glassSurface} focus-within:bg-white/35 dark:focus-within:bg-zinc-900/35 ${fade}`}
           >
             <textarea
               ref={inputRef}
