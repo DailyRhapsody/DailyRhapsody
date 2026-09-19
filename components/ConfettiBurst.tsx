@@ -48,6 +48,14 @@ function isBlank(target: EventTarget | null, x: number, y: number): boolean {
   return !hitsText(target, x, y);
 }
 
+/** 点在滚动条上（页面的或元素自己的）不算点击空白处 */
+function onScrollbar(e: MouseEvent): boolean {
+  const root = document.documentElement;
+  if (e.clientX >= root.clientWidth || e.clientY >= root.clientHeight) return true;
+  const t = e.target;
+  return t instanceof Element && t.clientWidth > 0 && (e.offsetX > t.clientWidth || e.offsetY > t.clientHeight);
+}
+
 /**
  * 彩蛋：在空白处快速连点（同一位置 450ms 内），第 3 下起每点一次，从点击处炸开一小团彩纸。
  * 用 canvas-confetti（ISC 协议）绘制；系统开了「减少动态效果」时不放。
@@ -61,21 +69,36 @@ export default function ConfettiBurst() {
     canvas.style.cssText = "position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:9999";
     document.body.appendChild(canvas);
 
+    // 画布尺寸自己维护：库只在第一次放时量一次，之后转屏、缩放窗口会被拉伸；
+    // 位图按像素密度放大（最多 2 倍），Retina 屏上彩纸不发虚
+    let dpr = 1;
+    const resize = () => {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const r = canvas.getBoundingClientRect();
+      canvas.width = Math.round(r.width * dpr);
+      canvas.height = Math.round(r.height * dpr);
+    };
+    resize();
+    addEventListener("resize", resize);
+
     let fire: CreateTypes | null = null;
     let disposed = false;
-    // 用到时才加载（约 6KB），不进首屏
-    const ready = import("canvas-confetti").then(({ default: confetti }) => {
-      if (disposed) return;
-      fire = confetti.create(canvas, { resize: true, useWorker: false });
-    });
+    // 页面挂上后在后台加载（约 6KB），加载失败就不放彩纸
+    const ready = import("canvas-confetti")
+      .then(({ default: confetti }) => {
+        if (disposed) return;
+        fire = confetti.create(canvas, { resize: false, useWorker: false });
+      })
+      .catch(() => {});
 
     let count = 0;
     let lastT = 0;
     let lastX = 0;
     let lastY = 0;
 
-    const onPointerDown = (e: PointerEvent) => {
-      if (e.button !== 0 || !isBlank(e.target, e.clientX, e.clientY)) {
+    // 用 click 计数：触屏上滑动、拖动页面不产生 click，不会被当成连点
+    const onClick = (e: MouseEvent) => {
+      if (e.button !== 0 || onScrollbar(e) || !isBlank(e.target, e.clientX, e.clientY)) {
         count = 0;
         return;
       }
@@ -85,14 +108,26 @@ export default function ConfettiBurst() {
       lastX = e.clientX;
       lastY = e.clientY;
       if (count < MIN_CLICKS) return;
-      const origin = { x: e.clientX / innerWidth, y: e.clientY / innerHeight };
-      void ready.then(() => fire?.({ ...BURST, origin }));
+      // 按画布自身的位置换算，不受滚动条宽度影响
+      const r = canvas.getBoundingClientRect();
+      const origin = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+      void ready.then(() =>
+        fire?.({
+          ...BURST,
+          origin,
+          // 位图放大了 dpr 倍，尺寸、速度、重力同比放大，屏幕上看起来一样
+          scalar: (BURST.scalar ?? 1) * dpr,
+          startVelocity: (BURST.startVelocity ?? 14) * dpr,
+          gravity: (BURST.gravity ?? 1) * dpr,
+        })
+      );
     };
 
-    addEventListener("pointerdown", onPointerDown, { passive: true });
+    addEventListener("click", onClick, { passive: true });
     return () => {
       disposed = true;
-      removeEventListener("pointerdown", onPointerDown);
+      removeEventListener("click", onClick);
+      removeEventListener("resize", resize);
       fire?.reset();
       canvas.remove();
     };
