@@ -8,20 +8,11 @@ import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
 type Status = { ready: boolean; tier: string };
 
-/**
- * 玻璃的渐进模糊：每层都贴着窗口右、上、下三边，左边依次右移，模糊逐级加大。
- * 层层叠加（后画的那层把前一层的结果再模糊一次），到最右侧约等于 12px。
- */
-const GLASS_STEPS = [
-  { dx: 0, blur: "backdrop-blur-[2px]" },
-  { dx: 30, blur: "backdrop-blur-[3px]" },
-  { dx: 60, blur: "backdrop-blur-[4px]" },
-  { dx: 95, blur: "backdrop-blur-[6px]" },
-  { dx: 135, blur: "backdrop-blur-[8px] backdrop-saturate-[1.8]" },
-];
-/** 玻璃底色：从左往右淡入，避免底色在左边界处出现台阶 */
-const GLASS_TINT =
-  "bg-[linear-gradient(to_right,transparent,rgba(255,255,255,0.22)_200px)] dark:bg-[linear-gradient(to_right,transparent,rgba(24,24,27,0.22)_200px)]";
+/** 对话面板：整块均匀的磨砂半透明，四周一圈七彩描边（同头像光环），不做渐变过渡 */
+const PANEL_GLASS =
+  "bg-white/25 backdrop-blur-xl backdrop-saturate-[1.8] dark:bg-zinc-900/30";
+/** 面板与窗口边、与正文列之间留的空隙 */
+const PANEL_GAP = 8;
 
 /** 气泡：访客的话深色实底靠右，分身的话浅色玻璃靠左，圆角按说话方向留一角 */
 const USER_BUBBLE =
@@ -228,7 +219,6 @@ export function PetChatPanel({
   const last = chat.messages[chat.messages.length - 1];
   const waitingFirstToken = chat.streaming && last?.role === "assistant" && !last.content;
   const hasContent = chat.messages.length > 0 || !!chat.error;
-  const glass = !!gutter && hasContent;
   const glassTransition =
     "transition-[background-color,-webkit-backdrop-filter,backdrop-filter] duration-[350ms] ease-[cubic-bezier(0.25,0.1,0.25,1)] motion-reduce:transition-none";
   // 淡入淡出不放在根节点、也不放在磨砂卡片上：Chrome 里元素自身或祖先透明度小于 1 时 backdrop-filter 不生效，
@@ -242,26 +232,25 @@ export function PetChatPanel({
 
   return (
     <>
-      {/* 玻璃罩住整个右侧：贴着窗口右、上、下三边，左边界落在正文列与评论之间的空隙里。
-          收边不用蒙版（Safari 里带 backdrop-filter 的元素会忽略 mask），改成渐进模糊：
-          几层矩形依次右移、模糊逐级加大，叠加后右侧达到设定强度，每层边界只差一点点，看不出竖线。
+      {/* 整个右侧一块磨砂面板：左边贴着正文列，其余三边离窗口 8px，四周一圈七彩描边。
+          底色与模糊一起渐入（Chrome 里元素透明度小于 1 时 backdrop-filter 不生效，不能用淡入）。
           纯装饰、不挡点击，z 低于对话与右下角宠物 */}
-      {glass && gutter && (
-        <>
-          {GLASS_STEPS.map(({ dx, blur }) => (
-            <div
-              key={dx}
-              aria-hidden="true"
-              style={{ left: gutter.railLeft + dx }}
-              className={`pointer-events-none fixed inset-y-0 right-0 z-[99] ${glassTransition} ${open ? blur : ""}`}
-            />
-          ))}
+      {gutter && (
+        <div
+          aria-hidden="true"
+          style={{ left: gutter.railLeft, top: PANEL_GAP, right: PANEL_GAP, bottom: PANEL_GAP }}
+          className="pointer-events-none fixed z-[99]"
+        >
           <div
-            aria-hidden="true"
-            style={{ left: gutter.railLeft }}
-            className={`pointer-events-none fixed inset-y-0 right-0 z-[99] ${GLASS_TINT} ${fade}`}
+            className={`absolute inset-0 rounded-[28px] ${glassTransition} ${open ? PANEL_GLASS : ""}`}
           />
-        </>
+          <div className={`dr-pet-panel-ring-glow ${fade}`}>
+            <span />
+          </div>
+          <div className={`dr-pet-panel-ring-line ${fade}`}>
+            <span />
+          </div>
+        </div>
       )}
     <div
       role="dialog"
@@ -302,8 +291,8 @@ export function PetChatPanel({
                 // 与博客正文同字号同行高（EntrySummary：0.8125rem 即 13px、leading-relaxed）
                 gutter ? "text-[0.8125rem]" : "max-h-[52vh] text-[0.8125rem]"
               } ${
-                glass
-                  ? // 内边距放在滚动容器上：卡片边缘也能滚动对话，键盘焦点框不被裁掉
+                gutter
+                  ? // 内边距放在滚动容器上：面板边缘也能滚动对话，键盘焦点框不被裁掉
                     "p-4 [mask-image:linear-gradient(to_bottom,transparent,black_16px)]"
                   : `[mask-image:linear-gradient(to_bottom,transparent,black_40px)] ${hasContent ? "pb-4 pt-10" : ""}`
               }`}
