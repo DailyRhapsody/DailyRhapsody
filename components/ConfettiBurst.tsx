@@ -42,9 +42,13 @@ function hitsText(el: Element, x: number, y: number): boolean {
   return false;
 }
 
+/** AI 分身对话里只排除控件：面板本身是 role=dialog，按上面的名单会把整块对话都算成非空白 */
+const NOT_BLANK_IN_CHAT = "a, button, input, textarea, select, img, svg, [contenteditable='true']";
+
 function isBlank(target: EventTarget | null, x: number, y: number): boolean {
   if (!(target instanceof Element)) return false;
-  if (target.closest(NOT_BLANK)) return false;
+  const inChat = target.closest("[data-pet-chat]");
+  if (target.closest(inChat ? NOT_BLANK_IN_CHAT : NOT_BLANK)) return false;
   return !hitsText(target, x, y);
 }
 
