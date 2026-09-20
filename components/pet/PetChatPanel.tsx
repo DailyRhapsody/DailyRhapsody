@@ -8,11 +8,9 @@ import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
 type Status = { ready: boolean; tier: string };
 
-/** 对话面板：整块均匀的磨砂半透明，四周一圈七彩描边（同头像光环），不做渐变过渡 */
+/** 对话面板：整块均匀的磨砂半透明，铺满右侧、不留边框；边界由彩色光晕交代 */
 const PANEL_GLASS =
   "bg-white/25 backdrop-blur-xl backdrop-saturate-[1.8] dark:bg-zinc-900/30";
-/** 面板与窗口边、与正文列之间留的空隙 */
-const PANEL_GAP = 8;
 
 /** 气泡：访客的话深色实底靠右，分身的话浅色玻璃靠左，圆角按说话方向留一角 */
 const USER_BUBBLE =
@@ -232,22 +230,21 @@ export function PetChatPanel({
 
   return (
     <>
-      {/* 整个右侧一块磨砂面板：左边贴着正文列，其余三边离窗口 8px，四周一圈七彩描边。
+      {/* 整个右侧一块磨砂：左边贴着正文列，上、下、右直接到窗口边，没有边框与圆角。
+          边界靠彩色光晕从边上往里晕开交代（仿 Siri），不画线。
           底色与模糊一起渐入（Chrome 里元素透明度小于 1 时 backdrop-filter 不生效，不能用淡入）。
           纯装饰、不挡点击，z 低于对话与右下角宠物 */}
       {gutter && (
         <div
           aria-hidden="true"
-          style={{ left: gutter.railLeft, top: PANEL_GAP, right: PANEL_GAP, bottom: PANEL_GAP }}
-          className="pointer-events-none fixed z-[99]"
+          style={{ left: gutter.railLeft }}
+          className="pointer-events-none fixed inset-y-0 right-0 z-[99]"
         >
-          <div
-            className={`absolute inset-0 rounded-[28px] ${glassTransition} ${open ? PANEL_GLASS : ""}`}
-          />
-          <div className={`dr-pet-panel-ring-glow ${fade}`}>
+          <div className={`absolute inset-0 ${glassTransition} ${open ? PANEL_GLASS : ""}`} />
+          <div className={`dr-pet-panel-glow-outer ${fade}`}>
             <span />
           </div>
-          <div className={`dr-pet-panel-ring-line ${fade}`}>
+          <div className={`dr-pet-panel-glow-inner ${fade}`}>
             <span />
           </div>
         </div>
