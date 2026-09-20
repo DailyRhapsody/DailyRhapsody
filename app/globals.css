@@ -341,27 +341,20 @@ html[data-pet-chat] .dr-life-ring-sleep-led {
   animation: none;
   opacity: 0;
 }
-/* 对话面板四周的七彩描边：与头像光环同一套配色、呼吸与流动，只是圆角改成面板的圆角。
-   外层柔光先画环再整体模糊，内层是一圈细亮线 */
-.dr-pet-panel-ring-glow,
-.dr-pet-panel-ring-line {
+/* 对话面板的边缘光晕：仿 Apple Intelligence 的 Siri —— 彩色光从边界往里晕开，没有描边。
+   做法是把旋转的锥形渐变只留在靠边的一条宽带上（mask 挖空中间），再整体重度模糊。
+   两层反向旋转：外层更宽更柔，内层更窄更亮 */
+.dr-pet-panel-glow-outer,
+.dr-pet-panel-glow-inner {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  overflow: hidden;
 }
-.dr-pet-panel-ring-glow {
-  inset: -6px;
-  filter: blur(12px);
-  animation: dr-pet-ring-breathe 3s ease-in-out infinite;
-}
-.dr-pet-panel-ring-line {
-  animation: dr-pet-ring-line-breathe 3s ease-in-out infinite;
-}
-.dr-pet-panel-ring-glow > span,
-.dr-pet-panel-ring-line > span {
+.dr-pet-panel-glow-outer > span,
+.dr-pet-panel-glow-inner > span {
   position: absolute;
   inset: 0;
-  border-radius: var(--dr-panel-radius, 28px);
   background: conic-gradient(
     from var(--dr-glow-angle),
     #ffd3a8,
@@ -375,22 +368,32 @@ html[data-pet-chat] .dr-life-ring-sleep-led {
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
 }
-.dr-pet-panel-ring-glow > span {
-  padding: 6px;
-  animation: dr-pet-glow-spin 4s linear infinite;
+.dr-pet-panel-glow-outer {
+  animation: dr-pet-ring-line-breathe 4s ease-in-out infinite;
 }
-.dr-pet-panel-ring-line > span {
-  padding: 2px;
+.dr-pet-panel-glow-outer > span {
+  padding: 60px;
+  filter: blur(50px);
+  opacity: 0.35;
+  animation: dr-pet-glow-spin 12s linear infinite;
+}
+.dr-pet-panel-glow-inner {
+  animation: dr-pet-ring-breathe 3.2s ease-in-out infinite;
+}
+.dr-pet-panel-glow-inner > span {
+  padding: 20px;
+  filter: blur(18px);
+  opacity: 0.5;
   animation: dr-pet-glow-spin 7s linear infinite reverse;
 }
-html[data-pet-chat="thinking"] .dr-pet-panel-ring-glow,
-html[data-pet-chat="thinking"] .dr-pet-panel-ring-line {
-  animation-duration: 1.4s;
+html[data-pet-chat="thinking"] .dr-pet-panel-glow-outer,
+html[data-pet-chat="thinking"] .dr-pet-panel-glow-inner {
+  animation-duration: 1.6s;
 }
-html[data-pet-chat="thinking"] .dr-pet-panel-ring-glow > span {
-  animation-duration: 1.8s;
+html[data-pet-chat="thinking"] .dr-pet-panel-glow-outer > span {
+  animation-duration: 5s;
 }
-html[data-pet-chat="thinking"] .dr-pet-panel-ring-line > span {
+html[data-pet-chat="thinking"] .dr-pet-panel-glow-inner > span {
   animation-duration: 3s;
 }
 
@@ -399,10 +402,10 @@ html[data-pet-chat="thinking"] .dr-pet-panel-ring-line > span {
   .dr-pet-avatar-ring-line,
   .dr-pet-avatar-ring-glow > span,
   .dr-pet-avatar-ring-line > span,
-  .dr-pet-panel-ring-glow,
-  .dr-pet-panel-ring-line,
-  .dr-pet-panel-ring-glow > span,
-  .dr-pet-panel-ring-line > span {
+  .dr-pet-panel-glow-outer,
+  .dr-pet-panel-glow-inner,
+  .dr-pet-panel-glow-outer > span,
+  .dr-pet-panel-glow-inner > span {
     animation: none;
   }
 }
