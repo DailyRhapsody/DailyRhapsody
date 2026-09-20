@@ -241,10 +241,7 @@ export function PetChatPanel({
           className="pointer-events-none fixed inset-y-0 right-0 z-[99]"
         >
           <div className={`absolute inset-0 ${glassTransition} ${open ? PANEL_GLASS : ""}`} />
-          <div className={`dr-pet-panel-glow-outer ${fade}`}>
-            <span />
-          </div>
-          <div className={`dr-pet-panel-glow-inner ${fade}`}>
+          <div className={`dr-pet-panel-glow ${fade}`}>
             <span />
           </div>
         </div>
