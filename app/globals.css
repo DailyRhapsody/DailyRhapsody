@@ -341,8 +341,8 @@ html[data-pet-chat] .dr-life-ring-sleep-led {
   animation: none;
   opacity: 0;
 }
-/* 对话面板的边缘光晕：仿 Apple Intelligence 的 Siri —— 只有一层，彩色从四周往中间渐渐化开。
-   蒙版用一张从中心到边缘连续变浓的径向渐变，没有硬边，所以不会留下一圈矩形轮廓 */
+/* 对话面板的边缘光晕：仿 Apple Intelligence 与头像光环 —— 彩光只贴着四条边，往里平滑衰减到零，
+   中间保持干净。蒙版由四道方向渐变叠加（union）而成，每道都平滑归零，所以不会留下内轮廓 */
 .dr-pet-panel-glow {
   position: absolute;
   inset: 0;
@@ -353,8 +353,8 @@ html[data-pet-chat] .dr-life-ring-sleep-led {
 .dr-pet-panel-glow > span {
   position: absolute;
   inset: 0;
-  opacity: 0.55;
-  filter: blur(22px);
+  opacity: 0.78;
+  filter: blur(12px);
   background: conic-gradient(
     from var(--dr-glow-angle),
     #ffd3a8,
@@ -364,8 +364,16 @@ html[data-pet-chat] .dr-life-ring-sleep-led {
     #bdf5ec,
     #ffd3a8
   );
-  -webkit-mask-image: radial-gradient(105% 62% at 50% 50%, transparent 0%, transparent 34%, rgba(0, 0, 0, 0.5) 72%, #000 100%);
-  mask-image: radial-gradient(105% 62% at 50% 50%, transparent 0%, transparent 34%, rgba(0, 0, 0, 0.5) 72%, #000 100%);
+  -webkit-mask-image: linear-gradient(to right, #000, transparent 48px),
+    linear-gradient(to left, #000, transparent 48px),
+    linear-gradient(to bottom, #000, transparent 64px),
+    linear-gradient(to top, #000, transparent 64px);
+  -webkit-mask-composite: source-over;
+  mask-image: linear-gradient(to right, #000, transparent 48px),
+    linear-gradient(to left, #000, transparent 48px),
+    linear-gradient(to bottom, #000, transparent 64px),
+    linear-gradient(to top, #000, transparent 64px);
+  mask-composite: add;
   animation: dr-pet-glow-spin 10s linear infinite;
 }
 html[data-pet-chat="thinking"] .dr-pet-panel-glow {
