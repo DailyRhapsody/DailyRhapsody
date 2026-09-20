@@ -67,10 +67,10 @@ function useGutterBox(active: boolean, pathname: string | null) {
         return;
       }
       const width = Math.min(room, GUTTER_MAX_WIDTH);
-      // 空白栏比上限还宽时居中摆放。railLeft 是玻璃层的左边：落在正文列与右侧评论之间的空隙里
-      // railLeft 是玻璃的左边界：放在正文卡片与右侧评论之间那条约 20px 的空隙正中，
-      // 切口两侧都不压着内容（正文卡片比 main 的右边缘再往里 16px，评论从 main 右边缘 +4 起）
-      setBox({ left: start + Math.round((room - width) / 2), width, railLeft: Math.round(contentRight - 6) });
+      // 空白栏比上限还宽时居中摆放。railLeft 是玻璃的左边界：贴着正文列的右边缘往外 2px。
+      // 不能再往左：顶栏图铺满正文列宽度，往左会把图的右边缘一起糊掉；
+      // 往右到 20px 处就是评论线程，所以落在这条窄缝里
+      setBox({ left: start + Math.round((room - width) / 2), width, railLeft: Math.round(contentRight + 2) });
     };
     measure();
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
