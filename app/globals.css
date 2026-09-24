@@ -385,3 +385,17 @@ html[data-pet-chat="thinking"] .dr-pet-panel-glow > span {
     animation: none;
   }
 }
+
+/* Notion callouts retain all child paragraphs in one container. */
+.dr-callout {
+  display: flex;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: rgb(128 128 128 / 0.08);
+}
+.dr-callout-icon { flex: none; line-height: inherit; }
+.dr-callout-body { min-width: 0; flex: 1; }
+.dr-callout-body > :first-child { margin-top: 0; }
+.dr-callout-body > :last-child { margin-bottom: 0; }

@@ -170,6 +170,13 @@ marked.use({
     },
   },
   renderer: {
+    blockquote({ text }) {
+      const marker = text.match(/^\[!NOTION-CALLOUT\] ([^\n]*)\n/);
+      if (!marker) return false;
+      const icon = escapeAttr(marker[1]).replaceAll(">", "&gt;");
+      const body = this.parser.parse(marked.lexer(text.slice(marker[0].length)));
+      return `<div class="dr-callout"><span class="dr-callout-icon">${icon}</span><div class="dr-callout-body">${body}</div></div>\n`;
+    },
     paragraph({ text, tokens }) {
       if (!CAPTION_RE.test(visibleText(text))) return false;
       return `<p class="dr-caption">${this.parser.parseInline(tokens)}</p>\n`;

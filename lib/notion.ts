@@ -428,6 +428,19 @@ async function walkBlocks(
         if (table) parts.push(table);
         continue;
       }
+      if (block.type === "callout" || block.type === "quote") {
+        const content = [richTextToMarkdown(block.type === "callout" ? block.callout.rich_text : block.quote.rich_text)];
+        if (block.has_children) {
+          await walkBlocks(block.id, depth + 1, content, opts, maxDepth);
+        }
+        if (block.type === "callout") {
+          const icon = block.callout.icon;
+          const emoji = icon?.type === "emoji" ? icon.emoji : "💡";
+          content.unshift(`[!NOTION-CALLOUT] ${emoji}\n`);
+        }
+        parts.push(content.join("\n\n").split("\n").map((line) => `> ${line}`).join("\n"));
+        continue;
+      }
       const md = blockToMarkdown(block, opts);
       if (md) parts.push(md);
       if (block.has_children) {
