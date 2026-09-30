@@ -22,6 +22,7 @@ import type {
 } from "@notionhq/client/build/src/api-endpoints";
 import { mediaProxyPath, mediaVersion, type MediaKind } from "@/lib/notion-media";
 import { assertNotionFetchAllowed, isNotionFetchAllowed, runWithRefreshLock } from "@/lib/notion-quota";
+import { extractNotionDiaryDate } from "@/lib/notion-diary-date";
 
 // ---------------------------------------------------------------------------
 // Types (compatible with existing Diary interface)
@@ -80,13 +81,14 @@ async function getRedis() {
   return _redis;
 }
 
-// v2：正文与封面里的 Notion 托管文件改存 /api/media 代理路径（lib/notion-media.ts）。
-// 换键而不是覆盖：Preview 部署与生产共用同一个 Upstash，旧代码没有代理路由，读到新格式会整片 404；
-// 回滚到旧部署时也不受影响。新键缺失时先拿旧键数据顶上并立即后台重拉，不产生冷启动空窗。
-const CACHE_KEY = "notion:diaries:v2";
-const LEGACY_CACHE_KEY = "notion:diaries";
+// v3：Date 为创建时间时保留完整时间戳，并按中国日历日归档。
+// 新旧部署共用 Upstash，隔离快照避免旧部署重新写入缺少 publishedAt 的数据。
+// v3 缺失时用 v2（已含 /api/media 代理路径）作为过期种子，后台刷新期间仍可读文章和图片。
+const CACHE_KEY = "notion:diaries:v3";
+const LEGACY_CACHE_KEY = "notion:diaries:v2";
 // Notion 自动化调用 /api/revalidate 时写入的时间戳：晚于快照开始时刻即视为过期。
 // 单独一个小键，不回写大缓存，避免与正在进行的全量刷新互相覆盖。
+// 失效信号和刷新锁继续与 v2 共享，让迁移期间的 webhook 和 Notion 限流保护仍然有效。
 const INVALIDATED_KEY = "notion:diaries:v2:invalidatedAt";
 // 跨实例刷新锁（lib/notion-quota.ts）。Preview 与生产共用 Upstash 也共用 NOTION_TOKEN，同一把锁正好让两边互相让路。
 const REFRESH_LOCK_KEY = "notion:diaries:v2:refreshLock";
@@ -126,7 +128,7 @@ function parseEntry(data: CacheEntry | Diary[] | null): CacheEntry | null {
   return data;
 }
 
-async function getCached(opts: { legacyFallback?: boolean } = {}): Promise<CachedDiaries | null> {
+async function getCached(): Promise<CachedDiaries | null> {
   const redis = await getRedis();
   if (!redis) return null;
   try {
@@ -136,7 +138,6 @@ async function getCached(opts: { legacyFallback?: boolean } = {}): Promise<Cache
     );
     const entry = parseEntry(raw);
     if (entry) return { ...entry, invalidatedAt: Number(invalidatedAt) || 0 };
-    if (opts.legacyFallback === false) return null;
     // 新键还没写过（刚上线）：旧键数据当作已过期的种子返回，调用方会立即后台重拉
     const legacy = parseEntry(await redis.get<CacheEntry | Diary[]>(LEGACY_CACHE_KEY));
     return legacy ? { data: legacy.data, refreshedAt: 0, invalidatedAt: 0 } : null;
@@ -179,7 +180,7 @@ export async function markDiariesCacheStale(): Promise<void> {
 
 /** 只读缓存、不触发任何重拉。供 /api/media 鉴权用，避免图片请求引发全量抓取。 */
 export async function getCachedDiaries(): Promise<Diary[] | null> {
-  return (await getCached({ legacyFallback: false }))?.data ?? null;
+  return (await getCached())?.data ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -511,26 +512,6 @@ async function extractBodyMarkdownBatch(
   return out;
 }
 
-function extractDate(page: PageObjectResponse): string {
-  const prop = page.properties["Date"];
-  if (prop?.type === "date" && prop.date?.start) {
-    return prop.date.start.slice(0, 10); // YYYY-MM-DD
-  }
-  // Fallback: use page created time
-  return page.created_time.slice(0, 10);
-}
-
-function extractPublishedAt(page: PageObjectResponse): string | undefined {
-  const prop = page.properties["Date"];
-  if (prop?.type === "date" && prop.date?.start) {
-    // If the date includes a time component, use it as publishedAt
-    if (prop.date.start.length > 10) {
-      return new Date(prop.date.start).toISOString();
-    }
-  }
-  return undefined;
-}
-
 function extractTitle(page: PageObjectResponse): string {
   // Notion databases always have a Title property
   for (const [, prop] of Object.entries(page.properties)) {
@@ -611,8 +592,7 @@ function mapPageToDiary(page: PageObjectResponse, bodyMarkdown: string): Diary {
 
   return {
     id: page.id,
-    date: extractDate(page),
-    publishedAt: extractPublishedAt(page),
+    ...extractNotionDiaryDate(page),
     pinned: extractPinned(page),
     isPublic: extractIsPublic(page),
     summary: bodyMarkdown || title,
