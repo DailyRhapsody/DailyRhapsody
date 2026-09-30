@@ -16,9 +16,13 @@ Next.js 16（App Router）+ React 19，内容托管在 Notion，部署在 Vercel
 
 `/blog` 与 `/moments` 是同一页（`app/blog`）的两个 tab，切换时只改地址栏不重载；`/moments` 由 `next.config.ts` 重写到同一页，显示哪个 tab 由地址决定。旧地址 `/entries`（含 `#entry-…` 锚点）永久跳转到 `/blog`，`/entries?tab=moments` 与 `/the-moment` 永久跳转到 `/moments`。
 
-三个数据层结构一致：Upstash Redis 两级缓存（stale-while-revalidate + 后台刷新），软 TTL 由 `NOTION_CACHE_TTL` 控制，硬 TTL 24 小时。
+三个数据层结构一致：Upstash Redis 缓存（stale-while-revalidate + 后台刷新），刷新阈值由 `NOTION_CACHE_STALE_S` 控制，默认 5 分钟；硬 TTL 由 `NOTION_CACHE_TTL` 控制，默认且最低为 48 小时。
 
 Reference 库的字段约定：`Name`(title)、`URL`(url)、`Source`(select)、`Tag`(multi-select)、`Public`(checkbox)、`ClippedAt`(created_time)。**只有勾选 `Public` 的条目才会公开显示。**
+
+Blog 的 `Date` 字段兼容「日期」(`date`) 和「创建时间」(`created_time`)，字段名保留 `Date`。创建时间会保留精确时分秒用于显示、排序及时间轴；热力图日历按 `Asia/Shanghai` 归档，卡片时间沿用浏览器本地时区。手填的纯日期仍保留原日历日。
+
+改成创建时间后，文章时间取 Notion 页面的创建时刻，可能与原来手填的发布日期不同；[Notion API 将该字段定义为系统维护的只读时间戳](https://developers.notion.com/reference/page-property-values)。Webhook 地址、鉴权头和缓存刷新流程不变。自动化应保留「页面新增」触发器，属性更新选择仍可编辑的字段；不要依赖修改只读的 `Date` 触发同步。现有缓存会在下一轮刷新后更新日期。
 
 新建的 Notion 库记得在 `⋯ → Connections` 里授权给 integration，否则 API 读不到。
 
@@ -44,6 +48,8 @@ npm run dev
 ```
 
 打开 http://localhost:3000
+
+日期与缓存回归（Node.js 26，离线运行）：`node --experimental-test-module-mocks --test tests/notion-diary-*.test.mjs`。可分别设置 `TZ=UTC` 和 `TZ=Asia/Shanghai` 核对服务端时区不影响创建时间的日历归属。集成用例模拟 Notion 与 Redis，并禁止真实网络请求。
 
 `next dev` 默认不调用 Notion API（本地与生产共用同一 token 的限流额度），列表只读 Redis 里现有的缓存。确需回源时换用单独的 integration token，并设 `NOTION_ALLOW_DEV_FETCH=1`，见 `.env.example`。本地 `next start` 按生产模式运行，不受这道开关拦截，同样不要用 `vercel env pull` 拉下来的生产 token。
 
