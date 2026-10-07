@@ -4,8 +4,8 @@ import { registerHooks } from "node:module";
 import { Socket } from "node:net";
 import { test } from "node:test";
 
-const V3 = "notion:diaries:v3";
-const V2 = "notion:diaries:v2";
+const CURRENT = "notion:diaries:v4";
+const LEGACY = "notion:diaries:v3";
 const DATABASE = "00000000000000000000000000000001";
 const richText = (text) => ({
   type: "text", text: { content: text, link: null }, plain_text: text, href: null,
@@ -18,7 +18,7 @@ const page = (id, createdTime, pinned = false) => ({
   properties: {
     Title: { type: "title", title: [richText(id)] },
     Date: { type: "created_time", created_time: createdTime },
-    Pinned: { type: "checkbox", checkbox: pinned },
+    pin: { type: "checkbox", checkbox: pinned },
     Public: { type: "checkbox", checkbox: true },
   },
 });
@@ -102,7 +102,7 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
   } } });
   const { getDiaries, warmDiariesCache, getCachedDiaries, getDiaryById } = await import("../lib/notion.ts");
 
-  await t.test("maps Date.created_time, sorts by milliseconds with pinned first, and warms v3", async () => {
+  await t.test("maps Date.created_time, sorts by milliseconds with pinned first, and warms v4", async () => {
     pages = [
       page("early", "2026-09-30T16:30:00.001Z"),
       page("pin-early", "2026-09-30T16:00:00.001Z", true),
@@ -127,25 +127,25 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
       ["warmed", "2026-10-02", "2026-10-01T16:00:00.456Z"]);
     assert.equal(warmed.summary, "body:warmed");
     assert.equal(query.mock.callCount(), 2);
-    assert.equal(store.has(V2), false, "refresh writes only v3");
+    assert.equal(store.has(LEGACY), false, "refresh writes only v4");
   });
 
-  await t.test("v3 wins when an older deployment writes or overwrites v2", async () => {
+  await t.test("v4 wins when an older deployment writes or overwrites v3", async () => {
     const current = await getCachedDiaries();
-    for (const summary of ["old", "overwritten by v2"]) {
-      store.set(V2, { data: [{ id: "warmed", date: "2026-10-01", summary }], refreshedAt: Date.now() });
+    for (const summary of ["old", "overwritten by v3"]) {
+      store.set(LEGACY, { data: [{ id: "warmed", date: "2026-10-01", summary }], refreshedAt: Date.now() });
       assert.deepEqual(await getDiaries(), current);
       assert.deepEqual(await getCachedDiaries(), current);
     }
-    assert.equal(query.mock.callCount(), 2, "fresh v3 causes no SDK query");
+    assert.equal(query.mock.callCount(), 2, "fresh v4 causes no SDK query");
   });
 
-  await t.test("v2 remains a read-only media seed when v3 is missing, then refreshes", async () => {
-    store.delete(V3);
+  await t.test("v3 remains a read-only media seed when v4 is missing, then refreshes", async () => {
+    store.delete(CURRENT);
     const legacy = [{ id: "seed", date: "2026-09-30", isPublic: true,
       summary: "![](/api/media/b/test/abc)", images: ["/api/media/p/test/abc"] }];
     const oldEntry = { data: legacy, refreshedAt: Date.now() };
-    store.set(V2, oldEntry);
+    store.set(LEGACY, oldEntry);
     const priorWrites = writes.length;
     assert.deepEqual(await getCachedDiaries(), legacy);
     assert.equal(query.mock.callCount(), 2);
@@ -155,7 +155,7 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     try {
       assert.deepEqual(await getDiaries(), legacy, "returns seed before the blocked refresh finishes");
       await registered.promise;
-      assert.equal(store.has(V3), false);
+      assert.equal(store.has(CURRENT), false);
     } finally {
       queryGate.resolve();
       await background;
@@ -166,7 +166,23 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     assert.equal(fresh.summary, "body:seed", "refresh replaces the legacy body");
     assert.deepEqual(await getDiaries(), [fresh]);
     assert.equal(query.mock.callCount(), 3);
-    assert.deepEqual(store.get(V2), oldEntry);
-    assert.deepEqual(writes.slice(priorWrites), [`${V2}:refreshLock`, V3]);
+    assert.deepEqual(store.get(LEGACY), oldEntry);
+    assert.deepEqual(writes.slice(priorWrites), ["notion:diaries:v2:refreshLock", CURRENT]);
   });
+
+  await t.test("pin takes precedence over Pinned; missing fields remain unpinned", async () => {
+    const legacy = page("legacy", "2026-10-01T00:00:00.000Z");
+    delete legacy.properties.pin;
+    legacy.properties.Pinned = { type: "checkbox", checkbox: true };
+    const unpinned = page("unpinned", "2026-10-02T00:00:00.000Z", false);
+    unpinned.properties.Pinned = { type: "checkbox", checkbox: true };
+    const missing = page("missing", "2026-10-03T00:00:00.000Z");
+    delete missing.properties.pin;
+    pages = [unpinned, missing, legacy, page("pinned", "2026-10-04T00:00:00.000Z", true)];
+    await warmDiariesCache();
+    assert.deepEqual((await getDiaries()).map(({ id, pinned }) => [id, pinned]), [
+      ["pinned", true], ["legacy", true], ["missing", false], ["unpinned", false],
+    ]);
+  });
+
 });
