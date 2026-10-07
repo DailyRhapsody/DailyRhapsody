@@ -33,6 +33,7 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
   Object.assign(process.env, env);
   const hooks = registerHooks({
     resolve(specifier, context, next) {
+      if (specifier === "next/server") return next("next/server.js", context);
       return next(specifier.startsWith("@/")
         ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context);
     },
@@ -55,12 +56,18 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
   const writes = [];
   let pages = [];
   let queryGate;
-  const registered = Promise.withResolvers();
+  let registered = Promise.withResolvers();
   let background;
-  const query = t.mock.fn(async ({ database_id }) => {
+  const query = t.mock.fn(async ({ database_id, start_cursor, page_size }) => {
     assert.equal(database_id, DATABASE);
     if (queryGate) await queryGate.promise;
-    return { results: structuredClone(pages), has_more: false, next_cursor: null };
+    const start = Number(start_cursor ?? 0);
+    const end = start + page_size;
+    return {
+      results: structuredClone(pages.slice(start, end)),
+      has_more: end < pages.length,
+      next_cursor: end < pages.length ? String(end) : null,
+    };
   });
   const retrieve = t.mock.fn(() => { throw new Error("Unexpected detail cache miss"); });
   t.mock.module("@notionhq/client", { exports: {
@@ -100,7 +107,7 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     background = task;
     registered.resolve();
   } } });
-  const { getDiaries, warmDiariesCache, getCachedDiaries, getDiaryById } = await import("../lib/notion.ts");
+  const { getDiaries, warmDiariesCache, getCachedDiaries, getDiaryById, markDiariesCacheStale } = await import("../lib/notion.ts");
 
   await t.test("maps Date.created_time, sorts by milliseconds with pinned first, and warms v4", async () => {
     pages = [
@@ -185,4 +192,129 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     ]);
   });
 
+  await t.test("real list route preserves global pin order across source and visitor pages", async () => {
+    let admin = false;
+    // Only the request identity/guard are stubbed; data mapping, sorting, filtering,
+    // pagination, outline construction and NextResponse serialization are real.
+    t.mock.module("../lib/auth.ts", { exports: { isAdmin: async () => admin } });
+    t.mock.module("../lib/request-guard.ts", { exports: {
+      guardApiRequest: async () => null,
+      withAntiScrapeHeaders: (response) => response,
+    } });
+    const { GET } = await import("../app/api/diaries/route.ts");
+    const request = async (params = "limit=30&offset=0&outline=1") => {
+      const response = await GET(new Request(`http://blog.test.invalid/api/diaries?${params}`));
+      assert.equal(response.status, 200);
+      return response.json();
+    };
+    const normal = Array.from({ length: 70 }, (_, i) =>
+      page(`normal-${i + 1}`, new Date(Date.UTC(2026, 9, 7) + i).toISOString()));
+    const pinned = Array.from({ length: 35 }, (_, i) => {
+      const entry = page(`pin-${i + 1}`, new Date(Date.UTC(2026, 9, 1) + i).toISOString(), true);
+      entry.properties.Tags = { type: "multi_select", multi_select: [{ name: "chosen" }] };
+      return entry;
+    });
+    const privatePin = page("private-pin", "2026-10-08T00:00:00.000Z", true);
+    privatePin.properties.Public.checkbox = false;
+    privatePin.properties.Tags = { type: "multi_select", multi_select: [{ name: "private-only" }] };
+    // Deliberately put some pinned pages beyond the SDK's 100-page boundary.
+    pages = [...normal, ...pinned, privatePin];
+    const callsBefore = query.mock.callCount();
+    await warmDiariesCache();
+    assert.equal(query.mock.callCount() - callsBefore, 2);
+    assert.equal(query.mock.calls.at(-1).arguments[0].start_cursor, "100");
+    const expected = [...pinned].reverse().concat([...normal].reverse()).map((entry) => entry.id);
+    const first = await request();
+    const second = await request("limit=30&offset=30");
+    const third = await request("limit=30&offset=60");
+    const last = await request("limit=30&offset=90");
+    assert.equal(first.total, 105);
+    assert.deepEqual(first.items.map((d) => d.id), expected.slice(0, 30));
+    assert.deepEqual(second.items.map((d) => d.id), expected.slice(30, 60));
+    assert.deepEqual([first, second, third, last].flatMap((body) => body.items.map((d) => d.id)), expected);
+    assert.deepEqual([first, second, third, last].map((body) => body.hasMore), [true, true, true, false]);
+    assert.equal(second.items.filter((d) => d.pinned).length, 5);
+    assert.deepEqual(first.outline.map((d) => d.id), expected);
+    assert.equal(first.outline.filter((d) => d.pinned).length, 35);
+    assert.equal(JSON.stringify(first).includes("private-only"), false);
+    assert.equal(JSON.stringify(first).includes("private-pin"), false);
+    for (const filter of ["tag=private-only", "q=private-pin"]) {
+      const hidden = await request(`limit=30&outline=1&${filter}`);
+      assert.equal(hidden.total, 0);
+      assert.deepEqual(hidden.items, []);
+      assert.deepEqual(hidden.outline, []);
+      assert.equal(hidden.hasMore, false);
+      assert.equal(hidden.tagCounts.some((tag) => tag.name === "private-only"), false);
+      assert.equal(hidden.dates.includes("2026-10-08"), false);
+    }
+    const chosen = await request("limit=30&tag=chosen&q=pin-3&outline=1");
+    assert.deepEqual(chosen.items.map((d) => d.id), ["pin-35", "pin-34", "pin-33", "pin-32", "pin-31", "pin-30", "pin-3"]);
+    assert.deepEqual(chosen.outline.map((d) => d.id), chosen.items.map((d) => d.id));
+    admin = true;
+    const owner = await request();
+    assert.equal(owner.total, 106);
+    assert.equal(owner.items[0].id, "private-pin");
+    admin = false;
+
+    // The shared invalidation entry point must refresh the same page after unpinning.
+    pinned.at(-1).properties.pin.checkbox = false;
+    registered = Promise.withResolvers();
+    await markDiariesCacheStale();
+    assert.ok(Number(store.get("notion:diaries:v2:invalidatedAt")) > 0);
+    await registered.promise;
+    await background;
+    const after = await request();
+    assert.equal(after.items[0].id, "pin-34");
+    assert.equal(after.outline.filter((d) => d.pinned).length, 34);
+    assert.equal(after.outline.at(-1).id, "pin-35", "unpinned old page returns to chronological position");
+    assert.equal((await getDiaryById("pin-35")).pinned, false);
+  });
+
+  await t.test("an older deployment's shared refresh lock preserves the legacy seed", async () => {
+    store.delete(CURRENT);
+    const legacy = { data: [{ id: "locked-seed", date: "2026-10-01", summary: "cached body" }], refreshedAt: Date.now() };
+    store.set(LEGACY, legacy);
+    const lockKey = "notion:diaries:v2:refreshLock";
+    store.set(lockKey, "older-deployment");
+    const callsBefore = query.mock.callCount();
+    registered = Promise.withResolvers();
+    assert.deepEqual(await getDiaries(), legacy.data);
+    await registered.promise;
+    await background;
+    assert.equal(query.mock.callCount(), callsBefore);
+    assert.equal(store.get(lockKey), "older-deployment");
+    assert.equal(store.has(CURRENT), false);
+    store.delete(lockKey); // Simulate the older deployment releasing its own lock.
+    registered = Promise.withResolvers();
+    await getDiaries();
+    await registered.promise;
+    await background;
+    assert.equal(store.has(CURRENT), true);
+    assert.equal(query.mock.callCount() - callsBefore, 2);
+    assert.deepEqual(store.get(LEGACY), legacy);
+  });
+
+  await t.test("shared invalidation refreshes a fresh v4 snapshot after a busy lock is released", async () => {
+    const signalKey = "notion:diaries:v2:invalidatedAt";
+    const lockKey = "notion:diaries:v2:refreshLock";
+    const freshSeed = [{ id: "fresh-seed", date: "2026-10-01", summary: "cached body", pinned: true }];
+    store.set(CURRENT, { data: freshSeed, refreshedAt: Date.now(), snapshotAt: Date.now() - 1000 });
+    store.delete(signalKey);
+    store.set(lockKey, "older-deployment");
+    const callsBefore = query.mock.callCount();
+    registered = Promise.withResolvers();
+    await markDiariesCacheStale();
+    assert.ok(Number(store.get(signalKey)) > store.get(CURRENT).snapshotAt);
+    await registered.promise;
+    await background;
+    assert.equal(query.mock.callCount(), callsBefore);
+    assert.deepEqual(await getCachedDiaries(), freshSeed);
+    store.delete(lockKey);
+    registered = Promise.withResolvers();
+    assert.deepEqual(await getDiaries(), freshSeed, "fresh snapshot remains available during refresh");
+    await registered.promise;
+    await background;
+    assert.equal(query.mock.callCount() - callsBefore, 2);
+    assert.equal((await getCachedDiaries()).some((d) => d.id === "fresh-seed"), false);
+  });
 });

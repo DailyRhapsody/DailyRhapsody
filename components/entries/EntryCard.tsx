@@ -381,7 +381,7 @@ export function EntryCard({
                 role="img"
                 aria-label="置顶文章"
                 title="置顶文章"
-                className="inline-flex h-8 w-8 items-center justify-center text-zinc-500 dark:text-zinc-400"
+                className="inline-flex h-8 w-8 items-center justify-center text-zinc-500"
               >
                 <PinnedIcon />
               </span>
