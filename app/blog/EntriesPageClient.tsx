@@ -9,7 +9,6 @@ import StickyProfileHeader from "@/components/StickyProfileHeader";
 import { MomentLightbox } from "@/components/entries/MomentLightbox";
 import { CalendarHeatmap } from "@/components/entries/CalendarHeatmap";
 import { EntryCard } from "@/components/entries/EntryCard";
-import { PinnedIcon } from "@/components/entries/PinnedIcon";
 import { ScrollTimeline } from "@/components/entries/ScrollTimeline";
 import { entryTimelineRows, momentTimelineRows } from "@/components/entries/timelineRows";
 import { MomentsTab } from "@/components/entries/MomentsTab";
@@ -247,7 +246,7 @@ export default function EntriesPageClient({
             >
               <span className="flex w-full items-start justify-between gap-2">
                 <span className="text-left">
-                  <span className="block text-2xl font-bold text-zinc-900 dark:text-zinc-50">{totalPosts}</span>
+                  <span className="block text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-50">{totalPosts}</span>
                   <span className="block text-[0.7rem] text-zinc-500 dark:text-zinc-400">篇文章</span>
                 </span>
                 {pinnedPosts > 0 && (
@@ -255,10 +254,10 @@ export default function EntriesPageClient({
                     role="img"
                     aria-label={`${pinnedPosts} 篇置顶文章`}
                     title={`${pinnedPosts} 篇置顶文章`}
-                    className="mt-2 inline-flex shrink-0 items-center gap-1 text-[0.65rem] leading-4 text-zinc-500 dark:text-zinc-400"
+                    className="shrink-0 text-left"
                   >
-                    <PinnedIcon />
-                    <span aria-hidden="true" className="tabular-nums">置顶 {pinnedPosts}</span>
+                    <span aria-hidden="true" className="block text-2xl font-bold tabular-nums text-zinc-600 dark:text-zinc-300">{pinnedPosts}</span>
+                    <span aria-hidden="true" className="block text-[0.7rem] text-zinc-500 dark:text-zinc-400">置顶</span>
                   </span>
                 )}
               </span>
