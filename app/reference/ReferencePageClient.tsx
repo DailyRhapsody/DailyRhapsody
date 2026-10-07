@@ -87,7 +87,7 @@ export default function ReferencePageClient({
             )}
             {!loading && items.length === 0 && (
               <p className="px-3 text-xs text-zinc-500 dark:text-zinc-400">
-                还没有收藏。在 Notion Web Clipper 里把文章存进 Reference Items DB 即可。
+                暂无收藏
               </p>
             )}
             {!loading &&
