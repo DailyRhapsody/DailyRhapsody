@@ -1,11 +1,8 @@
-/** 置顶状态用的线形图钉，与文章元信息保持相同视觉权重。 */
+/** 与三点菜单统一 20px 画布和垂直轴线的置顶图标。 */
 export function PinnedIcon() {
   return (
-    <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <g transform="rotate(35 12 12)">
-        <path d="M9 3h6l-1 7 4 4v2H6v-2l4-4-1-7Z" />
-        <path d="M12 16v5" />
-      </g>
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M8 5h8M9 5v5l-2 4v1h10v-1l-2-4V5M12 15v4" />
     </svg>
   );
 }

@@ -375,13 +375,13 @@ export function EntryCard({
               </span>
             )}
           </div>
-          <div ref={menuRootRef} className="relative flex shrink-0 items-center gap-1.5">
+          <div ref={menuRootRef} className="relative flex shrink-0 items-center">
             {item.pinned && (
               <span
                 role="img"
                 aria-label="置顶文章"
                 title="置顶文章"
-                className="inline-flex h-8 w-5 items-center justify-center text-zinc-500 dark:text-zinc-400"
+                className="inline-flex h-8 w-8 items-center justify-center text-zinc-500 dark:text-zinc-400"
               >
                 <PinnedIcon />
               </span>
