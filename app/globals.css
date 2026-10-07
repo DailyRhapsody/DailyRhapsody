@@ -368,6 +368,13 @@ html[data-pet-chat] .dr-life-ring-sleep-led {
   mask-image: radial-gradient(105% 62% at 50% 50%, transparent 0%, transparent 34%, rgba(0, 0, 0, 0.5) 72%, #000 100%);
   animation: dr-pet-glow-spin 10s linear infinite;
 }
+/* 暗色底下保留中央柔光，避免透明蒙版露出整片黑色；浅色沿用原来的边缘光晕。 */
+@media (prefers-color-scheme: dark) {
+  .dr-pet-panel-glow > span {
+    -webkit-mask-image: radial-gradient(105% 62% at 50% 50%, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0.45) 34%, rgba(0, 0, 0, 0.7) 72%, #000 100%);
+    mask-image: radial-gradient(105% 62% at 50% 50%, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0.45) 34%, rgba(0, 0, 0, 0.7) 72%, #000 100%);
+  }
+}
 html[data-pet-chat="thinking"] .dr-pet-panel-glow {
   animation-duration: 1.8s;
 }
