@@ -15,6 +15,10 @@ import {
 
 /** 每条一行，行高 8px；跨年、置顶组之后多留 8px */
 const ROW_H = 8;
+/** 指针附近四行形成平滑凸起；横线不超出 56px 轨道减去左侧 16px 留白 */
+const HOVER_RADIUS = ROW_H * 4;
+const HOVER_REACH = 16;
+const MAX_HOVER_WIDTH = 40;
 /** 阅读线 = 文章的 scroll-margin-top（EntryCard 的 scroll-mt-24）+ 16px，两处相互依赖 */
 const READING_SLACK = 16;
 /** 距离超过 3 屏时先瞬移到目标前一屏，再平滑滚完最后一屏 */
@@ -243,7 +247,8 @@ export const ScrollTimeline = memo(function ScrollTimeline({
       const nav = navRef.current;
       if (!a || !nav) return;
       const r = a.getBoundingClientRect();
-      setTip({ i, top: r.top + r.height / 2 - nav.getBoundingClientRect().top, shown: true });
+      const top = r.top + r.height / 2 - nav.getBoundingClientRect().top;
+      setTip((prev) => prev?.shown && prev.i === i && prev.top === top ? prev : { i, top, shown: true });
     },
     [rowEl],
   );
@@ -343,6 +348,86 @@ export const ScrollTimeline = memo(function ScrollTimeline({
       setAppeared(false);
     };
   }, [enabled]);
+
+  /* ── 悬停凸起：按指针到横线的实际距离衰减，只变换横线，不改变点击区域和行距 ── */
+  useEffect(() => {
+    const c = containerRef.current;
+    if (!enabled || !visible || !c) return;
+    const links = Array.from(c.querySelectorAll<HTMLAnchorElement>("a[data-i]"));
+    const ticks = links.map((a) => a.firstElementChild as HTMLElement);
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let centers: number[] = [];
+    let point: { x: number; y: number } | null = pointerRef.current.inside ? pointerRef.current : null;
+    let frame = 0;
+    const strengths = ticks.map(() => 0);
+    const draw = () => {
+      frame = 0;
+      const rect = c.getBoundingClientRect();
+      const inside = point && point.x >= rect.left && point.x < rect.right && point.y >= rect.top && point.y < rect.bottom;
+      const y = point && inside && !reducedMotion.matches ? point.y - rect.top + c.scrollTop : null;
+      ticks.forEach((tick, i) => {
+        const distance = y === null ? HOVER_RADIUS : Math.abs(centers[i] - y);
+        const strength = distance < HOVER_RADIUS ? (1 + Math.cos(Math.PI * distance / HOVER_RADIUS)) / 2 : 0;
+        if (strength === strengths[i]) return;
+        strengths[i] = strength;
+        if (strength === 0) {
+          tick.style.removeProperty("--timeline-scale");
+          tick.style.removeProperty("--timeline-weight");
+          tick.style.removeProperty("--timeline-opacity");
+          return;
+        }
+        const width = rows[i].width;
+        const reach = Math.max(0, Math.min(HOVER_REACH, MAX_HOVER_WIDTH - width));
+        const baseOpacity = rows[i].muted ? 10 : 20;
+        tick.style.setProperty("--timeline-scale", String(1 + reach * strength / width));
+        tick.style.setProperty("--timeline-weight", String(1 + 0.35 * strength));
+        tick.style.setProperty("--timeline-opacity", `${baseOpacity + (65 - baseOpacity) * strength}%`);
+      });
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(draw);
+    };
+    const measure = () => {
+      centers = links.map((a) => a.offsetTop + a.offsetHeight / 2);
+      schedule();
+    };
+    const move = (e: globalThis.PointerEvent) => {
+      if (e.pointerType === "touch") return;
+      point = { x: e.clientX, y: e.clientY };
+      schedule();
+    };
+    const leave = () => {
+      point = null;
+      schedule();
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(c);
+    if (c.firstElementChild) observer.observe(c.firstElementChild);
+    measure();
+    c.addEventListener("pointermove", move);
+    c.addEventListener("pointerleave", leave);
+    c.addEventListener("pointercancel", leave);
+    c.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", measure);
+    window.addEventListener("blur", leave);
+    reducedMotion.addEventListener("change", schedule);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      c.removeEventListener("pointermove", move);
+      c.removeEventListener("pointerleave", leave);
+      c.removeEventListener("pointercancel", leave);
+      c.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("blur", leave);
+      reducedMotion.removeEventListener("change", schedule);
+      ticks.forEach((tick) => {
+        tick.style.removeProperty("--timeline-scale");
+        tick.style.removeProperty("--timeline-weight");
+        tick.style.removeProperty("--timeline-opacity");
+      });
+    };
+  }, [enabled, visible, rows]);
 
   /* ── 轨道跟随：当前篇保持在轨道中部（指针在轨道上、键盘在轨道内、刚在轨道上滚过时不动） ── */
   const follow = useCallback(
@@ -688,8 +773,8 @@ export const ScrollTimeline = memo(function ScrollTimeline({
             const color = isActive || isLoading
               ? "bg-zinc-900/85 dark:bg-white/90 forced-colors:bg-[Highlight]"
               : r.muted
-                ? "bg-zinc-900/10 group-hover:bg-zinc-900/50 group-focus-visible:bg-zinc-900/50 dark:bg-white/10 dark:group-hover:bg-white/55 dark:group-focus-visible:bg-white/55 forced-colors:bg-[GrayText]"
-                : "bg-zinc-900/20 group-hover:bg-zinc-900/50 group-focus-visible:bg-zinc-900/50 dark:bg-white/20 dark:group-hover:bg-white/55 dark:group-focus-visible:bg-white/55 forced-colors:bg-[CanvasText]";
+                ? "bg-zinc-900/[var(--timeline-opacity,10%)] group-hover:bg-zinc-900/75 group-focus-visible:bg-zinc-900/50 dark:bg-white/[var(--timeline-opacity,10%)] dark:group-hover:bg-white/80 dark:group-focus-visible:bg-white/55 forced-colors:bg-[GrayText]"
+                : "bg-zinc-900/[var(--timeline-opacity,20%)] group-hover:bg-zinc-900/75 group-focus-visible:bg-zinc-900/50 dark:bg-white/[var(--timeline-opacity,20%)] dark:group-hover:bg-white/80 dark:group-focus-visible:bg-white/55 forced-colors:bg-[CanvasText]";
             return (
               <li key={r.id} className={r.gapBefore ? "mt-2" : undefined}>
                 {r.showYear && (
@@ -719,10 +804,10 @@ export const ScrollTimeline = memo(function ScrollTimeline({
                 >
                   <span
                     aria-hidden
-                    className={`block h-0.5 rounded-full transition-colors duration-200 motion-reduce:transition-none ${color} ${
+                    className={`block h-0.5 origin-left rounded-full transition-[transform,background-color] duration-150 ease-out motion-reduce:transition-none ${color} ${
                       isLoading ? "motion-safe:animate-pulse" : ""
                     }`}
-                    style={{ width: r.width }}
+                    style={{ width: r.width, transform: "scale(var(--timeline-scale, 1), var(--timeline-weight, 1))" }}
                   />
                 </a>
               </li>
