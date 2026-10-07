@@ -2,6 +2,7 @@ export type Diary = {
   id: string;
   date: string;
   publishedAt?: string;
+  pinned?: boolean;
   isPublic?: boolean;
   summary: string;
   location?: string;

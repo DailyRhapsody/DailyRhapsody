@@ -81,11 +81,10 @@ async function getRedis() {
   return _redis;
 }
 
-// v3：Date 为创建时间时保留完整时间戳，并按中国日历日归档。
-// 新旧部署共用 Upstash，隔离快照避免旧部署重新写入缺少 publishedAt 的数据。
-// v3 缺失时用 v2（已含 /api/media 代理路径）作为过期种子，后台刷新期间仍可读文章和图片。
-const CACHE_KEY = "notion:diaries:v3";
-const LEGACY_CACHE_KEY = "notion:diaries:v2";
+// v4：读取 pin 复选框；隔离旧部署，避免其用 Pinned 结果覆盖置顶状态。
+// v4 缺失时用 v3 作为过期种子，后台刷新期间仍可读文章和图片。
+const CACHE_KEY = "notion:diaries:v4";
+const LEGACY_CACHE_KEY = "notion:diaries:v3";
 // Notion 自动化调用 /api/revalidate 时写入的时间戳：晚于快照开始时刻即视为过期。
 // 单独一个小键，不回写大缓存，避免与正在进行的全量刷新互相覆盖。
 // 失效信号和刷新锁继续与 v2 共享，让迁移期间的 webhook 和 Notion 限流保护仍然有效。
@@ -549,7 +548,8 @@ function extractTags(page: PageObjectResponse): string[] {
 }
 
 function extractPinned(page: PageObjectResponse): boolean {
-  const prop = page.properties["Pinned"];
+  // pin 为当前字段；仅缺失时兼容旧字段，取消勾选必须覆盖旧值。
+  const prop = page.properties["pin"] ?? page.properties["Pinned"];
   if (prop?.type === "checkbox") {
     return prop.checkbox;
   }
@@ -738,7 +738,7 @@ function triggerBackgroundRefresh(): void {
 }
 
 /**
- * Fetch all diary entries from Notion, sorted by date descending.
+ * Fetch all diary entries from Notion, pinned first, then by date descending.
  *
  * Stale-While-Revalidate 策略：
  *  - 有缓存：立即返回旧数据（≤1s）。若超过 NOTION_CACHE_STALE_S（默认 5min）触发后台异步重拉。

@@ -9,6 +9,7 @@ import { createShareCardElement } from "@/lib/share-card";
 import { useCommentCount } from "@/hooks/useCommentCounts";
 import { DefaultAvatar } from "./DefaultAvatar";
 import { EntrySummary } from "./EntrySummary";
+import { PinnedIcon } from "./PinnedIcon";
 import { CommentBubbleIcon, EntryComments } from "./EntryComments";
 import { legacyCopyTextToClipboard, splitBodyImages } from "./utils";
 import type { Diary } from "./types";
@@ -361,10 +362,10 @@ export function EntryCard({
       <div ref={postRef} className="flex flex-col gap-3">
         <div className="flex items-start gap-3">
           <DefaultAvatar src={avatarSrc} className="h-10 w-10 shrink-0" />
-                      <div className="min-h-10 flex min-w-0 flex-1 flex-col justify-center">
-                        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                          {authorName}
-                        </p>
+          <div className="min-h-10 flex min-w-0 flex-1 flex-col justify-center">
+            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+              {authorName}
+            </p>
             <p className="text-[0.75rem] text-zinc-500 dark:text-zinc-400">
               {timeStr}
             </p>
@@ -374,7 +375,17 @@ export function EntryCard({
               </span>
             )}
           </div>
-          <div ref={menuRootRef} className="relative shrink-0">
+          <div ref={menuRootRef} className="relative flex shrink-0 items-center">
+            {item.pinned && (
+              <span
+                role="img"
+                aria-label="置顶文章"
+                title="置顶文章"
+                className="inline-flex h-8 w-8 items-center justify-center text-zinc-500"
+              >
+                <PinnedIcon />
+              </span>
+            )}
             <button
               type="button"
               onClick={() => setMenuOpen((o) => !o)}
