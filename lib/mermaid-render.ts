@@ -18,7 +18,14 @@ let queue: Promise<void> = Promise.resolve();
 
 function loadMermaid(): Promise<MermaidApi> {
   if (!mermaidPromise) {
-    mermaidPromise = import("mermaid").then((m) => m.default);
+    mermaidPromise = Promise.all([
+      import("mermaid"),
+      import("@mermaid-js/layout-elk"),
+    ]).then(([{ default: mermaid }, { default: elk }]) => {
+      // Mermaid 11 的 ELK 布局需单独注册，实际布局代码由 loader 按需加载。
+      mermaid.registerLayoutLoaders(elk);
+      return mermaid;
+    });
   }
   return mermaidPromise;
 }
@@ -37,7 +44,9 @@ export function renderMermaidIn(
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",
-      theme: dark ? "dark" : "default",
+      theme: dark ? "dark" : "neutral",
+      // 默认使用 ELK 改善复杂分组布局；图内显式配置仍可覆盖。
+      layout: "elk",
       // 默认会在 body 末尾画一张「Syntax error」错误图且抛错前不清理；出错时只保留源码块
       suppressErrorRendering: true,
     });

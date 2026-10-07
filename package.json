@@ -12,6 +12,7 @@
     "vercel:env": "npx vercel env pull .env.local"
   },
   "dependencies": {
+    "@mermaid-js/layout-elk": "0.2.3",
     "@notionhq/client": "^2.3.0",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.37.0",
