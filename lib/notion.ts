@@ -81,10 +81,10 @@ async function getRedis() {
   return _redis;
 }
 
-// v4：读取 pin 复选框；隔离旧部署，避免其用 Pinned 结果覆盖置顶状态。
-// v4 缺失时用 v3 作为过期种子，后台刷新期间仍可读文章和图片。
-const CACHE_KEY = "notion:diaries:v4";
-const LEGACY_CACHE_KEY = "notion:diaries:v3";
+// v5：置顶组按页面创建时间排序，避免手填 Date 与创建时间不同时顺序错误。
+// v5 缺失时用 v4 作为过期种子，后台刷新期间仍可读文章和图片。
+const CACHE_KEY = "notion:diaries:v5";
+const LEGACY_CACHE_KEY = "notion:diaries:v4";
 // Notion 自动化调用 /api/revalidate 时写入的时间戳：晚于快照开始时刻即视为过期。
 // 单独一个小键，不回写大缓存，避免与正在进行的全量刷新互相覆盖。
 // 失效信号和刷新锁继续与 v2 共享，让迁移期间的 webhook 和 Notion 限流保护仍然有效。
@@ -704,10 +704,12 @@ async function refreshDiariesFromNotion(deadline: number): Promise<Diary[]> {
     mapPageToDiary(page, bodies.get(page.id) ?? previous.get(page.id) ?? "")
   );
 
-  // Sort: pinned first, then by publishedAt/date descending
+  const createdTimes = new Map(pages.map((page) => [page.id, Date.parse(page.created_time)]));
+  // 置顶组按页面创建时间倒序；普通文章保持既有 Date 排序。
   diaries.sort((a, b) => {
     if (a.pinned && !b.pinned) return -1;
     if (!a.pinned && b.pinned) return 1;
+    if (a.pinned && b.pinned) return createdTimes.get(b.id)! - createdTimes.get(a.id)!;
     return (
       new Date(b.publishedAt ?? b.date).getTime() -
       new Date(a.publishedAt ?? a.date).getTime()
@@ -738,7 +740,7 @@ function triggerBackgroundRefresh(): void {
 }
 
 /**
- * Fetch all diary entries from Notion, pinned first, then by date descending.
+ * Fetch all diary entries: pinned first by creation time, then normal entries by Date, both descending.
  *
  * Stale-While-Revalidate 策略：
  *  - 有缓存：立即返回旧数据（≤1s）。若超过 NOTION_CACHE_STALE_S（默认 5min）触发后台异步重拉。

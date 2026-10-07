@@ -4,8 +4,8 @@ import { registerHooks } from "node:module";
 import { Socket } from "node:net";
 import { test } from "node:test";
 
-const CURRENT = "notion:diaries:v4";
-const LEGACY = "notion:diaries:v3";
+const CURRENT = "notion:diaries:v5";
+const LEGACY = "notion:diaries:v4";
 const DATABASE = "00000000000000000000000000000001";
 const richText = (text) => ({
   type: "text", text: { content: text, link: null }, plain_text: text, href: null,
@@ -13,8 +13,7 @@ const richText = (text) => ({
 });
 const page = (id, createdTime, pinned = false) => ({
   object: "page", id,
-  // The Date property must win over the page's own creation timestamp.
-  created_time: "2000-01-01T00:00:00.000Z",
+  created_time: createdTime,
   properties: {
     Title: { type: "title", title: [richText(id)] },
     Date: { type: "created_time", created_time: createdTime },
@@ -109,7 +108,7 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
   } } });
   const { getDiaries, warmDiariesCache, getCachedDiaries, getDiaryById, markDiariesCacheStale } = await import("../lib/notion.ts");
 
-  await t.test("maps Date.created_time, sorts by milliseconds with pinned first, and warms v4", async () => {
+  await t.test("maps Date.created_time, sorts by milliseconds with pinned first, and warms v5", async () => {
     pages = [
       page("early", "2026-09-30T16:30:00.001Z"),
       page("pin-early", "2026-09-30T16:00:00.001Z", true),
@@ -134,20 +133,20 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
       ["warmed", "2026-10-02", "2026-10-01T16:00:00.456Z"]);
     assert.equal(warmed.summary, "body:warmed");
     assert.equal(query.mock.callCount(), 2);
-    assert.equal(store.has(LEGACY), false, "refresh writes only v4");
+    assert.equal(store.has(LEGACY), false, "refresh writes only v5");
   });
 
-  await t.test("v4 wins when an older deployment writes or overwrites v3", async () => {
+  await t.test("v5 wins when an older deployment writes or overwrites v4", async () => {
     const current = await getCachedDiaries();
-    for (const summary of ["old", "overwritten by v3"]) {
+    for (const summary of ["old", "overwritten by v4"]) {
       store.set(LEGACY, { data: [{ id: "warmed", date: "2026-10-01", summary }], refreshedAt: Date.now() });
       assert.deepEqual(await getDiaries(), current);
       assert.deepEqual(await getCachedDiaries(), current);
     }
-    assert.equal(query.mock.callCount(), 2, "fresh v4 causes no SDK query");
+    assert.equal(query.mock.callCount(), 2, "fresh v5 causes no SDK query");
   });
 
-  await t.test("v3 remains a read-only media seed when v4 is missing, then refreshes", async () => {
+  await t.test("v4 remains a read-only media seed when v5 is missing, then refreshes", async () => {
     store.delete(CURRENT);
     const legacy = [{ id: "seed", date: "2026-09-30", isPublic: true,
       summary: "![](/api/media/b/test/abc)", images: ["/api/media/p/test/abc"] }];
@@ -190,6 +189,24 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     assert.deepEqual((await getDiaries()).map(({ id, pinned }) => [id, pinned]), [
       ["pinned", true], ["legacy", true], ["missing", false], ["unpinned", false],
     ]);
+  });
+
+  await t.test("pinned articles use creation time even when manual Date order differs", async () => {
+    const older = page("older-created", "2026-07-01T00:00:00.000Z", true);
+    older.properties.Date = { type: "date", date: { start: "2026-10-07T00:00:00.000Z" } };
+    const newer = page("newer-created", "2026-08-01T00:00:00.000Z", true);
+    newer.properties.Date = { type: "date", date: { start: "2026-09-01T00:00:00.000Z" } };
+    const ordinaryLaterDate = page("ordinary-later-date", "2026-05-01T00:00:00.000Z");
+    ordinaryLaterDate.properties.Date = { type: "date", date: { start: "2026-10-08T00:00:00.000Z" } };
+    const ordinaryEarlierDate = page("ordinary-earlier-date", "2026-06-01T00:00:00.000Z");
+    ordinaryEarlierDate.properties.Date = { type: "date", date: { start: "2026-08-01T00:00:00.000Z" } };
+    pages = [older, ordinaryEarlierDate, newer, ordinaryLaterDate];
+    await warmDiariesCache();
+    assert.deepEqual((await getDiaries()).map((d) => d.id), ["newer-created", "older-created", "ordinary-later-date", "ordinary-earlier-date"]);
+    assert.equal((await getDiaryById("newer-created")).publishedAt, "2026-09-01T00:00:00.000Z", "display date remains unchanged");
+    older.properties.pin.checkbox = false;
+    await warmDiariesCache();
+    assert.deepEqual((await getDiaries()).map((d) => d.id), ["newer-created", "ordinary-later-date", "older-created", "ordinary-earlier-date"], "unpinning returns the article to display-date order");
   });
 
   await t.test("real list route preserves global pin order across source and visitor pages", async () => {
@@ -294,7 +311,7 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     assert.deepEqual(store.get(LEGACY), legacy);
   });
 
-  await t.test("shared invalidation refreshes a fresh v4 snapshot after a busy lock is released", async () => {
+  await t.test("shared invalidation refreshes a fresh v5 snapshot after a busy lock is released", async () => {
     const signalKey = "notion:diaries:v2:invalidatedAt";
     const lockKey = "notion:diaries:v2:refreshLock";
     const freshSeed = [{ id: "fresh-seed", date: "2026-10-01", summary: "cached body", pinned: true }];
