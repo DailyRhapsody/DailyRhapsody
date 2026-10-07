@@ -9,6 +9,7 @@ import { createShareCardElement } from "@/lib/share-card";
 import { useCommentCount } from "@/hooks/useCommentCounts";
 import { DefaultAvatar } from "./DefaultAvatar";
 import { EntrySummary } from "./EntrySummary";
+import { PinnedIcon } from "./PinnedIcon";
 import { CommentBubbleIcon, EntryComments } from "./EntryComments";
 import { legacyCopyTextToClipboard, splitBodyImages } from "./utils";
 import type { Diary } from "./types";
@@ -361,10 +362,23 @@ export function EntryCard({
       <div ref={postRef} className="flex flex-col gap-3">
         <div className="flex items-start gap-3">
           <DefaultAvatar src={avatarSrc} className="h-10 w-10 shrink-0" />
-                      <div className="min-h-10 flex min-w-0 flex-1 flex-col justify-center">
-                        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                          {authorName}
-                        </p>
+          <div className="min-h-10 flex min-w-0 flex-1 flex-col justify-center">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                {authorName}
+              </p>
+              {item.pinned && (
+                <span
+                  role="img"
+                  aria-label="置顶文章"
+                  title="置顶文章"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md bg-zinc-100 px-1.5 py-0.5 text-[0.65rem] leading-4 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                >
+                  <PinnedIcon />
+                  <span aria-hidden="true">置顶</span>
+                </span>
+              )}
+            </div>
             <p className="text-[0.75rem] text-zinc-500 dark:text-zinc-400">
               {timeStr}
             </p>
