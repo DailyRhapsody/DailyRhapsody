@@ -52,8 +52,6 @@ export default function EntriesPageClient({
     requestEntry,
   } = useEntries(selectedTag);
   const totalPosts = total;
-  // 大纲覆盖当前筛选下的全部可见文章，置顶计数不受已加载页数影响。
-  const pinnedPosts = useMemo(() => outline.filter((entry) => entry.pinned).length, [outline]);
   const currentEntries = items;
 
   /* ── 顶部 tab 以地址为唯一来源：/moments 是动态，其余是博客。
@@ -244,23 +242,8 @@ export default function EntriesPageClient({
               onClick={() => setActiveTopTab(0)}
               className={`inline-flex h-[148px] w-[168px] shrink-0 flex-col items-start justify-center rounded-xl border border-zinc-200 bg-white/80 px-5 shadow-sm transition-apple dark:border-zinc-700 dark:bg-zinc-800/80 ${activeTopTab === 0 ? "ring-2 ring-inset ring-zinc-400 dark:ring-zinc-500" : "opacity-60"}`}
             >
-              <span className="flex w-full items-start justify-between gap-2">
-                <span className="text-left">
-                  <span className="block text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-50">{totalPosts}</span>
-                  <span className="block text-[0.7rem] text-zinc-500 dark:text-zinc-400">篇文章</span>
-                </span>
-                {pinnedPosts > 0 && (
-                  <span
-                    role="img"
-                    aria-label={`${pinnedPosts} 篇置顶文章`}
-                    title={`${pinnedPosts} 篇置顶文章`}
-                    className="shrink-0 text-left"
-                  >
-                    <span aria-hidden="true" className="block text-2xl font-bold tabular-nums text-zinc-600 dark:text-zinc-300">{pinnedPosts}</span>
-                    <span aria-hidden="true" className="block text-[0.7rem] text-zinc-500 dark:text-zinc-400">置顶</span>
-                  </span>
-                )}
-              </span>
+              <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">{totalPosts}</p>
+              <p className="text-[0.7rem] text-zinc-500 dark:text-zinc-400">篇文章</p>
               <p className="mt-1.5 text-[0.7rem] text-zinc-400 dark:text-zinc-500">
                 本月 {thisMonthPostCount} 篇更新
               </p>
