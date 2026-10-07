@@ -52,7 +52,7 @@ export function EntrySummary({ text }: { text: string }) {
           引用与图注只用灰色区分，正文两端对齐（链接文字多是整串网址，允许断在任意处，
           否则网址整体挪到下一行、上一行被两端对齐拉散） */}
       <div
-        className={`${markdownPreviewProseClass} text-[0.8125rem] leading-relaxed [&_:is(p,li)]:text-justify [&_:is(strong,b,th)]:font-normal [&_th]:bg-zinc-100/70 [&_th:not([align])]:text-left dark:[&_th]:bg-zinc-800/60 [&_a]:break-all [&_:is(blockquote,.dr-caption)]:text-zinc-500 dark:[&_:is(blockquote,.dr-caption)]:text-zinc-400 [&_img]:h-24 [&_img]:w-24 [&_img]:bg-zinc-200 [&_img]:object-cover dark:[&_img]:bg-zinc-800 sm:[&_img]:h-20 sm:[&_img]:w-20 ${
+        className={`${markdownPreviewProseClass} text-[0.8125rem] leading-relaxed [&_:is(p,li):not(.dr-mermaid_*)]:text-justify [&_:is(strong,b,th)]:font-normal [&_th]:bg-zinc-100/70 [&_th:not([align])]:text-left dark:[&_th]:bg-zinc-800/60 [&_a]:break-all [&_:is(blockquote,.dr-caption)]:text-zinc-500 dark:[&_:is(blockquote,.dr-caption)]:text-zinc-400 [&_img]:h-24 [&_img]:w-24 [&_img]:bg-zinc-200 [&_img]:object-cover dark:[&_img]:bg-zinc-800 sm:[&_img]:h-20 sm:[&_img]:w-20 ${
           expanded ? "" : "max-h-36 overflow-hidden"
         }`}
       >
