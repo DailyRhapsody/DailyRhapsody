@@ -258,7 +258,12 @@ function richTextToMarkdown(items: RichTextItemResponse[]): string {
  * proxyMedia：Notion 托管的图片 / 视频输出站内代理路径（见 lib/notion-media.ts）。
  * deadline：重试预算的截止时刻（见 withNotionRetry）。
  */
-type BodyOptions = { proxyMedia: boolean; deadline: number; completeness?: { partial: boolean } };
+type BodyOptions = {
+  proxyMedia: boolean;
+  deadline: number;
+  pageTitle?: string;
+  completeness?: { partial: boolean };
+};
 
 function notionFileUrl(
   f: { type: "file"; file: { url: string } } | { type: "external"; external: { url: string } } | { type: string },
@@ -367,6 +372,15 @@ function retryDelayMs(e: unknown, attempt: number): number | null {
   }
   if (RequestTimeoutError.isRequestTimeoutError(e)) return 1000 * 2 ** attempt;
   const code = (e as { code?: unknown } | null)?.code;
+  const status = (e as { status?: unknown } | null)?.status;
+  const headers = (e as { headers?: { get?: (name: string) => string | null } } | null)?.headers;
+  if (code === "rate_limited" || status === 429) {
+    const retryAfterS = Number(headers?.get?.("retry-after"));
+    return Number.isFinite(retryAfterS) && retryAfterS > 0 ? retryAfterS * 1000 : 1000 * 2 ** attempt;
+  }
+  if (code === "internal_server_error" || code === "service_unavailable" || status === 500 || status === 503) {
+    return 1000 * 2 ** attempt;
+  }
   if (typeof code === "string" && TRANSIENT_NETWORK_CODES.has(code)) return 1000 * 2 ** attempt;
   return null;
 }
@@ -390,9 +404,356 @@ async function withNotionRetry<T>(call: () => Promise<T>, deadline: number): Pro
   }
 }
 
+type NotionApiList<T> = {
+  results: T[];
+  has_more: boolean;
+  next_cursor: string | null;
+};
+
+type NotionDatabaseContainer = {
+  data_sources?: Array<{ id: string; name?: string }>;
+};
+
+type NotionDataSource = {
+  properties?: Record<string, { type?: string }>;
+};
+
+type NotionDataSourceSearchResult = {
+  object?: string;
+  id?: string;
+  title?: Array<{ plain_text?: string }>;
+};
+
+/**
+ * 2025-09-03 起 Notion 把 database 容器和 data source 拆开；旧版 SDK 还没有
+ * dataSources endpoint，因此嵌入式数据库走这里，Blog/Moments 旧库仍走 SDK 兼容路径。
+ */
+async function notionApiJson<T>(
+  path: string,
+  init: RequestInit,
+  deadline: number
+): Promise<T> {
+  const token = process.env.NOTION_TOKEN?.trim();
+  if (!token) throw new Error("NOTION_TOKEN is required");
+  const response = await fetch(`https://api.notion.com/v1/${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Notion-Version": "2025-09-03",
+      "Content-Type": "application/json",
+      ...(init.headers ?? {}),
+    },
+    signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+  });
+  const body = (await response.json().catch(() => ({}))) as { code?: string; message?: string };
+  if (!response.ok) {
+    const error = new Error(`Notion API ${response.status}: ${body.code ?? body.message ?? "request failed"}`) as Error & {
+      code?: string;
+      status?: number;
+      headers?: Headers;
+    };
+    error.code = body.code;
+    error.status = response.status;
+    error.headers = response.headers;
+    throw error;
+  }
+  return body as T;
+}
+
 function escapeTableCell(text: string): string {
   // GFM 只要求转义 |（行内代码里的 \| 也会被还原）；反斜杠不加倍，否则行内代码里会多出一个
   return text.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ").trim();
+}
+
+type NotionDatabaseProperty = PageObjectResponse["properties"][string];
+
+function formatNotionDateTime(value: string): string {
+  if (!value.includes("T")) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}`;
+}
+
+function formatDateProperty(date: { start?: string | null; end?: string | null } | null): string {
+  if (!date?.start) return "";
+  const start = formatNotionDateTime(date.start);
+  const end = date.end && date.end !== date.start ? formatNotionDateTime(date.end) : "";
+  return end ? `${start} – ${end}` : start;
+}
+
+function notionPersonName(person: unknown): string {
+  if (!person || typeof person !== "object") return "";
+  const value = person as { name?: string | null; person?: { email?: string | null } | null };
+  return value.name ?? value.person?.email ?? "";
+}
+
+/** 数据库行属性 → Markdown 单元格。数据库行本质上是另一个 page，需要先压平属性。 */
+function databasePropertyToMarkdown(
+  property: NotionDatabaseProperty | undefined,
+  pageId: string,
+  opts: BodyOptions
+): string {
+  if (!property) return "";
+  switch (property.type) {
+    case "title":
+      return richTextToMarkdown(property.title);
+    case "rich_text":
+      return richTextToMarkdown(property.rich_text);
+    case "number":
+      return property.number == null ? "" : String(property.number);
+    case "url":
+      return property.url ? `[${property.url}](${property.url})` : "";
+    case "email":
+      return property.email ? `[${property.email}](mailto:${property.email})` : "";
+    case "phone_number":
+      return property.phone_number ?? "";
+    case "select":
+      return property.select?.name ?? "";
+    case "status":
+      return property.status?.name ?? "";
+    case "multi_select":
+      return property.multi_select.map((item) => item.name).join(", ");
+    case "date":
+      return formatDateProperty(property.date);
+    case "checkbox":
+      return property.checkbox ? "✓" : "";
+    case "files":
+      return property.files
+        .map((file) => {
+          if ("file" in file) {
+            const url = opts.proxyMedia
+              ? mediaProxyPath("p", pageId, file.file.url)
+              : file.file.url;
+            return `![${file.name}](${url})`;
+          }
+          if ("external" in file) return `![${file.name}](${file.external.url})`;
+          return "";
+        })
+        .filter(Boolean)
+        .join("<br>");
+    case "created_time":
+      return formatNotionDateTime(property.created_time);
+    case "last_edited_time":
+      return formatNotionDateTime(property.last_edited_time);
+    case "created_by":
+      return notionPersonName(property.created_by);
+    case "last_edited_by":
+      return notionPersonName(property.last_edited_by);
+    case "people":
+      return property.people.map(notionPersonName).filter(Boolean).join(", ");
+    case "relation":
+      return property.relation.map((item) => item.id).join(", ");
+    case "unique_id":
+      return property.unique_id.number == null
+        ? ""
+        : `${property.unique_id.prefix ?? ""}${property.unique_id.number}`;
+    case "formula": {
+      const formula = property.formula;
+      if (formula.type === "string") return formula.string ?? "";
+      if (formula.type === "number") return formula.number == null ? "" : String(formula.number);
+      if (formula.type === "boolean") return formula.boolean ? "✓" : "";
+      if (formula.type === "date") return formatDateProperty(formula.date);
+      return "";
+    }
+    case "rollup": {
+      const rollup = property.rollup;
+      if (rollup.type === "number") return rollup.number == null ? "" : String(rollup.number);
+      if (rollup.type === "date") return formatDateProperty(rollup.date);
+      return "";
+    }
+    default:
+      return "";
+  }
+}
+
+type EmbeddedDatabaseData = {
+  columns: string[];
+  propertyTypes: Record<string, string>;
+  pages: PageObjectResponse[];
+};
+
+async function queryEmbeddedDatabaseWithDataSource(
+  databaseId: string,
+  deadline: number
+): Promise<EmbeddedDatabaseData | null> {
+  const database = await notionApiJson<NotionDatabaseContainer>(
+    `databases/${databaseId}`,
+    { method: "GET" },
+    deadline
+  );
+  const dataSourceId = database.data_sources?.[0]?.id;
+  if (!dataSourceId) return null;
+
+  return queryDataSource(dataSourceId, deadline);
+}
+
+async function queryDataSource(
+  dataSourceId: string,
+  deadline: number
+): Promise<EmbeddedDatabaseData> {
+
+  const dataSource = await notionApiJson<NotionDataSource>(
+    `data_sources/${dataSourceId}`,
+    { method: "GET" },
+    deadline
+  );
+  const columns = Object.keys(dataSource.properties ?? {});
+  const propertyTypes = Object.fromEntries(
+    Object.entries(dataSource.properties ?? {}).map(([name, property]) => [name, property.type ?? ""])
+  );
+  if (columns.length === 0) return { columns, propertyTypes, pages: [] };
+
+  const pages: PageObjectResponse[] = [];
+  let cursor: string | undefined;
+  do {
+    const response = await notionApiJson<NotionApiList<PageObjectResponse>>(
+      `data_sources/${dataSourceId}/query`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ...(cursor ? { start_cursor: cursor } : {}),
+          page_size: 100,
+        }),
+      },
+      deadline
+    );
+    pages.push(...response.results);
+    cursor = response.has_more ? response.next_cursor ?? undefined : undefined;
+  } while (cursor);
+  return { columns, propertyTypes, pages };
+}
+
+/**
+ * Notion 的 linked database 视图只返回一个没有 data source 的 child_database block。
+ * 当前页面标题与原始数据源标题一致时，用标题搜索并读取原始数据源。
+ */
+async function queryLinkedDatabaseByTitle(
+  pageTitle: string | undefined,
+  deadline: number
+): Promise<EmbeddedDatabaseData | null> {
+  const title = pageTitle?.trim();
+  if (!title) return null;
+
+  const response = await notionApiJson<{ results: NotionDataSourceSearchResult[] }>(
+    "search",
+    {
+      method: "POST",
+      body: JSON.stringify({ query: title, page_size: 100 }),
+    },
+    deadline
+  );
+  const source = response.results.find(
+    (result) =>
+      result.object === "data_source" &&
+      result.id &&
+      result.title?.map((item) => item.plain_text ?? "").join("") === title
+  );
+  return source?.id ? queryDataSource(source.id, deadline) : null;
+}
+
+async function queryEmbeddedDatabaseLegacy(
+  databaseId: string,
+  deadline: number
+): Promise<EmbeddedDatabaseData> {
+  const database = await withNotionRetry(
+    () => getClient().databases.retrieve({ database_id: databaseId }),
+    deadline
+  );
+  if (!("properties" in database)) return { columns: [], propertyTypes: {}, pages: [] };
+
+  const columns = Object.keys(database.properties);
+  const propertyTypes = Object.fromEntries(
+    Object.entries(database.properties).map(([name, property]) => [
+      name,
+      "type" in property && typeof property.type === "string" ? property.type : "",
+    ])
+  );
+  const pages: PageObjectResponse[] = [];
+  let cursor: string | undefined;
+  do {
+    const response = await withNotionRetry(
+      () => getClient().databases.query({ database_id: databaseId, start_cursor: cursor, page_size: 100 }),
+      deadline
+    );
+    for (const page of response.results) {
+      if ("properties" in page) pages.push(page as PageObjectResponse);
+    }
+    cursor = response.has_more ? response.next_cursor ?? undefined : undefined;
+  } while (cursor);
+  return { columns, propertyTypes, pages };
+}
+
+/**
+ * Notion 的嵌入式数据库（child_database）→ GFM 表格。
+ * `database_id` 在 child_database block 上就是数据库 ID；行则通过 query 返回为 page。
+ */
+async function databaseToMarkdown(
+  databaseId: string,
+  deadline: number,
+  opts: BodyOptions
+): Promise<string> {
+  try {
+    let data: EmbeddedDatabaseData | null = null;
+    try {
+      data = await withNotionRetry(
+        () => queryEmbeddedDatabaseWithDataSource(databaseId, deadline),
+        deadline
+      );
+    } catch {
+      // 旧 workspace / 旧 database 仍可能只暴露 2022-06-28 的 SDK 接口。
+    }
+    if (!data) {
+      try {
+        data = await queryEmbeddedDatabaseLegacy(databaseId, deadline);
+      } catch {
+        // linked database 的视图容器本身通常无法通过旧接口读取，继续尝试原始数据源。
+      }
+    }
+    if (!data && opts.pageTitle) {
+      try {
+        data = await queryLinkedDatabaseByTitle(opts.pageTitle, deadline);
+      } catch {
+        // 搜索不到对应原始数据源时，保留正文其余内容。
+      }
+    }
+    if (!data || data.columns.length === 0) return "";
+
+    const { columns, propertyTypes, pages } = data;
+    const orderedColumns = [...columns].sort((a, b) => {
+      const rank = (column: string) => {
+        const type = propertyTypes[column];
+        if (type === "title") return 0;
+        if (type === "multi_select" || type === "select" || type === "status") return 1;
+        if (type === "date" || type === "created_time" || type === "last_edited_time") return 2;
+        return 3;
+      };
+      return rank(a) - rank(b);
+    });
+    const line = (cells: string[]) =>
+      `| ${orderedColumns.map((column, index) => cells[index] ?? "").join(" | ")} |`;
+    const header = line(orderedColumns.map(escapeTableCell));
+    const divider = line(orderedColumns.map(() => "---"));
+    const rows = pages.map((page) =>
+      line(orderedColumns.map((column) =>
+        escapeTableCell(databasePropertyToMarkdown(page.properties[column], page.id, opts))
+      ))
+    );
+    return [header, divider, ...rows].join("\n");
+  } catch (e) {
+    // 子数据库没有单独连接给 integration 时，正文的其余内容仍应正常显示。
+    console.warn(`[notion] embedded database ${databaseId} unavailable:`, e);
+    return "";
+  }
 }
 
 /**
@@ -465,6 +826,15 @@ async function walkBlocks(
         if (table) parts.push(table);
         continue;
       }
+      if (block.type === "child_database") {
+        const table = await databaseToMarkdown(
+          block.id,
+          opts.deadline,
+          opts
+        );
+        if (table) parts.push(table);
+        continue;
+      }
       if (block.type === "callout" || block.type === "quote") {
         const content = [richTextToMarkdown(block.type === "callout" ? block.callout.rich_text : block.quote.rich_text)];
         if (block.has_children) {
@@ -527,27 +897,34 @@ export async function extractBodyMarkdown(
  * 页面按日期倒序排列，最新（最可能刚改过）的先抓。
  */
 async function extractBodyMarkdownBatch(
-  pageIds: string[],
+  pages: PageObjectResponse[],
   deadline: number,
   concurrency = 3
 ): Promise<Map<string, { text: string; complete: boolean } | null>> {
   const out = new Map<string, { text: string; complete: boolean } | null>();
   let idx = 0;
-  const workers = Array.from({ length: Math.min(concurrency, pageIds.length) }, async () => {
-    while (idx < pageIds.length && Date.now() < deadline) {
+  const workers = Array.from({ length: Math.min(concurrency, pages.length) }, async () => {
+    while (idx < pages.length && Date.now() < deadline) {
       const i = idx++;
-      const id = pageIds[i];
+      const page = pages[i];
+      // completeness 记录这轮正文是否被截断（深度上限 / 未支持的 block），
+      // 供上层区分「正文确实完整」与「只抓到一部分」，不要把残缺正文写成完整快照。
       const completeness = { partial: false };
-      const text = await tryExtractBodyMarkdown(id, { proxyMedia: true, deadline, completeness });
-      out.set(id, text === null ? null : { text, complete: !completeness.partial });
+      const text = await tryExtractBodyMarkdown(page.id, {
+        proxyMedia: true,
+        deadline,
+        pageTitle: extractTitle(page),
+        completeness,
+      });
+      out.set(page.id, text === null ? null : { text, complete: !completeness.partial });
     }
   });
   await Promise.all(workers);
-  const skipped = pageIds.length - out.size;
+  const skipped = pages.length - out.size;
   const failed = [...out.values()].filter((body) => body === null).length;
   if (skipped + failed > 0) {
     console.warn(
-      `[notion] ${skipped + failed}/${pageIds.length} bodies kept from previous snapshot ` +
+      `[notion] ${skipped + failed}/${pages.length} bodies kept from previous snapshot ` +
         `(${skipped} not started before deadline, ${failed} failed)`
     );
   }
@@ -718,6 +1095,8 @@ async function refreshDiariesFromNotion(deadline: number): Promise<Diary[]> {
   const client = getClient();
   const databaseId = getDatabaseId();
   const snapshotAt = Date.now();
+  // 上一版缓存：既用来跳过没改过且已是完整快照的正文，也用来在限流/超预算时沿用旧正文。
+  const previous = new Map((await getCached())?.data.map((d) => [d.id, d]) ?? []);
 
   const pages: PageObjectResponse[] = [];
   let cursor: string | undefined;
@@ -740,12 +1119,12 @@ async function refreshDiariesFromNotion(deadline: number): Promise<Diary[]> {
     cursor = response.has_more ? response.next_cursor ?? undefined : undefined;
   } while (cursor);
 
-  const previous = new Map((await getCached())?.data.map((d) => [d.id, d]) ?? []);
+  // 正文没被改过、上一版已是完整快照的页面不再重抓，省下 Notion 限流额度。
   const reusable = (page: PageObjectResponse) => {
     const old = previous.get(page.id);
     return !!page.last_edited_time && old?.bodyStatus === "complete" && old.sourceEditedAt === page.last_edited_time;
   };
-  const bodies = await extractBodyMarkdownBatch(pages.filter((p) => !reusable(p)).map((p) => p.id), deadline);
+  const bodies = await extractBodyMarkdownBatch(pages.filter((p) => !reusable(p)), deadline);
   // 重试用尽或预算用完仍没抓到的正文沿用上一版缓存，不让一次限流把好数据覆盖成只剩标题
   const diaries = pages.map((page) => {
     const body = bodies.get(page.id);
@@ -853,7 +1232,11 @@ export async function getDiaryById(id: string): Promise<Diary | null> {
       full.parent.type === "database_id" ? full.parent.database_id.replace(/-/g, "") : "";
     if (parentDb !== getDatabaseId().replace(/-/g, "")) return null;
 
-    const body = await extractBodyMarkdown(id, { proxyMedia: true, deadline });
+    const body = await extractBodyMarkdown(id, {
+      proxyMedia: true,
+      deadline,
+      pageTitle: extractTitle(page as PageObjectResponse),
+    });
     return mapPageToDiary(page as PageObjectResponse, body ?? "");
   } catch {
     return null;
@@ -912,9 +1295,18 @@ export async function resolveNotionFileUrl(
     } else {
       const page = await withNotionRetry(() => client.pages.retrieve({ page_id: id }), deadline);
       if (!("properties" in page)) return null;
-      const prop = (page as PageObjectResponse).properties["Image"];
-      const first = prop?.type === "files" ? prop.files[0] : undefined;
-      if (first?.type === "file") file = first.file;
+      // 普通文章约定字段名是 Image；嵌入式数据库的行可能叫 Cover / Thumbnail 等，
+      // 只要是 Notion files 属性且版本号匹配，就允许解析对应文件。
+      for (const prop of Object.values((page as PageObjectResponse).properties)) {
+        if (prop.type !== "files") continue;
+        const match = prop.files.find((candidate) =>
+          "file" in candidate && mediaVersion(candidate.file.url) === v
+        );
+        if (match && "file" in match) {
+          file = match.file;
+          break;
+        }
+      }
     }
   } catch (e) {
     console.warn(`[notion] resolveNotionFileUrl failed for ${kind}:${id}:`, e);

@@ -45,7 +45,11 @@ async function lookupVisibility(kind: MediaKind, id: string, v: string): Promise
 
   let found = false;
   for (const d of diaries ?? []) {
-    const hit = kind === "p" ? (d.images ?? []).includes(path) : d.summary.includes(path);
+    // 嵌入式数据库的行也是 Notion page；其 files 属性会被压进正文表格，
+    // 因而和正文 block 一样从 summary 里核对归属。普通封面仍走 images。
+    const hit = kind === "p"
+      ? (d.images ?? []).includes(path) || d.summary.includes(path)
+      : d.summary.includes(path);
     if (!hit) continue;
     if (d.isPublic !== false) return "public";
     found = true;
