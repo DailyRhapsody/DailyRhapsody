@@ -13,8 +13,10 @@ export type LlmMessage = { role: "user" | "assistant"; content: string };
 type Protocol = "openai" | "anthropic";
 
 export class LlmError extends Error {
-  constructor(message: string, readonly status: number) {
+  readonly status: number;
+  constructor(message: string, status: number) {
     super(message);
+    this.status = status;
   }
 }
 
@@ -39,7 +41,7 @@ export function isLlmConfigured(): boolean {
   return !!(c.apiKey && c.model);
 }
 
-type DeltaPicker = (data: unknown) => { text?: string; error?: string; truncated?: boolean };
+type DeltaPicker = (data: unknown) => { text?: string; error?: string; truncated?: boolean; complete?: boolean };
 
 /** 触到输出上限时补在末尾，免得半句话看起来像完整回答 */
 const TRUNCATED_NOTE = "\n\n……篇幅有限，先说到这里。";
@@ -52,7 +54,7 @@ const pickOpenAi: DeltaPicker = (data) => {
   if (d.error) return { error: d.error.message || "upstream error" };
   const choice = d.choices?.[0];
   // 推理类模型额外返回 reasoning_content，只取 content，不把思考过程吐给访客
-  return { text: choice?.delta?.content, truncated: choice?.finish_reason === "length" };
+  return { text: choice?.delta?.content, truncated: choice?.finish_reason === "length", complete: choice?.finish_reason === "stop" };
 };
 
 const pickAnthropic: DeltaPicker = (data) => {
@@ -63,16 +65,17 @@ const pickAnthropic: DeltaPicker = (data) => {
   };
   if (d.type === "error") return { error: d.error?.message || "upstream error" };
   if (d.type === "content_block_delta" && d.delta?.type === "text_delta") return { text: d.delta.text };
-  if (d.type === "message_delta") return { truncated: d.delta?.stop_reason === "max_tokens" };
+  if (d.type === "message_delta") return { truncated: d.delta?.stop_reason === "max_tokens", complete: d.delta?.stop_reason === "end_turn" };
   return {};
 };
 
 /** 把上游 SSE 转成纯文本流；上游中途报错时让流以错误结束，前端据此提示中断 */
-function sseToText(pick: DeltaPicker): TransformStream<Uint8Array, Uint8Array> {
+function sseToText(pick: DeltaPicker, strict = false): TransformStream<Uint8Array, Uint8Array> {
   const dec = new TextDecoder();
   const enc = new TextEncoder();
   let buf = "";
   let truncated = false;
+  let complete = false;
   const handle = (line: string, ctrl: TransformStreamDefaultController<Uint8Array>) => {
     const t = line.trim();
     if (!t.startsWith("data:")) return;
@@ -84,8 +87,9 @@ function sseToText(pick: DeltaPicker): TransformStream<Uint8Array, Uint8Array> {
     } catch {
       return;
     }
-    const { text, error, truncated: cut } = pick(parsed);
+    const { text, error, truncated: cut, complete: ended } = pick(parsed);
     if (cut) truncated = true;
+    if (ended) complete = true;
     if (error) ctrl.error(new LlmError(error, 502));
     else if (text) ctrl.enqueue(enc.encode(text));
   };
@@ -97,7 +101,12 @@ function sseToText(pick: DeltaPicker): TransformStream<Uint8Array, Uint8Array> {
       for (const l of lines) handle(l, ctrl);
     },
     flush(ctrl) {
+      buf += dec.decode();
       if (buf) handle(buf, ctrl);
+      if (strict && (truncated || !complete)) {
+        ctrl.error(new LlmError("模型未完整返回分析结果", 502));
+        return;
+      }
       if (truncated) ctrl.enqueue(enc.encode(TRUNCATED_NOTE));
     },
   });
@@ -121,6 +130,8 @@ export async function streamChat(opts: {
   maxTokens: number;
   temperature?: number;
   signal?: AbortSignal;
+  /** 结构化分析必须等到协议明确正常结束，截断/断流不可提交。 */
+  strict?: boolean;
 }): Promise<ReadableStream<Uint8Array>> {
   const cfg = getConfig();
   if (!cfg.apiKey || !cfg.model) throw new LlmError("对话模型未配置", 503);
@@ -164,5 +175,5 @@ export async function streamChat(opts: {
   if (!res.ok || !res.body) {
     throw new LlmError(await upstreamError(res), 502);
   }
-  return res.body.pipeThrough(sseToText(cfg.protocol === "anthropic" ? pickAnthropic : pickOpenAi));
+  return res.body.pipeThrough(sseToText(cfg.protocol === "anthropic" ? pickAnthropic : pickOpenAi, opts.strict));
 }

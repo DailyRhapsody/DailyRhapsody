@@ -35,6 +35,9 @@ export type Diary = {
   pinned?: boolean;
   isPublic?: boolean;
   summary: string; // rich text → plain text
+  /** 仅 complete 的文字正文可参与全量分析；旧缓存没有此字段。 */
+  bodyStatus?: "complete" | "partial" | "stale";
+  sourceEditedAt?: string;
   location?: string;
   tags?: string[];
   images?: string[]; // raw Notion file URL or external URL (max 1)
@@ -81,10 +84,10 @@ async function getRedis() {
   return _redis;
 }
 
-// v5：置顶组按页面创建时间排序，避免手填 Date 与创建时间不同时顺序错误。
-// v5 缺失时用 v4 作为过期种子，后台刷新期间仍可读文章和图片。
-const CACHE_KEY = "notion:diaries:v5";
-const LEGACY_CACHE_KEY = "notion:diaries:v4";
+// v6：记录正文完整性与来源版本，供全量文章分析核验。
+// v5 只作为展示种子；首次刷新后才能参与分析。
+const CACHE_KEY = "notion:diaries:v6";
+const LEGACY_CACHE_KEY = "notion:diaries:v5";
 // Notion 自动化调用 /api/revalidate 时写入的时间戳：晚于快照开始时刻即视为过期。
 // 单独一个小键，不回写大缓存，避免与正在进行的全量刷新互相覆盖。
 // 失效信号和刷新锁继续与 v2 共享，让迁移期间的 webhook 和 Notion 限流保护仍然有效。
@@ -182,6 +185,28 @@ export async function getCachedDiaries(): Promise<Diary[] | null> {
   return (await getCached())?.data ?? null;
 }
 
+/** 全量分析不能用失效快照或抓取不全的正文。刷新仍走现有锁和预算。 */
+export class IncompleteAnalysisSourceError extends Error {
+  readonly count: number;
+  constructor(count: number) { super("存在无法完整读取的文字正文"); this.count = count; }
+}
+
+export async function getAnalysisDiaries(): Promise<Diary[] | null> {
+  const cached = await getCached();
+  if (!cached || isStale(cached)) {
+    triggerBackgroundRefresh();
+    return null;
+  }
+  const articles = cached.data.filter((d) => d.isPublic !== false);
+  const partial = articles.filter((d) => d.bodyStatus === "partial").length;
+  if (partial) throw new IncompleteAnalysisSourceError(partial);
+  if (articles.some((d) => d.bodyStatus !== "complete")) {
+    triggerBackgroundRefresh();
+    return null;
+  }
+  return articles;
+}
+
 // ---------------------------------------------------------------------------
 // Notion property helpers
 // ---------------------------------------------------------------------------
@@ -233,7 +258,7 @@ function richTextToMarkdown(items: RichTextItemResponse[]): string {
  * proxyMedia：Notion 托管的图片 / 视频输出站内代理路径（见 lib/notion-media.ts）。
  * deadline：重试预算的截止时刻（见 withNotionRetry）。
  */
-type BodyOptions = { proxyMedia: boolean; deadline: number };
+type BodyOptions = { proxyMedia: boolean; deadline: number; completeness?: { partial: boolean } };
 
 function notionFileUrl(
   f: { type: "file"; file: { url: string } } | { type: "external"; external: { url: string } } | { type: string },
@@ -277,6 +302,12 @@ function blockToMarkdown(b: BlockObjectResponse, opts: BodyOptions): string {
       const fence = codeFence(text);
       return `${fence}${lang}\n${text}\n${fence}`;
     }
+    case "equation":
+      return `$$${b.equation.expression}$$`;
+    case "child_page":
+      return b.child_page.title;
+    case "child_database":
+      return b.child_database.title;
     case "callout":
       return `> ${richTextToMarkdown(b.callout.rich_text)}`;
     case "divider":
@@ -406,9 +437,12 @@ async function walkBlocks(
   depth: number,
   parts: string[],
   opts: BodyOptions,
-  maxDepth = 3
+  maxDepth = opts.completeness ? 32 : 3
 ): Promise<void> {
-  if (depth > maxDepth) return;
+  if (depth > maxDepth) {
+    if (opts.completeness) opts.completeness.partial = true;
+    return;
+  }
   let cursor: string | undefined;
   do {
     const r = await withNotionRetry(
@@ -421,7 +455,10 @@ async function walkBlocks(
       opts.deadline
     );
     for (const b of r.results) {
-      if (!("type" in b)) continue;
+      if (!("type" in b)) {
+        if (opts.completeness) opts.completeness.partial = true;
+        continue;
+      }
       const block = b as BlockObjectResponse;
       if (block.type === "table") {
         const table = await tableToMarkdown(block, opts.deadline);
@@ -442,6 +479,10 @@ async function walkBlocks(
         continue;
       }
       const md = blockToMarkdown(block, opts);
+      // 未支持的文字块不能静默认证为全文；图片/视频本身不在文字分析范围。
+      if (opts.completeness && block.type === "unsupported") {
+        opts.completeness.partial = true;
+      }
       if (md) parts.push(md);
       if (block.has_children) {
         await walkBlocks(block.id, depth + 1, parts, opts, maxDepth);
@@ -489,14 +530,16 @@ async function extractBodyMarkdownBatch(
   pageIds: string[],
   deadline: number,
   concurrency = 3
-): Promise<Map<string, string | null>> {
-  const out = new Map<string, string | null>();
+): Promise<Map<string, { text: string; complete: boolean } | null>> {
+  const out = new Map<string, { text: string; complete: boolean } | null>();
   let idx = 0;
   const workers = Array.from({ length: Math.min(concurrency, pageIds.length) }, async () => {
     while (idx < pageIds.length && Date.now() < deadline) {
       const i = idx++;
       const id = pageIds[i];
-      out.set(id, await tryExtractBodyMarkdown(id, { proxyMedia: true, deadline }));
+      const completeness = { partial: false };
+      const text = await tryExtractBodyMarkdown(id, { proxyMedia: true, deadline, completeness });
+      out.set(id, text === null ? null : { text, complete: !completeness.partial });
     }
   });
   await Promise.all(workers);
@@ -697,12 +740,22 @@ async function refreshDiariesFromNotion(deadline: number): Promise<Diary[]> {
     cursor = response.has_more ? response.next_cursor ?? undefined : undefined;
   } while (cursor);
 
-  const bodies = await extractBodyMarkdownBatch(pages.map((p) => p.id), deadline);
+  const previous = new Map((await getCached())?.data.map((d) => [d.id, d]) ?? []);
+  const reusable = (page: PageObjectResponse) => {
+    const old = previous.get(page.id);
+    return !!page.last_edited_time && old?.bodyStatus === "complete" && old.sourceEditedAt === page.last_edited_time;
+  };
+  const bodies = await extractBodyMarkdownBatch(pages.filter((p) => !reusable(p)).map((p) => p.id), deadline);
   // 重试用尽或预算用完仍没抓到的正文沿用上一版缓存，不让一次限流把好数据覆盖成只剩标题
-  const previous = new Map((await getCached())?.data.map((d) => [d.id, d.summary]) ?? []);
-  const diaries = pages.map((page) =>
-    mapPageToDiary(page, bodies.get(page.id) ?? previous.get(page.id) ?? "")
-  );
+  const diaries = pages.map((page) => {
+    const body = bodies.get(page.id);
+    const old = previous.get(page.id);
+    return {
+      ...mapPageToDiary(page, body?.text ?? old?.summary ?? ""),
+      sourceEditedAt: page.last_edited_time,
+      bodyStatus: reusable(page) || body?.complete ? "complete" as const : body ? "partial" as const : "stale" as const,
+    };
+  });
 
   const createdTimes = new Map(pages.map((page) => [page.id, Date.parse(page.created_time)]));
   // 置顶组按页面创建时间倒序；普通文章保持既有 Date 排序。

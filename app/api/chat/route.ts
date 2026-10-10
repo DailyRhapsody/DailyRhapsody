@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/auth";
 import { getClientIpFromRequest } from "@/lib/client-ip";
-import { getCachedDiaries } from "@/lib/notion";
+import { getCachedDiaries, IncompleteAnalysisSourceError } from "@/lib/notion";
 import { CHAT_LIMITS, getPetMode } from "@/lib/persona/config";
+import { runFirstPrinciples } from "@/lib/persona/first-principles-route";
 import { isLlmConfigured, LlmError, streamChat, type LlmMessage } from "@/lib/persona/llm";
 import { buildBlogFacts } from "@/lib/persona/facts";
 import { buildSystemPrompt } from "@/lib/persona/prompt";
@@ -13,8 +14,8 @@ import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
 import { rejectCrossSiteWrite } from "@/lib/same-origin";
 import { isUpstashConfigured, limitByIp } from "@/lib/upstash-rate-limit";
 
-// 流式响应的时长计入函数时长；上游超时设在 55s，这里留出余量
-export const maxDuration = 60;
+// 分析每次只调用一次模型；300s 同时为文章缓存的后台刷新保留原有预算。
+export const maxDuration = 300;
 
 /** 检索只看最后一句提问的末尾，检索开销与消息长度无关 */
 const QUERY_TAIL_CHARS = 500;
@@ -67,6 +68,40 @@ function normalizeMessages(raw: unknown): LlmMessage[] | null {
   return msgs;
 }
 
+
+async function authorizeModel(req: Request, admin: boolean, analysis = false): Promise<Response | null> {
+  // Skill 使用共享结果、固定服务器任务；每个真实批次计全站分析额度，不消耗聊天30轮。
+  if (analysis) {
+    try {
+      return await limitByIp("chat:analysis:global", "all", 120, "1 d", { failClosed: true })
+        ? null : json({ error: "今天的文章分析额度已用完，进度已保存，请明天继续。" }, 429);
+    } catch {
+      return json({ error: "文章分析暂时不可用。" }, 503);
+    }
+  }
+  if (!admin) {
+    // 花钱的接口：没有 Redis 时 limitByIp 会直接放行，生产环境宁可拒绝
+    if (!isUpstashConfigured() && process.env.NODE_ENV === "production") {
+      return json({ error: "暂时无法对话。" }, 503);
+    }
+    const ip = getClientIpFromRequest(req);
+    try {
+      // 日额度超限不记违规：正常聊多了的读者不该被全站封 IP
+      if (!(await limitByIp("chat:daily", ip, CHAT_LIMITS.dailyPerIp, "1 d", { failClosed: true }))) {
+        return json({ error: "今天聊得够多了，明天再来吧。" }, 429);
+      }
+      if (!(await limitByIp("chat:global", "all", CHAT_LIMITS.dailyGlobal, "1 d", { failClosed: true }))) {
+        return json({ error: "今天的对话额度用完了，明天再来吧。" }, 503);
+      }
+    } catch (e) {
+      console.error("[chat] quota", e);
+      return json({ error: "暂时无法对话。" }, 503);
+    }
+  }
+
+  return null;
+}
+
 export async function POST(req: Request) {
   const badOrigin = rejectCrossSiteWrite(req);
   if (badOrigin) return badOrigin;
@@ -93,6 +128,19 @@ export async function POST(req: Request) {
     return json({ error: "Invalid body" }, 400);
   }
   if (!body || typeof body !== "object") return json({ error: "Invalid body" }, 400);
+  const skill = (body as { skill?: unknown }).skill;
+  if (skill !== undefined && skill !== "first-principles") return json({ error: "未知 Skill" }, 400);
+  if (skill === "first-principles") {
+    if (!isLlmConfigured()) return json({ error: "数字人还没接上模型，稍后再来。" }, 503);
+    try {
+      return await runFirstPrinciples(req, () => authorizeModel(req, access.admin, true));
+    } catch (e) {
+      if (req.signal.aborted) return new NextResponse(null, { status: 499 });
+      if (e instanceof IncompleteAnalysisSourceError) return json({ error: `${e.count} 篇公开文章含尚未完整读取的文字，请补齐正文后再分析。` }, 422);
+      console.error("[chat] first-principles", e instanceof Error ? e.name : "error");
+      return json({ error: "本次分析未完成，已保留进度，请重试。" }, 502);
+    }
+  }
   const messages = normalizeMessages((body as { messages?: unknown }).messages);
   if (!messages) return json({ error: "消息不能为空" }, 400);
 
@@ -101,26 +149,8 @@ export async function POST(req: Request) {
   if (!bundle) return json({ error: "数字人还在准备中，稍后再来。" }, 503);
   const tier = bundle.tier;
 
-  // 额度放在所有校验之后：无效请求、人设未就绪都不消耗额度
-  if (!access.admin) {
-    // 花钱的接口：没有 Redis 时 limitByIp 会直接放行，生产环境宁可拒绝
-    if (!isUpstashConfigured() && process.env.NODE_ENV === "production") {
-      return json({ error: "暂时无法对话。" }, 503);
-    }
-    const ip = getClientIpFromRequest(req);
-    try {
-      // 日额度超限不记违规：正常聊多了的读者不该被全站封 IP
-      if (!(await limitByIp("chat:daily", ip, CHAT_LIMITS.dailyPerIp, "1 d", { failClosed: true }))) {
-        return json({ error: "今天聊得够多了，明天再来吧。" }, 429);
-      }
-      if (!(await limitByIp("chat:global", "all", CHAT_LIMITS.dailyGlobal, "1 d", { failClosed: true }))) {
-        return json({ error: "今天的对话额度用完了，明天再来吧。" }, 503);
-      }
-    } catch (e) {
-      console.error("[chat] quota", e);
-      return json({ error: "暂时无法对话。" }, 503);
-    }
-  }
+  const quota = await authorizeModel(req, access.admin);
+  if (quota) return quota;
 
   // 只读缓存、不触发 Notion 冷拉；缓存缺席时不带原文片段照常回答。
   // 每轮都读：Notion 里刚转私密或删除的文章要立即从检索里消失，与其他接口一致

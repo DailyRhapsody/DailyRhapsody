@@ -53,7 +53,7 @@ const GUTTER_MAX_WIDTH = 480;
  * 按当前页面 main 的右边缘实时计算，窗口缩放、换页后重算。
  */
 function useGutterBox(active: boolean, pathname: string | null) {
-  const [box, setBox] = useState<{ left: number; width: number; railLeft: number } | null>(null);
+  const [box, setBox] = useState<{ left: number; width: number; railLeft: number; skillWidth: number } | null>(null);
   useEffect(() => {
     if (!active) return;
     const measure = () => {
@@ -70,7 +70,8 @@ function useGutterBox(active: boolean, pathname: string | null) {
       // 空白栏比上限还宽时居中摆放。railLeft 是玻璃的左边界：贴着正文列的右边缘往外 2px。
       // 不能再往左：顶栏图铺满正文列宽度，往左会把图的右边缘一起糊掉；
       // 往右到 20px 处就是评论线程，所以落在这条窄缝里
-      setBox({ left: start + Math.round((room - width) / 2), width, railLeft: Math.round(contentRight + 2) });
+      const left = start + Math.round((room - width) / 2);
+      setBox({ left, width, railLeft: Math.round(contentRight + 2), skillWidth: Math.max(0, Math.min(width, vw - 124 - left)) });
     };
     measure();
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
@@ -182,6 +183,12 @@ export function PetChatPanel({
   };
 
   const notReady = !!status && !status.ready;
+
+  const runFirstPrinciples = () => {
+    if (chat.streaming || notReady) return;
+    stickToBottom.current = true;
+    void chat.send("用第一性原理分析全部公开文章，梳理共同前提、跨篇联系和观点变化。", "first-principles");
+  };
 
   const submit = (text = draft) => {
     if (!text.trim() || chat.streaming || notReady) return;
@@ -308,8 +315,8 @@ export function PetChatPanel({
                   ),
                 )}
                 {waitingFirstToken && (
-                  <div className={`flex w-fit gap-1 px-3 py-3 ${BOT_BUBBLE}`} role="status">
-                    <span className="sr-only">正在思考</span>
+                  <div className={`flex w-fit items-center gap-1 px-3 py-3 ${BOT_BUBBLE}`} role="status">
+                    <span className={chat.progress ? "mr-1 text-xs text-zinc-500 dark:text-zinc-400" : "sr-only"} aria-live="polite">{chat.progress || "正在思考"}</span>
                     {[0, 1, 2].map((i) => (
                       <span
                         key={i}
@@ -397,6 +404,22 @@ export function PetChatPanel({
                 </svg>
               </button>
             )}
+          </div>
+          <div
+            aria-label="推荐 Skill"
+            className={`pointer-events-auto flex flex-wrap gap-2 ${fade} ${gutter ? "absolute left-0 top-[calc(100%+1rem)]" : "mt-3"}`}
+            style={gutter ? { maxWidth: gutter.skillWidth } : undefined}
+          >
+            <button
+              type="button"
+              onClick={runFirstPrinciples}
+              disabled={chat.streaming || notReady}
+              aria-label="第一性原理"
+              title="分析全部公开文章"
+              className="inline-flex min-h-8 items-center whitespace-nowrap rounded-full bg-zinc-200/50 px-3 py-1.5 text-xs text-zinc-600 transition-apple hover:bg-zinc-300/60 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-white/[0.08] dark:text-zinc-300 dark:hover:bg-white/[0.14] dark:hover:text-white"
+            >
+              第一性原理
+            </button>
           </div>
       </div>
     </div>
