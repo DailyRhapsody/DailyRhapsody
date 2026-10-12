@@ -35,6 +35,21 @@ export async function isIpBlocked(ip: string): Promise<boolean> {
 }
 
 /**
+ * 返回封禁剩余秒数：未封禁或 Redis 不可用返回 0。
+ * 提示页与 Retry-After 需要真实剩余时长，硬编码 24 小时会在 TTL 调整后变成错话。
+ */
+export async function blockedTtlSeconds(ip: string): Promise<number> {
+  if (!redis) return 0;
+  if (!ip || ip === "unknown") return 0;
+  try {
+    const ttl = await redis.ttl(`${BLOCK_PREFIX}${ip}`);
+    return typeof ttl === "number" && ttl > 0 ? ttl : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * 解除指定 IP 的封禁 + 清空未达阈值的违规计数。
  * 用于 admin 在自己或可信用户被误封时的手动救济。
  */
