@@ -12,7 +12,8 @@ import {
   verifySeedValue,
 } from "@/lib/scrape-gate";
 import { isLikelyBotUserAgent, withAntiScrapeHeaders } from "@/lib/request-guard";
-import { isIpBlocked, recordViolation } from "@/lib/honeypot";
+import { isIpBlocked, blockedTtlSeconds, recordViolation } from "@/lib/honeypot";
+import { blockedPageHtml, wantsHtml } from "@/lib/blocked-page";
 import { limitByIp } from "@/lib/upstash-rate-limit";
 import { getClientIpFromRequest } from "@/lib/client-ip";
 import { verifyAdminCookieValue } from "@/lib/auth";
@@ -134,8 +135,25 @@ export default async function proxy(req: NextRequest) {
   const isAdminRescue =
     pathname === "/admin/login" || pathname === "/api/admin/unblock-ip";
   if (!isAdminReq && !isAdminRescue && (await isIpBlocked(ip))) {
+    // 页面导航给中文提示页，接口调用给 JSON：真人撞上封禁时不该看到一段裸 JSON。
+    // 剩余时长取自 Redis TTL，同时下发 Retry-After，避免自动客户端立刻重试又续期封禁。
+    const remaining = await blockedTtlSeconds(ip);
+    if (wantsHtml(req)) {
+      return withAntiScrapeHeaders(
+        new NextResponse(blockedPageHtml(remaining), {
+          status: 403,
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            ...(remaining > 0 ? { "Retry-After": String(remaining) } : {}),
+          },
+        })
+      );
+    }
     return withAntiScrapeHeaders(
-      NextResponse.json({ error: "您的 IP 由于异常请求已被暂时限制访问。" }, { status: 403 })
+      NextResponse.json(
+        { error: "您的 IP 由于异常请求已被暂时限制访问。" },
+        { status: 403, headers: remaining > 0 ? { "Retry-After": String(remaining) } : {} }
+      )
     );
   }
 
