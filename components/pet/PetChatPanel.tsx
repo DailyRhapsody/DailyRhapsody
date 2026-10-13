@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import React, { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { usePetChat } from "@/hooks/usePetChat";
+import { findSkill, SKILLS, type SkillId } from "@/lib/persona/skills";
 import { chatProseClass, renderChatMarkdown } from "@/lib/chat-markdown";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
@@ -26,19 +27,38 @@ const AssistantText = memo(function AssistantText({ text }: { text: string }) {
 /**
  * 手机上贴底的输入胶囊要躲开软键盘：iOS 弹键盘时不缩布局视口，
  * 只能跟着 visualViewport 算出键盘占掉的底部高度。
+ *
+ * 两个量必须同一套参照系：被减数是**布局视口**高度（`documentElement.clientHeight`，
+ * 也就是 `position: fixed` 真正依据的那个盒子），减数是可见区下边缘（`offsetTop + height`）。
+ * 拿 `window.innerHeight` 当被减数时，只要它和布局视口不同步（iOS 在键盘、输入辅助栏这类
+ * 系统 UI 变化后重算布局视口，两者会有几十像素的差），算出的高度就偏大，
+ * 面板连同蒙版一起被顶到键盘上方，中间那段就露出底层页面。
  */
 function useKeyboardInset(active: boolean) {
   const [inset, setInset] = useState(0);
   useEffect(() => {
     const vv = typeof window !== "undefined" ? window.visualViewport : null;
     if (!active || !vv) return;
-    const update = () => setInset(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
-    update();
-    vv.addEventListener("resize", update);
-    vv.addEventListener("scroll", update);
+    let settle = 0;
+    const update = () => {
+      // clientHeight 取不到（0）时退回 innerHeight，宁可多留一点也不要落到键盘后面
+      const layoutViewport = document.documentElement.clientHeight || window.innerHeight;
+      setInset(Math.max(0, Math.round(layoutViewport - vv.offsetTop - vv.height)));
+    };
+    // 键盘与输入辅助栏（上下箭头 + 对勾）是分段动画的，动画途中的 resize 值不可靠；
+    // 每次事件后再补量一次落定值，避免停在中间估值上（量不到就维持现值，不会跳）
+    const schedule = () => {
+      update();
+      window.clearTimeout(settle);
+      settle = window.setTimeout(update, 320);
+    };
+    schedule();
+    vv.addEventListener("resize", schedule);
+    vv.addEventListener("scroll", schedule);
     return () => {
-      vv.removeEventListener("resize", update);
-      vv.removeEventListener("scroll", update);
+      window.clearTimeout(settle);
+      vv.removeEventListener("resize", schedule);
+      vv.removeEventListener("scroll", schedule);
     };
   }, [active]);
   return active ? inset : 0;
@@ -184,10 +204,11 @@ export function PetChatPanel({
 
   const notReady = !!status && !status.ready;
 
-  const runFirstPrinciples = () => {
-    if (chat.streaming || notReady) return;
+  const runSkill = (id: SkillId) => {
+    const meta = findSkill(id);
+    if (!meta || chat.streaming || notReady) return;
     stickToBottom.current = true;
-    void chat.send("用第一性原理分析全部公开文章，梳理共同前提、跨篇联系和观点变化。", "first-principles");
+    void chat.send(meta.prompt, id);
   };
 
   const submit = (text = draft) => {
@@ -222,7 +243,7 @@ export function PetChatPanel({
   }, [draft, open]);
 
   const last = chat.messages[chat.messages.length - 1];
-  const waitingFirstToken = chat.streaming && last?.role === "assistant" && !last.content;
+  const waitingFirstToken = chat.streaming && last?.role === "assistant" && !last.content.trim();
   const hasContent = chat.messages.length > 0 || !!chat.error;
   const glassTransition =
     "transition-[background-color,-webkit-backdrop-filter,backdrop-filter] duration-[350ms] ease-[cubic-bezier(0.25,0.1,0.25,1)] motion-reduce:transition-none";
@@ -278,6 +299,19 @@ export function PetChatPanel({
         />
       )}
 
+      {/* 蒙版的下沿不能再跟着「键盘高度」走：键盘与 iOS 输入辅助栏都是系统层，浮在网页之上，
+          并不会改小布局视口，面板按键盘高度抬起后留下的那段也仍属于可视区。
+          所以把蒙版一路垫到布局视口底边（键盘盖住的部分看不见，无副作用），
+          系统辅助栏浮在垫好的底子上，不会再有底层页面从缺口透出来。
+          键盘收起时这段高度为 0、gutter 模式不渲染：桌面端与右侧栏外观与改动前完全一致 */}
+      {!gutter && keyboardInset > 0 && (
+        <div
+          aria-hidden="true"
+          style={{ height: keyboardInset }}
+          className={`absolute inset-x-0 top-full bg-white/85 backdrop-blur-md dark:bg-black/80 ${fade}`}
+        />
+      )}
+
 
       <div
         className={`relative flex min-h-0 w-full flex-col ${
@@ -307,12 +341,17 @@ export function PetChatPanel({
                     >
                       {m.content}
                     </p>
-                  ) : (
+                  ) : m.content.trim() || m.interrupted ? (
+                    /* 助手消息还没有内容时不渲染气泡：等待首字的状态由下面的
+                       waitingFirstToken 负责，两边都画就会出现两个叠在一起的空框。
+                       判据用 trim()：首包只回空白时按真值判断会画出空胶囊，
+                       还会把 ●●● 一并抑制掉。interrupted 单独留一条，
+                       让「首字未到就被停止」仍看得到中断提示。 */
                     <div key={m.id} className={`w-fit max-w-[92%] px-3 py-2 ${BOT_BUBBLE}`}>
-                      {m.content ? <AssistantText text={m.content} /> : null}
+                      <AssistantText text={m.content} />
                       {m.interrupted && <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">（回复中断）</p>}
                     </div>
-                  ),
+                  ) : null,
                 )}
                 {waitingFirstToken && (
                   <div className={`flex w-fit items-center gap-1 px-3 py-3 ${BOT_BUBBLE}`} role="status">
@@ -406,20 +445,24 @@ export function PetChatPanel({
             )}
           </div>
           <div
+            role="group"
             aria-label="推荐 Skill"
             className={`pointer-events-auto flex flex-wrap gap-2 ${fade} ${gutter ? "absolute left-0 top-[calc(100%+1rem)]" : "mt-3"}`}
             style={gutter ? { maxWidth: gutter.skillWidth } : undefined}
           >
-            <button
-              type="button"
-              onClick={runFirstPrinciples}
-              disabled={chat.streaming || notReady}
-              aria-label="第一性原理"
-              title="分析全部公开文章"
-              className="inline-flex min-h-8 items-center whitespace-nowrap rounded-full bg-zinc-200/50 px-3 py-1.5 text-xs text-zinc-600 transition-apple hover:bg-zinc-300/60 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-white/[0.08] dark:text-zinc-300 dark:hover:bg-white/[0.14] dark:hover:text-white"
-            >
-              第一性原理
-            </button>
+            {SKILLS.map((skill) => (
+              <button
+                key={skill.id}
+                type="button"
+                onClick={() => runSkill(skill.id)}
+                disabled={chat.streaming || notReady}
+                aria-label={skill.label}
+                title={skill.hint}
+                className="inline-flex min-h-8 items-center whitespace-nowrap rounded-full border border-zinc-900/15 bg-transparent px-3 py-1.5 text-xs text-zinc-500 transition-apple hover:border-zinc-900/30 hover:bg-zinc-900/[0.04] hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/20 dark:text-zinc-400 dark:hover:border-white/35 dark:hover:bg-white/[0.06] dark:hover:text-white"
+              >
+                {skill.label}
+              </button>
+            ))}
           </div>
       </div>
     </div>

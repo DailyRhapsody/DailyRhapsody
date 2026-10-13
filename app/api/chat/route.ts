@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/auth";
 import { getClientIpFromRequest } from "@/lib/client-ip";
-import { getCachedDiaries, IncompleteAnalysisSourceError } from "@/lib/notion";
+import { getCachedDiaries } from "@/lib/notion";
 import { CHAT_LIMITS, getPetMode } from "@/lib/persona/config";
-import { runFirstPrinciples } from "@/lib/persona/first-principles-route";
+import { skillRunner } from "@/lib/persona/skill-runners";
+import { findSkill } from "@/lib/persona/skills";
 import { isLlmConfigured, LlmError, streamChat, type LlmMessage } from "@/lib/persona/llm";
 import { buildBlogFacts } from "@/lib/persona/facts";
 import { buildSystemPrompt } from "@/lib/persona/prompt";
@@ -128,17 +129,27 @@ export async function POST(req: Request) {
     return json({ error: "Invalid body" }, 400);
   }
   if (!body || typeof body !== "object") return json({ error: "Invalid body" }, 400);
-  const skill = (body as { skill?: unknown }).skill;
-  if (skill !== undefined && skill !== "first-principles") return json({ error: "未知 Skill" }, 400);
-  if (skill === "first-principles") {
+  // Skill 走同一条通道：目录负责校验与对外文案，runner 表负责执行与错误映射。
+  // 这里不认识任何一个具体 skill，新增 skill 不需要改本文件。
+  const rawSkill = (body as { skill?: unknown }).skill;
+  const skill = rawSkill === undefined ? null : findSkill(rawSkill);
+  if (rawSkill !== undefined && !skill) return json({ error: "未知 Skill" }, 400);
+  if (skill) {
     if (!isLlmConfigured()) return json({ error: "数字人还没接上模型，稍后再来。" }, 503);
+    const runner = skillRunner(skill.id);
     try {
-      return await runFirstPrinciples(req, () => authorizeModel(req, access.admin, true));
+      return await runner.run({
+        req,
+        authorize: () => authorizeModel(req, access.admin, skill.quota === "analysis"),
+      });
     } catch (e) {
       if (req.signal.aborted) return new NextResponse(null, { status: 499 });
-      if (e instanceof IncompleteAnalysisSourceError) return json({ error: `${e.count} 篇公开文章含尚未完整读取的文字，请补齐正文后再分析。` }, 422);
-      console.error("[chat] first-principles", e instanceof Error ? e.name : "error");
-      return json({ error: "本次分析未完成，已保留进度，请重试。" }, 502);
+      // 各 skill 认领自己的异常；认不出来才落到通用文案
+      const failure = runner.failure?.(e);
+      if (failure) return json({ error: failure.error }, failure.status);
+      // 带上 message：只记 name 时线上看不到「findings 6 条超过上限 3」这类真正的原因
+      console.error("[chat] skill", skill.id, e instanceof Error ? `${e.name}: ${e.message}` : "error");
+      return json({ error: skill.failure }, 502);
     }
   }
   const messages = normalizeMessages((body as { messages?: unknown }).messages);

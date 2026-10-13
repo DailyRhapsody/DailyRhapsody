@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { chatRequestBody } from "@/lib/persona/chat-request";
+import { findSkill, type SkillId } from "@/lib/persona/skills";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
 export type PetChatMessage = {
@@ -10,7 +11,8 @@ export type PetChatMessage = {
   content: string;
   /** 回复中途断掉（网络、上游报错），保留已到达的部分并标记 */
   interrupted?: boolean;
-  skill?: "first-principles";
+  /** 这条消息由哪个 Skill 发起；续跑与重试要靠它还原请求 */
+  skill?: SkillId;
 };
 
 const STORAGE_KEY = "dr_pet_chat_v1";
@@ -54,8 +56,20 @@ function snapshotForStorage(list: PetChatMessage[], streaming: boolean): PetChat
 function loadStored(): PetChatMessage[] {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
-    const list = raw ? (JSON.parse(raw) as PetChatMessage[]) : [];
-    return Array.isArray(list) ? list.filter((m) => m && typeof m.content === "string") : [];
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(list)) return [];
+    // 逐条校验而不是直接断言。历史里可能留着已下线 skill 的 id：断点提示会误触发，
+    // 重试又固定撞 400「未知 Skill」，而 400 不在可重试状态里——访客拿不到重试入口。
+    // role 一并校验：非法 role 会被当成助手消息渲染。
+    return list.flatMap((m): PetChatMessage[] => {
+      if (!m || typeof m !== "object") return [];
+      const { id, role, content, interrupted, skill } = m as Record<string, unknown>;
+      if (typeof id !== "string" || typeof content !== "string") return [];
+      if (role !== "user" && role !== "assistant") return [];
+      const known = findSkill(skill);
+      return [{ id, role, content, ...(interrupted ? { interrupted: true } : {}),
+        ...(known ? { skill: known.id } : {}) }];
+    });
   } catch {
     return [];
   }
@@ -100,18 +114,19 @@ export function usePetChat() {
     if (stored.length) setMessages(stored);
     const last = stored.at(-1);
     const lastUser = stored.findLast((m) => m.role === "user");
-    if (lastUser?.skill === "first-principles" && (last?.role === "user" || last?.interrupted)) {
+    if (lastUser?.skill && (last?.role === "user" || last?.interrupted)) {
       setError({ message: "上次分析尚未完成，已保留进度。", retryable: true });
     }
   }, []);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const send = useCallback(async (text: string, skill?: "first-principles") => {
+  const send = useCallback(async (text: string, skill?: SkillId) => {
     const content = text.trim();
     if (!content || abortRef.current) return;
     setError(null);
-    setProgress(skill ? "正在读取公开文章" : null);
+    // 等待首包期间显示该 Skill 自己的进度文案，不在前端写死
+      setProgress(skill ? findSkill(skill)?.progress ?? null : null);
 
     const user: PetChatMessage = { id: newId(), role: "user", content, ...(skill ? { skill } : {}) };
     const reply: PetChatMessage = { id: newId(), role: "assistant", content: "" };
