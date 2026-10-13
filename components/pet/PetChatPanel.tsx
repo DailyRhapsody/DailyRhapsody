@@ -12,7 +12,7 @@ type Status = { ready: boolean; tier: string };
 const PANEL_GLASS =
   "bg-white/25 backdrop-blur-xl backdrop-saturate-[1.8] dark:bg-zinc-900/30";
 
-/** 气泡：访客的话深色实底靠右，分身的话浅色玻璃靠左，圆角按说话方向留一角 */
+/** 气泡：访客的话深色实底靠右，AI-Persona 的话浅色玻璃靠左，圆角按说话方向留一角 */
 const USER_BUBBLE =
   "rounded-2xl rounded-br-md bg-zinc-900/85 text-white dark:bg-white/85 dark:text-zinc-900";
 const BOT_BUBBLE =
@@ -248,7 +248,7 @@ export function PetChatPanel({
       )}
     <div
       role="dialog"
-      aria-label="滕君的 AI 分身"
+      aria-label="滕君的 AI-Persona"
       aria-hidden={!open}
       inert={!open}
       data-pet-chat
@@ -353,7 +353,7 @@ export function PetChatPanel({
               onKeyDown={onKeyDown}
               maxLength={2000}
               disabled={notReady}
-              placeholder={notReady ? "还在准备中" : "问问滕君的 AI 分身"}
+              placeholder={notReady ? "还在准备中" : "问问滕君的 AI-Persona"}
               aria-label="输入消息"
               // 全局 :focus-visible 轮廓不在 layer 里，工具类盖不过
               style={{ outline: "none" }}

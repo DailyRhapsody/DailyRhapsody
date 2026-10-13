@@ -42,7 +42,7 @@ function hitsText(el: Element, x: number, y: number): boolean {
   return false;
 }
 
-/** AI 分身对话里只排除控件：面板本身是 role=dialog，按上面的名单会把整块对话都算成非空白 */
+/** AI-Persona 对话里只排除控件：面板本身是 role=dialog，按上面的名单会把整块对话都算成非空白 */
 const NOT_BLANK_IN_CHAT = "a, button, input, textarea, select, img, svg, [contenteditable='true']";
 
 function isBlank(target: EventTarget | null, x: number, y: number): boolean {
