@@ -25,65 +25,24 @@ const AssistantText = memo(function AssistantText({ text }: { text: string }) {
 });
 
 /**
- * 手机上贴底的输入胶囊要躲开软键盘。
- *
- * 不能再拿「布局视口高度 − 可见区下边缘」当键盘高度了。iOS 26 Safari 弹键盘时
- * 只缩**视觉**视口，布局视口高度不变（WebKit #304976：only the visual viewport is
- * resized while the layout viewport remains unchanged），而 `position: fixed` 依据的
- * 正是布局视口：式子退化成 `布局视口高 − 可见区高`，算出来恰好是一整个键盘高度，
- * 面板被顶到键盘上方一整屏距离，中间那段就露出底层正文。
- * 反方向也有坑：若哪天 Safari 改成缩布局视口，同一个式子又变成恒等于 0、输入框落到键盘后面。
- * 两个方向都会在同一个式子上翻车，说明「先猜视口模型、再算一个像素值」这条路本身不可靠。
- *
- * 改成量出来：只测**输入框当前渲染在哪**（`getBoundingClientRect` 给的就是可见区坐标，
- * 与 `visualViewport.height` 同一套参照系），把整块面板往上挪「它超出可见区下边的量」。
- * 不假设固定元素挂在哪个盒子上，也不碰滚动位置——浏览器自己为了露出焦点元素
- * 平移了多少（`offsetTop`）、有没有缩布局视口，全都体现在这一次测量里。
- *
- * 只向上挪（`Math.min(0, …)`）：宁可靠底也不能把面板推到可见区下面去。
- * 量到的位移超过可见区高度 3/4 视为异常读数，放弃这次修正，不做离谱的跳位。
+ * 手机上贴底的输入胶囊要躲开软键盘：iOS 弹键盘时不缩布局视口，
+ * 只能跟着 visualViewport 算出键盘占掉的底部高度。
  */
-const MAX_ANCHOR_SHIFT_RATIO = 0.75;
-
-function useVisualViewportAnchor(active: boolean, anchorRef: React.RefObject<HTMLDivElement | null>) {
-  const [offset, setOffset] = useState(0);
+function useKeyboardInset(active: boolean) {
+  const [inset, setInset] = useState(0);
   useEffect(() => {
-    if (!active) return;
     const vv = typeof window !== "undefined" ? window.visualViewport : null;
-    if (!vv) return; // 没有 visualViewport（老浏览器）：维持 CSS 的 bottom: 0，不猜
-    const measure = () => {
-      const el = anchorRef.current;
-      if (!el) return;
-      // 双指缩放中：矩形是缩放后的 CSS 像素，位移量要除以 scale 才等价，这里不硬猜
-      if (vv.scale !== 1) return;
-      const vvBottom = vv.offsetTop + vv.height;
-      // 已经挪过的那部分也算在这个矩形里，所以量出来的差值天然会收敛；
-      // 落在死区里就不动，避免一两像素的抖动让面板持续微震
-      const want = el.getBoundingClientRect().bottom - vvBottom;
-      if (Math.abs(want) < 2) {
-        setOffset(0);
-        return;
-      }
-      if (want > vv.height * MAX_ANCHOR_SHIFT_RATIO) {
-        setOffset(0);
-        return;
-      }
-      setOffset(Math.round(Math.min(0, want)));
-    };
-    // 键盘、输入辅助栏（上下箭头 + 对勾）是分段动画的，动画途中每一帧都重量一次，
-    // 面板跟着可见区下边缘走，不会停在中间估值上
-    const onScroll = () => measure();
-    measure();
-    vv.addEventListener("resize", measure);
-    vv.addEventListener("scroll", onScroll);
-    window.addEventListener("scroll", onScroll, { passive: true });
+    if (!active || !vv) return;
+    const update = () => setInset(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
     return () => {
-      vv.removeEventListener("resize", measure);
-      vv.removeEventListener("scroll", onScroll);
-      window.removeEventListener("scroll", onScroll);
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
     };
-  }, [active, anchorRef]);
-  return active ? offset : 0;
+  }, [active]);
+  return active ? inset : 0;
 }
 
 /** 右侧空白栏至少要这么宽才放得下对话；更窄（手机、小屏）时退回页面底部浮字 */
@@ -160,12 +119,10 @@ export function PetChatPanel({
   const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  // 输入胶囊：键盘弹起后以它为基准量「有没有被可见区下边切掉」，见 useVisualViewportAnchor
-  const inputRowRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const statusRequested = useRef(false);
   const small = useMediaQuery("(max-width: 639px)");
-  const anchorOffset = useVisualViewportAnchor(open && small, inputRowRef);
+  const keyboardInset = useKeyboardInset(open && small);
   const pathname = usePathname();
   const gutter = useGutterBox(open, pathname);
 
@@ -284,8 +241,7 @@ export function PetChatPanel({
     : {
         left: 0,
         right: 0,
-        bottom: 0,
-        transform: anchorOffset ? `translateY(${anchorOffset}px)` : undefined,
+        bottom: keyboardInset,
         transitionProperty: "translate",
       };
 
@@ -411,9 +367,8 @@ export function PetChatPanel({
             {chat.streaming ? "" : last?.role === "assistant" && last.content ? "已回复" : ""}
           </p>
 
-          {/* 输入胶囊：半透明，不做白底框。ref 给 useVisualViewportAnchor 量底边位置用 */}
+          {/* 输入胶囊：半透明，不做白底框 */}
           <div
-            ref={inputRowRef}
             className={`pointer-events-auto mt-2 flex items-end gap-2 rounded-[22px] bg-white/25 py-2 pl-4 pr-2 focus-within:bg-white/40 dark:bg-white/[0.08] dark:focus-within:bg-white/[0.14] ${fade}`}
           >
             <textarea
