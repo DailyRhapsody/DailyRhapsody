@@ -184,14 +184,20 @@ function toMinutes(seconds: unknown): number | null {
  *
  * 负值必须先挡掉：正则本身不含符号位，`"-5小时"` 会被读成 `5` 小时，
  * 与同文件 `toMinutes` 对负数的处理口径相反（那条路径是直接拒掉的）。
- * 回包出现负数说明上游异常，宁可不显示这个词，也不要把它算成正的。
+ * 符号要认全：ASCII 连字符、U+2212 数学减号、U+2013/2014 破折号都可能出现在上游文本里，
+ * 只挡 ASCII 会漏（自测发现 `"−5小时"` 仍被读成 +5 小时）。
+ * 任何一段带负号都直接拒：`"5小时-30分钟"` 的取负意图无法可靠区分，
+ * 但把负段当正段加进去一定是错的。
  */
 function parseFormattedDuration(text: unknown): number | null {
   if (typeof text !== "string") return null;
-  if (/^\s*-/.test(text)) return null;
-  const h = /(\d+(?:\.\d+)?)\s*(?:小时|h)/i.exec(text);
-  const m = /(\d+)\s*(?:分钟|分|min)/i.exec(text);
+  const sign = "[\\-\\u2212\\u2013\\u2014]";
+  const h = new RegExp(`(${sign}?\\s*\\d+(?:\\.\\d+)?)\\s*(?:小时|h)`, "i").exec(text);
+  const m = new RegExp(`(${sign}?\\s*\\d+)\\s*(?:分钟|分|min)`, "i").exec(text);
   if (!h && !m) return null;
+  for (const part of [h, m]) {
+    if (part && new RegExp(`^\\s*${sign}`).test(part[1])) return null;
+  }
   const minutes = Math.round((h ? Number(h[1]) * 60 : 0) + (m ? Number(m[1]) : 0));
   return minutes > 0 ? minutes : null;
 }
@@ -561,7 +567,9 @@ export function isUsableCachedStats(value: unknown): value is ReadingStats {
   const v = value as Partial<ReadingStats>;
   return (
     typeof v.month === "string" &&
+    // 与构建器同口径：buildReadingStats 在总时长 <= 0 时返回 null，缓存也不该接受这种值
     typeof v.monthMinutes === "number" &&
+    v.monthMinutes > 0 &&
     Array.isArray(v.daily) &&
     Array.isArray(v.books) &&
     Array.isArray(v.authorClouds) &&

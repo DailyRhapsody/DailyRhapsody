@@ -12,6 +12,7 @@ import {
   layoutCloud,
   estimateWordWidth,
 } from "../lib/reading-cloud-layout.ts";
+import { isUsableCachedStats } from "../lib/weread.ts";
 import {
   normalizeDaily,
   buildReadingStats,
@@ -454,20 +455,45 @@ test("出版社只出一屏，取前 3 家", () => {
 // 云图：异常输入与整体空数据
 // ---------------------------------------------------------------------------
 
-test("负时长被拒，不会因正则不含符号位而被读成正值", () => {
-  // 回归用例：parseFormattedDuration 的正则不含符号位，`"-5小时"` 曾被读成 +5 小时。
-  const s = buildReadingStats({ totalReadTime: 600 }, {
-    preferAuthor: [
-      { name: "负时长", readTime: "-5小时0分钟" },
-      { name: "负分钟", readTime: "-30分钟" },
-      { name: "正常", readTime: "2小时0分钟" },
-    ],
-  });
-  assert.deepEqual(
-    s.authorClouds[0].words.map((w) => w.name),
-    ["正常"],
-    "负时长必须被拒，且不影响正常词",
-  );
+test("负时长被拒，含 Unicode 减号与破折号", () => {
+  // 回归用例：parseFormattedDuration 的正则不含符号位，`"-5小时"` 曾被读成 +5 小时；
+  // 只挡 ASCII 连字符时，`"−5小时"`（U+2212）仍会被读成正数，因此符号要认全。
+  const bad = [
+    "-5小时0分钟",
+    "-30分钟",
+    "\u22125小时", // U+2212 数学减号
+    "\u20135小时", // U+2013 短破折号
+    "\u20145小时", // U+2014 长破折号
+    "5小时-30分钟", // 后段带负号，取负意图无法可靠区分，整条拒掉
+    " -0小时30分钟",
+  ];
+  for (const readTime of bad) {
+    const s = buildReadingStats({ totalReadTime: 600 }, { preferAuthor: [{ name: "X", readTime }] });
+    assert.deepEqual(
+      s.authorClouds[0]?.words ?? [],
+      [],
+      `${JSON.stringify(readTime)} 应被拒`,
+    );
+  }
+  // 正常值不受影响
+  for (const [readTime, note] of [["0小时30分钟", "30m"], ["30分钟", "30m"], ["2小时0分钟", "2h"]]) {
+    const s = buildReadingStats({ totalReadTime: 600 }, { preferAuthor: [{ name: "Y", readTime }] });
+    assert.equal(s.authorClouds[0].words[0].note, note, `${readTime} 应解析为 ${note}`);
+  }
+});
+
+test("缓存形状校验与构建器同口径，不误杀合法缓存", () => {
+  const good = buildReadingStats({ totalReadTime: 600 }, { preferAuthor: [{ name: "甲", readTime: "1小时0分钟" }] });
+  assert.equal(isUsableCachedStats(good), true, "正常对象必须通过");
+  assert.equal(isUsableCachedStats({ ...good, authorClouds: undefined }), false, "缺云图数组的旧结构必须拒");
+  assert.equal(isUsableCachedStats({ ...good, publisherClouds: null }), false);
+  assert.equal(isUsableCachedStats({ ...good, monthMinutes: 0 }), false, "与构建器一致：总时长为 0 不接受");
+  assert.equal(isUsableCachedStats({ ...good, monthMinutes: -1 }), false);
+  // 空数组是合法状态（当月没读到书、时段未达阈值），不能因此回源
+  assert.equal(isUsableCachedStats({ ...good, books: [], hourly: [] }), true);
+  for (const bad of [null, undefined, "x", 42, {}]) {
+    assert.equal(isUsableCachedStats(bad), false);
+  }
 });
 
 test("超出合理量级的秒数被拒，不会出现 277777h 这种 note", () => {
