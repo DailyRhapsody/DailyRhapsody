@@ -1,10 +1,8 @@
 /**
  * 云图屏的排布算法（纯函数，无 React 依赖，便于单测）。
  *
- * 见 components/entries/ReadingCloudScreen.tsx 的组件说明：这是把一屏词
- * 散成一团云的那部分，做得可测是因为它踩过太多坑 ——
- * 螺旋找空位、环网格、固定椭圆环三版在这块小画布上都会退化成竖列或方阵，
- * 最终改成「力导向松弛 + 硬分离 + 整团居中」。
+ * 拆成独立模块是为了可单测：这块排布踩过太多坑（见下方函数注释里那三版失败的尝试）。
+ * 组件侧的排版约束见 components/entries/ReadingCloudScreen.tsx。
  */
 
 /** 字号区间：每屏 3~4 个词，首名 15px、末名 11px */
@@ -15,6 +13,14 @@ const MAX_PX = 15;
  * 整个画布时才往下压，压到这个值为止（再小就无法辨认，宁可让它贴边裁剪）。
  */
 const HARD_MIN_PX = 9;
+/**
+ * 一屏最多容纳的词数。这是**几何约束**而不是展示偏好：
+ * 126 × 106 的画布上，5 个同长中文词的词盒面积已超过画布，硬分离无法把它们
+ * 全部推开（实测 5×8 字时残留 2 对约 2.7px 盒重叠）。
+ * 上游 `lib/weread.ts` 已把每屏取词数限到 3~4，这里再兜一层，
+ * 免得哪天有人调大上限后云图悄悄开始压字。超出部分直接丢弃。
+ */
+const MAX_WORDS_PER_CLOUD = 4;
 /**
  * 碰撞盒的额外留白。
  * 水平方向：估宽对汉字与全角标点是准的（实测误差 0），但**对拉丁字母与 emoji 会低估**
@@ -120,7 +126,12 @@ interface RawWord {
  *
  * 导出供测试直接校验：不重叠、不横向出界、整条可见、位置可复现。
  */
-export function layoutCloud(words: RawWord[], width: number, height: number): CloudPlacement[] {
+export function layoutCloud(
+  input: RawWord[],
+  width: number,
+  height: number,
+): CloudPlacement[] {
+  const words = input.slice(0, MAX_WORDS_PER_CLOUD);
   const total = words.length;
   if (total === 0) return [];
   const cx = width / 2;

@@ -769,14 +769,14 @@ test("同一份数据每次排布完全一致（缓存与 SSR 不会抖）", () 
 
 test("装不下的长词降字号，不出现越界坐标或被裁掉半截", () => {
   // 回归用例：曾出现「8 字词 @15px = 130px > 画布 126px」时 clampX 把 x 夹到左边界、
-  // 右半截露在画布外被 overflow:hidden 裁掉；5 个长词时还会因负宽度落到同一点。
-  const long = Array.from({ length: 5 }, (_, i) => ({
+  // 右半截露在画布外被 overflow:hidden 裁掉；长词还会因负宽度落到同一点。
+  const long = Array.from({ length: 4 }, (_, i) => ({
     name: "长".repeat(11 - (i % 3)),
     note: "",
     weight: 100 - i * 10,
   }));
   const out = layoutCloud(long, CLOUD_W, CLOUD_H);
-  assert.equal(out.length, 5);
+  assert.equal(out.length, 4);
   for (const p of out) {
     const boxW = estimateWordWidth(p.name, p.fontSize) + 4;
     assert.ok(
@@ -793,6 +793,20 @@ test("装不下的长词降字号，不出现越界坐标或被裁掉半截", ()
     out.length,
     "有词落到同一个点上",
   );
+});
+
+test("每屏词数上限是布局层的硬约束，超出的直接丢弃", () => {
+  // 这是几何约束：126 × 106 放不下 5 个同长中文词（实测残留 2 对约 2.7px 盒重叠）。
+  // 上游取词数已限到 3~4，这里兜一层，防止有人调大上限后云图悄悄压字。
+  const many = Array.from({ length: 9 }, (_, i) => ({
+    name: `词${i}${"长".repeat(i % 3)}`,
+    note: "",
+    weight: 100 - i * 5,
+  }));
+  const out = layoutCloud(many, CLOUD_W, CLOUD_H);
+  assert.equal(out.length, 4, "超过 4 个应被截断");
+  assert.equal(out[0].name, many[0].name, "保留的是权重最高的前 4 个");
+  assertNoOverlap(out, 0);
 });
 
 test("11 字长名压到最小字号后仍能整条落在画布内", () => {
