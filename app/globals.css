@@ -3,6 +3,9 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* 微信读书云图的主色。云图靠 color-mix 调深浅表达名次，
+     深浅要跟主题走，所以在这里提一个变量：暗色下换成 400 档。 */
+  --dr-cloud-accent: var(--color-emerald-600);
 }
 
 @theme inline {
@@ -16,6 +19,7 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --dr-cloud-accent: var(--color-emerald-400);
   }
 }
 

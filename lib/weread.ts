@@ -30,6 +30,31 @@ export type ReadingBook = {
 /** 偏好行，label 是「分类／作者／出版社」这类中文标签 */
 export type ReadingPreference = { label: string; value: string };
 
+/**
+ * 词云里的一个词。weight 是**归一化到 0~100 的相对权重**，不是原始数值：
+ * 作者用阅读秒数、出版社用书籍本数，两者量级差好几个数量级
+ * （作者 168300 秒 vs 出版社 32 本），原样交给卡片会让字号映射无法共用一套算法。
+ * 归一化在**每张云图内部**做，因此同一张卡里各屏的字号都可以直接比。
+ */
+export type ReadingCloudWord = {
+  name: string;
+  weight: number;
+  /** 原始口径的可读文案，如作者的「46h 50m」、出版社的「32 本」 */
+  note: string;
+};
+
+/**
+ * 一张云图，对应轮播卡里的一屏。
+ *
+ * 屏内不再有「分类／作者／出版社」这类字段名：字段名是接口的组织方式，
+ * 不是读者要看的信息，画面让给词本身。口径说明只进 aria-label 与悬停提示。
+ */
+export type ReadingCloud = {
+  /** 无障碍与悬停用的口径说明，如「作者 · 按累计阅读时长」，不显示在卡面上 */
+  label: string;
+  words: ReadingCloudWord[];
+};
+
 export type ReadingStats = {
   /** 展示用的月份标识，形如 2026-10 */
   month: string;
@@ -46,6 +71,21 @@ export type ReadingStats = {
   /** 累计偏好，取自 overall 周期，每类第 1 名 */
   preferences: ReadingPreference[];
   /**
+   * 作者类云图，按屏排列。当前两屏，每屏一个口径：
+   * 1. preferAuthor 前 AUTHOR_CLOUD_MAX_WORDS 条，按累计阅读时长加权
+   * 2. preferCategory 前 AUTHOR_CLOUD_MAX_WORDS 条（读的是什么类型），按累计阅读时长加权
+   * 曾经的「readLongest 每本书的作者」一屏已删除：与 preferAuthor 高度重合。
+   * 每屏各自归一到 0~100，因此同一张卡里各屏的字号都可以直接比。
+   */
+  authorClouds: ReadingCloud[];
+  /**
+   * 出版社类云图，一屏，取前 CLOUD_MAX_WORDS 家：
+   * preferPublisher（10 条）∪ preferCp（10 条），同名取较大 count，按本数加权。
+   * 条目里没有 readTime —— 接口不提供按社时长，只能按本数。
+   * 曾经把第 7 名之后拆成第二、第三屏，已删除：一屏足够说明谁占主导。
+   */
+  publisherClouds: ReadingCloud[];
+  /**
    * 累计阅读时段：24 个点的秒数。下标 0 对应 6 时，末位对应次日 5 时，
    * 与接口口径一致 —— 这个起点顺序容易误判成 0 时开始，卡片上必须标出来。
    */
@@ -55,10 +95,11 @@ export type ReadingStats = {
   refreshedAt: number;
 };
 
-// v6：偏好回到每类单值；书目不再在解析层截断，改由卡片按高度决定展示几条。
+// v8：字段名屏换成作者／出版社两张**云图轮播**卡，ReadingStats 的
+// authorCloud / publisherCloud 变成按屏排列的 authorClouds / publisherClouds。
 // 与 Notion 侧同一约定：回包结构一变就推进版本号，否则旧结构会留在缓存里 ——
 // 新字段读不到、卡片少一屏，而且看起来像接口没返回数据。
-const CACHE_KEY = "dr:weread:monthly:v6";
+const CACHE_KEY = "dr:weread:monthly:v8";
 /** 与 Notion 侧同策略：硬 TTL 48h，对每日一次的 Cron 留出一整天余量 */
 const CACHE_HARD_TTL_S = 48 * 60 * 60;
 /** 独立超时预算。Cron 共享 300s 预算，微信读书失败可读上一份缓存，是最适合牺牲的一段 */
@@ -286,6 +327,162 @@ function parsePreferences(overall: Record<string, unknown> | null): ReadingPrefe
 }
 
 /**
+ * 每屏云图最多几个词。云图屏在卡片的内容盒里（168 × 148 的卡减去 1px 边框与
+ * 20px 内边距，只有 126 × 106），词要在里面**圆形散开且互不压住**。
+ * 126px 宽放不下两个长词（出版社名 6~8 字，13px 就要 90~110px），
+ * 所以每屏只能取前几名：出版社 3、作者与分类 4。再多就得压到 9px 以下，
+ * 或者排成互相贴住的竖列 —— 两条路都渲染出来看过，都不像云图。
+ */
+const CLOUD_MAX_WORDS = 3;
+/** 作者名与分类名短（2~6 字），同样面积能多放一个 */
+const AUTHOR_CLOUD_MAX_WORDS = 4;
+
+/**
+ * 作者累计阅读时长的秒数。
+ *
+ * preferAuthor[].readTime 实测是「21小时45分钟」这类**格式化字符串**，不是秒数，
+ * 与 totalReadTime 的单位口径相反，先按字符串解析；真拿到纯数字时按秒处理，
+ * 免得哪天服务端改成数值口径后又把 168300 秒读成 168300 分钟。
+ */
+function preferenceSeconds(value: unknown): number | null {
+  const formatted = parseFormattedDuration(value);
+  if (formatted !== null) return formatted * 60;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+/** 秒 → 「46h 50m」；不足 1 小时只写分钟，避免出现「0h 35m」 */
+function formatSecondsAsHours(seconds: number): string {
+  const total = Math.round(seconds / 60);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (!h) return `${m}m`;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+/** 去重排序后但尚未归一化的词 */
+type RawCloudWord = { name: string; weight: number; note: string };
+
+/**
+ * 把 [{name, ...}] 这类数组整成排好序、去过重的词表，
+ * 同名取较大权重：接口偶尔会因译者、再版分成两条同名记录，
+ * 直接铺开会出现两个字号不同的「苏杰」。
+ * 这里不做归一化 —— 归一化是按**每张云图**做的，得等分屏切完再算。
+ */
+function collectWords(
+  items: unknown,
+  readName: (item: Record<string, unknown>) => string,
+  weightOf: (item: Record<string, unknown>) => number | null,
+  noteOf: (item: Record<string, unknown>, weight: number) => string,
+): RawCloudWord[] {
+  const byName = new Map<string, RawCloudWord>();
+  for (const item of Array.isArray(items) ? items : []) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const it = item as Record<string, unknown>;
+    const name = readName(it);
+    if (!name) continue;
+    const weight = weightOf(it);
+    if (weight === null || weight <= 0) continue;
+    const prev = byName.get(name);
+    if (!prev || weight > prev.weight) {
+      byName.set(name, { name, weight, note: noteOf(it, weight) });
+    }
+  }
+  // 权重并列时按名称定序，保证同一天两次 Cron 拉到的顺序一致，缓存内容不抖
+  return [...byName.values()].sort(
+    (a, b) => b.weight - a.weight || a.name.localeCompare(b.name, "zh-Hans-CN"),
+  );
+}
+
+/** 每个词按本屏最大值归一到 0~100，同一张卡里各屏字号因此可比 */
+function normalizeCloud(words: RawCloudWord[]): ReadingCloudWord[] {
+  if (words.length === 0) return [];
+  const max = words[0].weight;
+  return words.map((w) => ({
+    name: w.name,
+    weight: Math.round((w.weight / max) * 1000) / 10,
+    note: w.note,
+  }));
+}
+
+/** 取一个对象的字符串字段；空串与纯空白都算没有 */
+function str(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/** 取 {name, ...} 或 {copyrightInfo: {name}} 两种形态里的名字 */
+function itemName(it: Record<string, unknown>): string {
+  const direct = str(it.name);
+  if (direct) return direct;
+  const nested = it.copyrightInfo;
+  if (typeof nested === "object" && nested !== null && !Array.isArray(nested)) {
+    return str((nested as Record<string, unknown>).name);
+  }
+  return "";
+}
+
+/** 本数权重：count 是「读过几本」，正数才算 */
+function countWeight(it: Record<string, unknown>): number | null {
+  const n = Number(it.count);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * 作者云图，按屏排列。两屏口径互不相同，都是接口直接给的词组：
+ *   第 1 屏 preferAuthor   —— 作者维度的偏爱，按累计阅读时长加权
+ *   第 2 屏 preferCategory —— 读的是什么类型，按累计阅读时长加权
+ * 空屏直接不出现，因此当月数据缺失时会少一屏而不是出现空白卡。
+ *
+ * 曾经的「readLongest 每本书的作者」屏已删：它与 preferAuthor 高度重合
+ * （同一批人换个口径再排一次），在 168px 的窄卡里不值得占掉一整屏轮播时间。
+ */
+function parseAuthorClouds(overall: Record<string, unknown> | null): ReadingCloud[] {
+  const screens: ReadingCloud[] = [];
+
+  const preferred = normalizeCloud(
+    collectWords(
+      overall?.preferAuthor,
+      (it) => str(it.name),
+      (it) => preferenceSeconds(it.readTime),
+      (_it, w) => formatSecondsAsHours(w),
+    ).slice(0, AUTHOR_CLOUD_MAX_WORDS),
+  );
+  if (preferred.length) screens.push({ label: "作者 · 按累计阅读时长", words: preferred });
+
+  const categories = normalizeCloud(
+    collectWords(
+      overall?.preferCategory,
+      (it) => str(it.categoryTitle),
+      (it) => preferenceSeconds(it.readingTime),
+      (_it, w) => formatSecondsAsHours(w),
+    ).slice(0, AUTHOR_CLOUD_MAX_WORDS),
+  );
+  if (categories.length) screens.push({ label: "阅读分类 · 按时长", words: categories });
+
+  return screens.filter((s) => s.words.length > 0);
+}
+
+/**
+ * 出版社云图，一屏：合并 preferPublisher 与 preferCp（同名取较大本数）后按本数排序，
+ * 取前 CLOUD_MAX_WORDS 家。一家都没有就整张卡不出现。
+ *
+ * 不再把第 7 名之后拆成第二、第三屏：一屏 6 家已经能把「谁占主导」说清楚，
+ * 168px 的窄卡里为 4 本的几家再开两屏，轮播时间全花在长尾上。
+ */
+function parsePublisherClouds(overall: Record<string, unknown> | null): ReadingCloud[] {
+  const merged = collectWords(
+    [...(Array.isArray(overall?.preferPublisher) ? overall.preferPublisher : []),
+     ...(Array.isArray(overall?.preferCp) ? overall.preferCp : [])],
+    itemName,
+    countWeight,
+    (_it, w) => `${w} 本`,
+  ).slice(0, CLOUD_MAX_WORDS);
+
+  return merged.length ? [{ label: "出版社 · 读得最多", words: normalizeCloud(merged) }] : [];
+}
+
+/**
  * 累计阅读时段。preferTime 是 24 个秒数，从 6 时起排到次日 5 时；
  * 全为 0 时视为无数据，卡片少一屏。
  */
@@ -329,6 +526,8 @@ export function buildReadingStats(
     books: parseBooks(monthly.readLongest),
     summary: parseSummary(monthly),
     preferences: parsePreferences(overall),
+    authorClouds: parseAuthorClouds(overall),
+    publisherClouds: parsePublisherClouds(overall),
     ...parseHourly(overall),
     refreshedAt: Date.now(),
   };

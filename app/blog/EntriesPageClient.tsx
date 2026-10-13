@@ -242,13 +242,14 @@ export default function EntriesPageClient({
             <div className="shrink-0">
               <CalendarHeatmap datesWithPosts={datesWithPosts} />
             </div>
-            {/* 微信读书阅读数据：无数据时组件自行返回 null，不占位 */}
+            {/* 微信读书阅读数据：无数据时组件自行返回 null，不占位。
+                书籍分布云图（作者三屏、出版社三屏）就在这张卡里轮播，不额外占卡片条位置 */}
             <ReadingStatsCard stats={readingStats} />
             {/* 博客卡片：activeTopTab===0 选中 */}
             <button
               type="button"
               onClick={() => setActiveTopTab(0)}
-              className={`inline-flex h-[148px] w-[168px] shrink-0 flex-col items-start justify-center rounded-xl border border-zinc-200 bg-white/80 px-5 shadow-sm transition-apple dark:border-zinc-700 dark:bg-zinc-800/80 ${activeTopTab === 0 ? "ring-2 ring-inset ring-zinc-400 dark:ring-zinc-500" : "opacity-60"}`}
+              className={`inline-flex h-[148px] w-[168px] shrink-0 flex-col items-start justify-center rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm transition-apple dark:border-zinc-700 dark:bg-zinc-800/80 ${activeTopTab === 0 ? "ring-2 ring-inset ring-zinc-400 dark:ring-zinc-500" : "opacity-60"}`}
             >
               <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">{totalPosts}</p>
               <p className="text-[0.7rem] text-zinc-500 dark:text-zinc-400">篇文章</p>

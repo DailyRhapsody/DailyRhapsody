@@ -1,20 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { ReadingCloudScreen } from "@/components/entries/ReadingCloudScreen";
 import type { ReadingStats } from "@/lib/weread";
 
 /**
  * 微信读书阅读数据卡。
  *
- * 与卡片条另外三张同尺寸（168 × 148），按数据有无轮播最多四屏：
- * 本月时长曲线、本月读得最多、累计阅读偏好、累计阅读时段。
- * 某一屏没有数据就不出现，例如偏好与时段未达接口的展示阈值时。
+ * 与卡片条另外三张同尺寸（168 × 148），按数据有无轮播最多六屏：
+ * 本月时长曲线、本月读得最多、累计阅读时段，以及三屏**书籍分布云图** ——
+ * 作者（累计时长）、作者（最长一本）、阅读分类。云图屏用的还是这一张卡，
+ * 不额外占卡片条的位置；云图屏内不写字段名，只有词。
+ * 某一屏没有数据就不出现，例如时段未达接口的展示阈值、或累计周期整个缺失时。
+ *
+ * 内边距与「博客数」卡对齐：四边都是 20px（p-5）。卡仍是 168 × 148，
+ * 因此内容盒只有 126 × 106 —— 比原先的 146 × 126 少了一圈，
+ * 卡内字号与行数都按这个高度重配（见下面的高度账）。
  *
  * 排版与配色刻意与「博客数」卡保持同一套：
- *   主数字 text-2xl font-bold text-zinc-900 dark:text-zinc-50
+ *   主数字 text-xl font-bold text-zinc-900 dark:text-zinc-50
  *   说明文字 text-[0.7rem] text-zinc-500 dark:text-zinc-400
  *   次级文字 text-[0.7rem] text-zinc-400 dark:text-zinc-500
- * 卡内不再出现别的字号与色阶。
+ * 云图屏的词字号是唯一例外（云图靠字号表达权重），区间与依据见 ReadingCloudScreen。
  *
  * 交互：自动轮播 5s；悬停、聚焦、页面不可见、减少动态效果时暂停；左右方向键手动切屏。
  * 不放分页圆点（用户明确不要），屏序号只写进无障碍名称。不做卡内横滑切页，
@@ -25,19 +32,23 @@ const ROTATE_MS = 5000;
 
 /**
  * 书目最多展示几条，以及何时还放得下本月摘要行。
- * 由实测的可用高度推出，不是随手定的数：
- * 卡片内容高 126px，单行 17px，行间距 8px，摘要行连间距 29px。
- *   5 行：5×17 + 4×8 = 117 ≤ 126，放得下
- *   6 行：6×17 + 5×8 = 142 > 126，放不下
- *   4 行 + 摘要：4×17 + 3×8 + 29 = 121 ≤ 126，放得下
- *   5 行 + 摘要：5×17 + 4×8 + 29 = 146 > 126，放不下
+ * 高度账按 20px 内边距后的内容盒重算（126 宽 × 106 高），不是随手定的数：
+ *   行盒 20px（0.7rem 字号配 leading-5），行距 8px，摘要行连行距 28px
+ *   4 行：4×20 + 3×8 = 104 ≤ 106，放得下
+ *   5 行：5×20 + 4×8 = 132 > 106，放不下
+ *   3 行 + 摘要：3×20 + 2×8 + 28 = 104 ≤ 106，放得下
+ *   4 行 + 摘要：4×20 + 3×8 + 28 = 132 > 106，放不下
  */
-const MAX_BOOK_ROWS = 5;
-const MAX_BOOK_ROWS_WITH_SUMMARY = 4;
+const MAX_BOOK_ROWS = 4;
+const MAX_BOOK_ROWS_WITH_SUMMARY = 3;
 
-/** 主轴尺寸，viewBox 与容器同比例，避免缩放导致的粗细不均 */
-const CURVE_W = 146;
-const CURVE_H = 52;
+/**
+ * 主轴尺寸。viewBox 与容器同比例，避免缩放导致的粗细不均。
+ * 20px 内边距后内容盒是 126 宽，曲线实际拿到的高度约 50px
+ * （106 - 主数字 28 - 说明 16 - 上间距 4，余下全给曲线）。
+ */
+const CURVE_W = 126;
+const CURVE_H = 50;
 
 function formatDuration(minutes: number): string {
   const h = Math.floor(minutes / 60);
@@ -163,10 +174,10 @@ const MUTED = "text-zinc-400 dark:text-zinc-500";
 function DurationScreen({ stats }: { stats: ReadingStats }) {
   return (
     <div className="flex h-full flex-col">
-      <p className={`text-2xl font-bold ${VALUE}`}>
+      <p className={`text-xl font-bold ${VALUE}`}>
         {formatDuration(stats.monthMinutes)}
       </p>
-      <p className={`text-[0.7rem] ${LABEL}`}>本月阅读时长</p>
+      <p className={`text-[0.7rem] leading-5 ${LABEL}`}>本月阅读时长</p>
       <div className="mt-1 min-h-0 flex-1">
         <ReadingCurve values={stats.daily} />
       </div>
@@ -179,10 +190,10 @@ function BooksScreen({ stats }: { stats: ReadingStats }) {
   const showSummary = Boolean(stats.summary) && stats.books.length <= MAX_BOOK_ROWS_WITH_SUMMARY;
   const books = stats.books.slice(0, MAX_BOOK_ROWS);
   return (
-    <div className="flex h-full flex-col justify-center gap-3">
+    <div className="flex h-full flex-col justify-center gap-2">
       <ul className="flex flex-col gap-2">
         {books.map((b, i) => (
-          <li key={`${b.title}-${i}`} className="flex items-baseline gap-2">
+          <li key={`${b.title}-${i}`} className="flex h-5 items-baseline gap-2">
             <span className="min-w-0 flex-1 truncate text-[0.7rem] text-zinc-900 dark:text-zinc-50">
               {b.title}
             </span>
@@ -202,28 +213,13 @@ function BooksScreen({ stats }: { stats: ReadingStats }) {
   );
 }
 
-function PreferenceScreen({ stats }: { stats: ReadingStats }) {
-  return (
-    <ul className="flex h-full flex-col justify-center gap-3">
-      {stats.preferences.map((p) => (
-        <li key={p.label} className="flex items-baseline gap-1.5">
-          <span className={`shrink-0 text-[0.7rem] ${LABEL}`}>{p.label}</span>
-          <span className="min-w-0 flex-1 truncate text-right text-[0.7rem] text-zinc-900 dark:text-zinc-50">
-            {p.value}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 /** 累计阅读时段。preferTime 从 6 时起排到次日 5 时，高峰小时由数据本身算出 */
 function HourlyScreen({ stats }: { stats: ReadingStats }) {
   const peakHour = (6 + stats.hourly.indexOf(Math.max(...stats.hourly))) % 24;
   return (
     <div className="flex h-full flex-col">
-      <p className={`text-2xl font-bold ${VALUE}`}>{peakHour} 时</p>
-      <p className={`text-[0.7rem] ${LABEL}`}>
+      <p className={`text-xl font-bold ${VALUE}`}>{peakHour} 时</p>
+      <p className={`text-[0.7rem] leading-5 ${LABEL}`}>
         {stats.hourlyWord ? `${stats.hourlyWord} · 6 时起` : "阅读时段 · 6 时起"}
       </p>
       <div className="mt-1 min-h-0 flex-1">
@@ -236,23 +232,22 @@ function HourlyScreen({ stats }: { stats: ReadingStats }) {
 export function ReadingStatsCard({ stats }: { stats: ReadingStats | null }) {
   const screens = useMemo(() => {
     if (!stats) return [];
+    // 云图屏插在统计屏之后：作者与出版社两类的词组都由接口的累计周期给出，
+    // 排在一起读者才看得出「时长 → 作者 → 分类」是同一份累计数据的几种切面
+    const cloudScreens = [...stats.authorClouds, ...stats.publisherClouds].map((cloud, i) => ({
+      key: `cloud-${i}`,
+      label: cloud.label,
+      node: <ReadingCloudScreen cloud={cloud} />,
+    }));
     return [
       { key: "duration", label: "本月时长", node: <DurationScreen stats={stats} /> },
       ...(stats.books.length
         ? [{ key: "books", label: "本月读得最多", node: <BooksScreen stats={stats} /> }]
         : []),
-      ...(stats.preferences.length
-        ? [
-            {
-              key: "prefs",
-              label: "累计偏好",
-              node: <PreferenceScreen stats={stats} />,
-            },
-          ]
-        : []),
       ...(stats.hourly.length
         ? [{ key: "hourly", label: "阅读时段", node: <HourlyScreen stats={stats} /> }]
         : []),
+      ...cloudScreens,
     ];
   }, [stats]);
 
@@ -307,7 +302,7 @@ export function ReadingStatsCard({ stats }: { stats: ReadingStats | null }) {
           go(-1);
         }
       }}
-      className="relative flex h-[148px] w-[168px] shrink-0 flex-col rounded-xl border border-zinc-200 bg-white/80 p-2.5 shadow-sm outline-none transition-apple focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/80 dark:focus-visible:ring-zinc-500"
+      className="relative flex h-[148px] w-[168px] shrink-0 flex-col rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm outline-none transition-apple focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/80 dark:focus-visible:ring-zinc-500"
     >
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {screens.map((s, i) => (

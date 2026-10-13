@@ -8,6 +8,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  layoutCloud,
+  estimateWordWidth,
+} from "../lib/reading-cloud-layout.ts";
+import {
   normalizeDaily,
   buildReadingStats,
   getReadingStats,
@@ -284,6 +288,192 @@ test("时段多于 24 项时截断，负数与非数字归零", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 云图轮播：作者三屏（preferAuthor / readLongest / preferCategory）
+// ---------------------------------------------------------------------------
+
+test("作者云图第 1 屏取 preferAuthor，按 readTime 字符串加权而不是按本数", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    // 本数与时长故意反向：苏杰 4 本但 1 小时，赫拉利 3 本却 46 小时
+    preferAuthor: [
+      { name: "苏杰", count: 4, readTime: "1小时0分钟" },
+      { name: "尤瓦尔·赫拉利", count: 3, readTime: "46小时50分钟" },
+    ],
+  });
+  assert.deepEqual(s.authorClouds, [
+    {
+      label: "作者 · 按累计阅读时长",
+      words: [
+        { name: "尤瓦尔·赫拉利", weight: 100, note: "46h 50m" },
+        { name: "苏杰", weight: 2.1, note: "1h" },
+      ],
+    },
+  ]);
+});
+
+test("作者 readTime 为纯数字时按秒处理，不按分钟", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    preferAuthor: [{ name: "甲", readTime: 3600 }],
+  });
+  assert.equal(s.authorClouds[0].words[0].note, "1h", "3600 秒应读成 1 小时");
+});
+
+test("作者云图按权重倒序，接口给什么顺序都不影响", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    preferAuthor: [
+      { name: "少", readTime: "1小时0分钟" },
+      { name: "多", readTime: "9小时0分钟" },
+      { name: "中", readTime: "5小时0分钟" },
+    ],
+  });
+  assert.deepEqual(s.authorClouds[0].words.map((w) => w.name), ["多", "中", "少"]);
+  assert.deepEqual(s.authorClouds[0].words.map((w) => w.weight), [100, 55.6, 11.1]);
+});
+
+test("并列权重按名称定序，同一天两次拉取不会给出不同顺序", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    preferAuthor: [
+      { name: "乙", readTime: "3小时0分钟" },
+      { name: "甲", readTime: "3小时0分钟" },
+    ],
+  });
+  assert.deepEqual(
+    s.authorClouds[0].words.map((w) => w.name).sort(),
+    ["乙", "甲"].sort(),
+  );
+  // 两次构建结果必须一致，否则缓存内容会抖
+  const again = buildReadingStats({ totalReadTime: 600 }, {
+    preferAuthor: [
+      { name: "甲", readTime: "3小时0分钟" },
+      { name: "乙", readTime: "3小时0分钟" },
+    ],
+  });
+  assert.deepEqual(again.authorClouds[0].words, s.authorClouds[0].words);
+});
+
+test("第 3 屏取 preferCategory，按累计阅读时长加权", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    preferCategory: [
+      { categoryTitle: "经济理财", readingTime: 1055114 },
+      { categoryTitle: "文学", readingTime: 415151 },
+      { categoryTitle: "占位分类", readingTime: 0 },
+    ],
+  });
+  assert.deepEqual(s.authorClouds, [
+    {
+      label: "阅读分类 · 按时长",
+      words: [
+        { name: "经济理财", weight: 100, note: "293h 5m" },
+        { name: "文学", weight: 39.3, note: "115h 19m" },
+      ],
+    },
+  ]);
+});
+
+test("作者卡两屏：先 preferAuthor 后 preferCategory", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    preferAuthor: [{ name: "作者甲", readTime: "1小时0分钟" }],
+    // readLongest 那一屏已按需求删掉，即便接口给了数据也不再出屏
+    readLongest: [{ book: { author: "作者乙" }, readTime: 3600 }],
+    preferCategory: [{ categoryTitle: "文学", readingTime: 3600 }],
+  });
+  assert.deepEqual(s.authorClouds.map((c) => c.label), [
+    "作者 · 按累计阅读时长",
+    "阅读分类 · 按时长",
+  ]);
+});
+
+test("每屏各自归一到 100，屏与屏之间不互相参照", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    preferAuthor: [{ name: "甲", readTime: "100小时0分钟" }],
+    preferCategory: [{ categoryTitle: "文学", readingTime: 60 }],
+  });
+  // 60 秒的分类也该是本屏第一，而不是被作者的 100 小时压成 0.0
+  assert.deepEqual(s.authorClouds.map((c) => c.words[0].weight), [100, 100]);
+});
+
+test("同名作者去重取较大权重，不出现两个字号不同的同名词", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    preferAuthor: [
+      { name: "苏杰", readTime: "2小时0分钟" },
+      { name: "苏杰", readTime: "8小时0分钟" },
+    ],
+  });
+  assert.equal(s.authorClouds[0].words.length, 1);
+  assert.equal(s.authorClouds[0].words[0].note, "8h");
+});
+
+test("作者屏最多 4 个词、出版社屏最多 3 个（按卡片内容盒面积定的），截断发生在排序之后", () => {
+  const many = Array.from({ length: 14 }, (_, i) => ({ name: `作者${i}`, readTime: `${i + 1}小时0分钟` }));
+  const s = buildReadingStats({ totalReadTime: 600 }, { preferAuthor: many });
+  assert.equal(s.authorClouds[0].words.length, 4);
+  assert.equal(s.authorClouds[0].words[0].name, "作者13");
+  const pubs = Array.from({ length: 14 }, (_, i) => ({ name: `社${i}`, count: 20 - i }));
+  const p = buildReadingStats({ totalReadTime: 600 }, { preferPublisher: pubs });
+  assert.equal(p.publisherClouds.length, 1, "出版社只出一屏");
+  assert.equal(p.publisherClouds[0].words.length, 3);
+  assert.equal(p.publisherClouds[0].words[0].name, "社0");
+});
+
+// ---------------------------------------------------------------------------
+// 云图轮播：出版社两屏（preferPublisher ∪ preferCp）
+// ---------------------------------------------------------------------------
+
+test("出版社两处来源合并去重，同名取较大本数", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    preferPublisher: [{ name: "中信出版集团", count: 32 }, { name: "电子工业出版社", count: 18 }],
+    // preferCp 名字藏在 copyrightInfo 里，且同名计数更小，应被 preferPublisher 的 18 压住
+    preferCp: [
+      { count: 30, copyrightInfo: { name: "中信出版集团" } },
+      { count: 17, copyrightInfo: { name: "电子工业出版社" } },
+      { count: 9, copyrightInfo: { name: "读客熊猫君阅读" } },
+    ],
+  });
+  assert.deepEqual(s.publisherClouds[0].words, [
+    { name: "中信出版集团", weight: 100, note: "32 本" },
+    { name: "电子工业出版社", weight: 56.3, note: "18 本" },
+    { name: "读客熊猫君阅读", weight: 28.1, note: "9 本" },
+  ]);
+});
+
+test("出版社只出一屏，取前 3 家", () => {
+  const many = Array.from({ length: 16 }, (_, i) => ({ name: `出版社${String(i).padStart(2, "0")}`, count: 20 - i }));
+  const s = buildReadingStats({ totalReadTime: 600 }, { preferPublisher: many });
+  assert.equal(s.publisherClouds.length, 1);
+  assert.equal(s.publisherClouds[0].label, "出版社 · 读得最多");
+  assert.deepEqual(s.publisherClouds[0].words.map((w) => w.name), [
+    "出版社00",
+    "出版社01",
+    "出版社02",
+  ]);
+  // 20/19/18 本 → 100 / 95 / 90（按组内最大值归一到 0~100）
+  assert.deepEqual(s.publisherClouds[0].words.map((w) => w.weight), [100, 95, 90]);
+});
+
+// ---------------------------------------------------------------------------
+// 云图：异常输入与整体空数据
+// ---------------------------------------------------------------------------
+
+test("缺名、零权重、非法条目一律跳过，不抛异常", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    preferAuthor: [null, 42, {}, { name: 123 }, { name: "零", readTime: "0小时0分钟" }, { name: "  " }],
+    preferPublisher: "不是数组",
+    preferCp: [null, { count: 3 }, { copyrightInfo: { name: 7 } }, { count: 0, copyrightInfo: { name: "零本社" } }],
+    readLongest: [{ book: "不是对象", readTime: 100 }, { book: { author: "无时长" } }],
+    preferCategory: [{ categoryTitle: "零时长", readingTime: 0 }],
+  });
+  assert.deepEqual(s.authorClouds, []);
+  assert.deepEqual(s.publisherClouds, []);
+});
+
+test("累计周期缺失或为空时两张卡都不占位", () => {
+  for (const overall of [null, {}, { preferAuthor: [], preferPublisher: [], readLongest: [], preferCategory: [] }]) {
+    const s = buildReadingStats({ totalReadTime: 600 }, overall);
+    assert.deepEqual(s.authorClouds, []);
+    assert.deepEqual(s.publisherClouds, []);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // 降级：不得抛异常，不得误报成功
 // ---------------------------------------------------------------------------
 
@@ -331,4 +521,141 @@ test("既无 Redis 凭证也无网关 Key 时返回 null，不抛异常", async 
       else process.env[k] = saved[k];
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// 云图排布：圆形散开、互不压住、不横向出界
+// ---------------------------------------------------------------------------
+
+/** 与组件一致的可用区：168 × 148 的卡减去 1px 边框与 20px 内边距 */
+const CLOUD_W = 126;
+const CLOUD_H = 106;
+
+/** 用真实回包里的名字构造词表（估宽用的字符类别与线上一致） */
+const words = (...names) =>
+  names.map((name, i) => ({ name, note: `${names.length - i}`, weight: 100 - i * 10 }));
+
+function assertNoOverlap(placements) {
+  for (let a = 0; a < placements.length; a++) {
+    for (let b = a + 1; b < placements.length; b++) {
+      const A = placements[a];
+      const B = placements[b];
+      // 盒高 = 字号 × 1.25 + 2；盒宽按同样的估宽公式重算，留 4px 余量
+      const boxW = (p) => estimateWordWidth(p.name, p.fontSize) + 4;
+      const boxH = (p) => p.fontSize * 1.25 + 2;
+      const overlapX = Math.min(A.x + boxW(A), B.x + boxW(B)) - Math.max(A.x, B.x);
+      const overlapY = Math.min(A.y + boxH(A), B.y + boxH(B)) - Math.max(A.y, B.y);
+      assert.ok(
+        overlapX <= 0 || overlapY <= 0,
+        `${A.name} 与 ${B.name} 压住了（重叠 ${overlapX.toFixed(1)}×${overlapY.toFixed(1)}px）`,
+      );
+    }
+  }
+}
+
+test("作者屏：四个词圆形散开，互不重叠、不横向出界", () => {
+  const out = layoutCloud(
+    words("尤瓦尔·赫拉利", "杨堃", "苏杰", "吴晓波"),
+    CLOUD_W,
+    CLOUD_H,
+  );
+  assert.equal(out.length, 4);
+  assertNoOverlap(out);
+  for (const p of out) {
+    assert.ok(p.x >= 0, `${p.name} 跑到左边界之外`);
+    assert.ok(
+      p.x + estimateWordWidth(p.name, p.fontSize) + 4 <= CLOUD_W + 0.5,
+      `${p.name} 超出右边界`,
+    );
+    assert.ok(p.y >= 0 && p.y + p.fontSize * 1.25 <= CLOUD_H, `${p.name} 超出上下边界`);
+  }
+  // 首名字号最大，且落在画布中心附近（云图的视觉重心）
+  assert.equal(out[0].fontSize, 15);
+  assert.ok(Math.abs(out[0].x + 40 - CLOUD_W / 2) < 40, "首名没有落在中心附近");
+});
+
+test("出版社屏：三个长名字互不压住，且用满内容盒的纵向空间", () => {
+  // 说明：126px 宽的内容盒里，三个出版社名的词盒各宽 81~95px，
+  // 两个名字并排需要 190px 以上，物理上做不到 —— 因此这一屏只要求
+  // 「不压住 + 纵向铺开 + 首名居中」，不要求横向跨度（实测 30px 已是这块画布的上限）。
+  const out = layoutCloud(
+    words("中信出版集团", "电子工业出版社", "机械工业出版社"),
+    CLOUD_W,
+    CLOUD_H,
+  );
+  assert.equal(out.length, 3);
+  assertNoOverlap(out);
+  const ys = out.map((p) => p.y);
+  assert.ok(Math.max(...ys) - Math.min(...ys) > 25, "三个词挤在同一水平线上");
+  assert.ok(Math.abs(out[0].x + 47 - CLOUD_W / 2) < 25, "首名没有居中");
+});
+
+test("分类屏：短词同样散得开且不压住", () => {
+  const out = layoutCloud(
+    words("经济理财", "文学", "历史", "计算机"),
+    CLOUD_W,
+    CLOUD_H,
+  );
+  assertNoOverlap(out);
+  assert.equal(new Set(out.map((p) => `${p.x},${p.y}`)).size, out.length, "有词落在同一位置");
+});
+
+test("字号按名次递减，颜色全部是绿色深浅（不出现灰阶）", () => {
+  const out = layoutCloud(words("甲", "乙", "丙", "丁"), CLOUD_W, CLOUD_H);
+  assert.deepEqual(out.map((p) => p.fontSize), [15, 14, 12, 11]);
+  assert.equal(out[0].bold, true, "首名应加粗");
+  assert.equal(out[3].bold, false);
+  // alpha 递减且都在 (0, 1]，组件据此做 color-mix，没有灰阶分支
+  const alphas = out.map((p) => p.alpha);
+  assert.deepEqual(alphas, [...alphas].sort((a, b) => b - a));
+  assert.ok(alphas.every((a) => a > 0 && a <= 1));
+});
+
+test("同一份数据每次排布完全一致（缓存与 SSR 不会抖）", () => {
+  const w = words("尤瓦尔·赫拉利", "杨堃", "苏杰", "吴晓波");
+  assert.deepEqual(layoutCloud(w, CLOUD_W, CLOUD_H), layoutCloud(w, CLOUD_W, CLOUD_H));
+});
+
+test("装不下的长词降字号，不出现越界坐标或被裁掉半截", () => {
+  // 回归用例：曾出现「8 字词 @15px = 130px > 画布 126px」时 clampX 把 x 夹到左边界、
+  // 右半截露在画布外被 overflow:hidden 裁掉；5 个长词时还会因负宽度落到同一点。
+  const long = Array.from({ length: 5 }, (_, i) => ({
+    name: "长".repeat(11 - (i % 3)),
+    note: "",
+    weight: 100 - i * 10,
+  }));
+  const out = layoutCloud(long, CLOUD_W, CLOUD_H);
+  assert.equal(out.length, 5);
+  for (const p of out) {
+    const boxW = estimateWordWidth(p.name, p.fontSize) + 4;
+    assert.ok(
+      p.x >= -0.6 && p.x + boxW <= CLOUD_W + 0.6,
+      `${p.name} 横向越界：x=${p.x} 盒宽=${boxW} 画布=${CLOUD_W}`,
+    );
+    assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y), `${p.name} 坐标不是有限数`);
+  }
+  assert.equal(
+    new Set(out.map((p) => `${p.x},${p.y}`)).size,
+    out.length,
+    "有词落到同一个点上",
+  );
+});
+
+test("11 字长名压到最小字号后仍能整条落在画布内", () => {
+  const out = layoutCloud(
+    [{ name: "江苏凤凰科学技术出版社", note: "", weight: 100 }],
+    CLOUD_W,
+    CLOUD_H,
+  );
+  const p = out[0];
+  const boxW = estimateWordWidth(p.name, p.fontSize) + 4;
+  assert.ok(p.x >= -0.6 && p.x + boxW <= CLOUD_W + 0.6, "长名横向越界");
+  assert.ok(p.fontSize >= 9, `字号被压到 ${p.fontSize}px，太小`);
+});
+
+test("空词表返回空数组；单个词也不抛异常", () => {
+  assert.deepEqual(layoutCloud([], CLOUD_W, CLOUD_H), []);
+  const one = layoutCloud(words("独苗"), CLOUD_W, CLOUD_H);
+  assert.equal(one.length, 1);
+  assert.equal(one[0].fontSize, 15);
 });
