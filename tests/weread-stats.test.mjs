@@ -699,6 +699,31 @@ test("11 字长名压到最小字号后仍能整条落在画布内", () => {
   assert.ok(p.fontSize >= 9, `字号被压到 ${p.fontSize}px，太小`);
 });
 
+test("整团居中：词团包围盒的中心落在画布中心附近", () => {
+  // 变异测试发现这条此前无人兜：把 layoutCloud 里的「整团居中」整段删掉，
+  // 其余断言全绿（因为那个用例的词团本来就接近居中）。这里显式钉住居中效果。
+  const cases = [
+    words("尤瓦尔·赫拉利", "杨堃", "苏杰", "吴晓波"),
+    words("经济理财", "文学", "历史", "计算机"),
+    words("中信出版集团", "电子工业出版社", "机械工业出版社"),
+    words("甲", "乙", "丙", "丁", "戊"),
+  ];
+  for (const ws of cases) {
+    const out = layoutCloud(ws, CLOUD_W, CLOUD_H);
+    const minX = Math.min(...out.map((p) => p.x));
+    const maxX = Math.max(...out.map((p) => p.x + estimateWordWidth(p.name, p.fontSize) + 4));
+    const minY = Math.min(...out.map((p) => p.y));
+    const maxY = Math.max(...out.map((p) => p.y + p.fontSize * 1.25 + 2));
+    const offX = Math.abs((minX + maxX) / 2 - CLOUD_W / 2);
+    const offY = Math.abs((minY + maxY) / 2 - CLOUD_H / 2);
+    // 词团比画布宽时会在横向上被边界夹住，纵向上同理，两种情形都不该超过 2px 偏差
+    assert.ok(
+      offX <= 2 && offY <= 2,
+      `${ws.map((w) => w.name).join("/")} 词团中心偏移 x=${offX.toFixed(2)} y=${offY.toFixed(2)}`,
+    );
+  }
+});
+
 test("空词表返回空数组；单个词也不抛异常", () => {
   assert.deepEqual(layoutCloud([], CLOUD_W, CLOUD_H), []);
   const one = layoutCloud(words("独苗"), CLOUD_W, CLOUD_H);
