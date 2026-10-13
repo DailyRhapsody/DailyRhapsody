@@ -5,6 +5,14 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
+  // next dev 默认只信任 localhost 来源。从手机用 .local 主机名访问本机开发服务器时，
+  // 跨源的 /_next/webpack-hmr 会被拦掉：页面照常服务端渲染（看得见），但 dev 客户端
+  // 起不来，交互可能静默失效。手机调试因此登记 .local。
+  //
+  // 刻意不写死局域网 IP：换网络就变了，写进公开仓库只会变成一个很快过期的值。
+  // 用 http://<你的主机名>.local:3000 访问，mDNS 自己解析到当前 IP。
+  // 只影响 next dev，不进构建产物，生产路由不受影响。
+  allowedDevOrigins: ["*.local", "127.0.0.1"],
   images: {
     remotePatterns: [
       {
