@@ -179,13 +179,21 @@ function toMinutes(seconds: unknown): number | null {
   return Math.round(n / 60);
 }
 
-/** 形如「5小时30分钟」「21小时45分钟」的格式化字符串，preferAuthor[].readTime 就是这种 */
+/**
+ * 形如「5小时30分钟」「21小时45分钟」的格式化字符串，preferAuthor[].readTime 就是这种。
+ *
+ * 负值必须先挡掉：正则本身不含符号位，`"-5小时"` 会被读成 `5` 小时，
+ * 与同文件 `toMinutes` 对负数的处理口径相反（那条路径是直接拒掉的）。
+ * 回包出现负数说明上游异常，宁可不显示这个词，也不要把它算成正的。
+ */
 function parseFormattedDuration(text: unknown): number | null {
   if (typeof text !== "string") return null;
+  if (/^\s*-/.test(text)) return null;
   const h = /(\d+(?:\.\d+)?)\s*(?:小时|h)/i.exec(text);
   const m = /(\d+)\s*(?:分钟|分|min)/i.exec(text);
   if (!h && !m) return null;
-  return Math.round((h ? Number(h[1]) * 60 : 0) + (m ? Number(m[1]) : 0));
+  const minutes = Math.round((h ? Number(h[1]) * 60 : 0) + (m ? Number(m[1]) : 0));
+  return minutes > 0 ? minutes : null;
 }
 
 /**
@@ -343,12 +351,17 @@ const AUTHOR_CLOUD_MAX_WORDS = 4;
  * preferAuthor[].readTime 实测是「21小时45分钟」这类**格式化字符串**，不是秒数，
  * 与 totalReadTime 的单位口径相反，先按字符串解析；真拿到纯数字时按秒处理，
  * 免得哪天服务端改成数值口径后又把 168300 秒读成 168300 分钟。
+ *
+ * 数值分支的合理区间是 (0, 10 年]：上游给 `1e9` 会被当成 10 亿秒（≈277777 小时），
+ * 那个词会顶到首名、note 长到溢出卡面，所以超出上限一律判为脏数据丢弃。
  */
+const MAX_PLAUSIBLE_SECONDS = 10 * 365 * 24 * 60 * 60;
+
 function preferenceSeconds(value: unknown): number | null {
   const formatted = parseFormattedDuration(value);
   if (formatted !== null) return formatted * 60;
   const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return null;
+  if (!Number.isFinite(n) || n <= 0 || n > MAX_PLAUSIBLE_SECONDS) return null;
   return n;
 }
 
@@ -384,9 +397,12 @@ function collectWords(
     if (!name) continue;
     const weight = weightOf(it);
     if (weight === null || weight <= 0) continue;
-    const prev = byName.get(name);
+    // 去重键要折叠大小写：`MUJI` 与 `muji` 是同一家，按原始字符串建键会出两个词，
+    // 与上面「同名去重」的意图相反。展示名保留首次出现的写法。
+    const key = name.toLocaleLowerCase("zh-Hans-CN");
+    const prev = byName.get(key);
     if (!prev || weight > prev.weight) {
-      byName.set(name, { name, weight, note: noteOf(it, weight) });
+      byName.set(key, { name, weight, note: noteOf(it, weight) });
     }
   }
   // 权重并列时按名称定序，保证同一天两次 Cron 拉到的顺序一致，缓存内容不抖
@@ -534,6 +550,27 @@ export function buildReadingStats(
 }
 
 /**
+ * 缓存形状是否仍能被当前组件安全消费。
+ *
+ * 只查 daily 不够：组件会直接展开 authorClouds / publisherClouds，
+ * 缺字段时展开 undefined 抛 TypeError，整张卡渲染失败。
+ * 导出供测试直接校验（tests/weread-stats.test.mjs）。
+ */
+export function isUsableCachedStats(value: unknown): value is ReadingStats {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Partial<ReadingStats>;
+  return (
+    typeof v.month === "string" &&
+    typeof v.monthMinutes === "number" &&
+    Array.isArray(v.daily) &&
+    Array.isArray(v.books) &&
+    Array.isArray(v.authorClouds) &&
+    Array.isArray(v.publisherClouds) &&
+    Array.isArray(v.hourly)
+  );
+}
+
+/**
  * 只读缓存；缓存为空时回源一次并写回。
  *
  * 回源是为了让首次部署、TTL 过期或 Cron 尚未跑到时不至于整张卡长期缺席：
@@ -545,9 +582,16 @@ export async function getReadingStats(): Promise<ReadingStats | null> {
     const redis = await getRedis();
     if (redis) {
       const cached = await redis.get<ReadingStats>(CACHE_KEY);
-      if (cached && typeof cached === "object" && Array.isArray(cached.daily)) {
+      /*
+       * 形状校验必须覆盖组件真正会读的字段，不能只看 daily：
+       * ReadingStatsCard 一上来就展开 `[...stats.authorClouds, ...stats.publisherClouds]`，
+       * 缓存里若是缺这两个数组的旧结构，展开 undefined 会直接抛 TypeError 把整张卡打崩。
+       * 这里判不合格就当作没有缓存，走下面的回源重新构建（键已带版本号，正常不会命中旧结构）。
+       */
+      if (isUsableCachedStats(cached)) {
         return cached;
       }
+      if (cached) console.warn("[weread] 缓存结构与当前版本不符，改为回源重建");
     }
 
     const filled = await withDeadline(fetchReadingStats(), PAGEVIEW_FILL_TIMEOUT_MS);

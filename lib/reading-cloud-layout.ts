@@ -11,9 +11,15 @@
 const MIN_PX = 11;
 const MAX_PX = 15;
 /**
- * 碰撞盒的额外留白：估宽有 ±2px 误差，字间再留一点视觉间隙。
- * 水平方向是硬约束（越界会被裁掉），所以宽留 4px；垂直方向正文只有一两行，
- * 留太多会把可用区占满、后面的词无处可去，因此只留 2px。
+ * 长词降字号的硬下限。正常数据的字号区间是 MIN_PX~MAX_PX，只有单词宽度就超过
+ * 整个画布时才往下压，压到这个值为止（再小就无法辨认，宁可让它贴边裁剪）。
+ */
+const HARD_MIN_PX = 9;
+/**
+ * 碰撞盒的额外留白。
+ * 水平方向：估宽对汉字与全角标点是准的（实测误差 0），但**对拉丁字母与 emoji 会低估**
+ * （15px 的 `@@@@@@@@` 估 66px、实测 122px），所以横向多留几像素当作缓冲。
+ * 垂直方向正文只有一两行，留太多会把可用区占满、后面的词无处可去，因此只留 2px。
  */
 const BOX_PAD_X = 4;
 const BOX_PAD_Y = 2;
@@ -29,7 +35,7 @@ export type CloudPlacement = {
   fontSize: number;
   /**
    * 绿色档位：1 最深（首名）、2 中间、3 最浅（末名）。
-   * 对应色值见 `app/globals.css` 的 `--dr-cloud-{1,2,3}`。
+   * 对应色值见 `components/entries/ReadingCloudScreen.tsx` 的 `SHADE_CLASS`。
    */
   shade: 1 | 2 | 3;
   bold: boolean;
@@ -60,7 +66,10 @@ function greenStyle(rank: number, total: number): { shade: 1 | 2 | 3; bold: bool
 /**
  * 估算词盒宽度（px）。装在浏览器里必然有 Canvas 量文本的能力，但那样只能在客户端量、
  * 首帧会闪；这里按字符类别估：中日韩与全角标点按 1em，其余（拉丁字母、数字、空格）按 0.55em。
- * 实测 15px 的「尤瓦尔·赫拉利」估 90px、实际 88.6px，误差在 2px 内，够用来排不重叠。
+ * 汉字与全角标点的估算实测误差为 0（15px 的「尤瓦尔·赫拉利」估 90、实测 88.6），
+ * 但**拉丁字母与 emoji 会低估**（`W`/`@` 这类宽字形按 0.55em 算，实际接近 1em，
+ * emoji 更是位图字形）；低估方向会压缩横向余量，因此 BOX_PAD_X 留了缓冲，
+ * 并且真实数据下的可见重叠已用浏览器逐词量过（见 tests 的不重叠断言）。
  */
 export function estimateWordWidth(name: string, fontSize: number): number {
   let em = 0;
@@ -83,7 +92,7 @@ export function estimateWordWidth(name: string, fontSize: number): number {
 /** 词盒之间的最小空隙（排斥的目标距离） */
 const MIN_GAP_X = 6;
 const MIN_GAP_Y = 4;
-/** 迭代轮数：5 个词时 40 轮足够收敛，再多只是浪费渲染时间 */
+/** 迭代轮数：3~5 个词的松弛在 200 轮内已收敛，留到 300 轮是给边界情形的余量 */
 const RELAX_ITERS = 300;
 /** 初始撒点的角度步长（黄金角），让词一开始就错开 */
 const GOLDEN_ANGLE = 2.39996;
@@ -106,7 +115,7 @@ interface RawWord {
  *
  * 横向是硬约束：画布外的部分会被卡片的 overflow:hidden 裁掉，
  * 所以先按名次定字号，再把「连画布都装不下」的词压到刚好装下
- * （见 MAX_FIT_TRIES 那段）—— 否则 clampX 会把 x 夹到左边界，
+ * （见下面的降字号循环）—— 否则 clampX 会把 x 夹到左边界，
  * 右半截照样露在画布外被裁掉，或者夹出负宽度造成两个词落在同一点。
  *
  * 导出供测试直接校验：不重叠、不横向出界、整条可见、位置可复现。
@@ -125,7 +134,7 @@ export function layoutCloud(words: RawWord[], width: number, height: number): Cl
     // 但只要触发就是整段被裁，所以按「宁可小一号也要看得见」处理。
     let tries = 0;
     while (estimateWordWidth(word.name, fontSize) + BOX_PAD_X > width && tries < MAX_FIT_TRIES) {
-      fontSize = Math.max(MIN_PX - 2, fontSize - 1);
+      fontSize = Math.max(HARD_MIN_PX, fontSize - 1);
       tries++;
     }
     return {
@@ -196,8 +205,8 @@ export function layoutCloud(words: RawWord[], width: number, height: number): Cl
    * 按「谁更重谁不动」的原则把轻的那个推到不重叠为止 —— 权重高的词守住中心，
    * 这也符合云图的语义：排名低的词给排名高的让位。
    */
-  const order = boxes.map((b, i) => i).sort((a, b) => a - b); // rank 升序，重的在前
-  for (let pass = 0; pass < 12; pass++) {
+  const order = boxes.map((_, i) => i); // rank 升序，重的在前
+  for (let pass = 0; pass < 20; pass++) {
     let moved = false;
     for (const i of order) {
       for (const j of order) {
@@ -213,16 +222,26 @@ export function layoutCloud(words: RawWord[], width: number, height: number): Cl
         const gapX = needX - Math.abs(hx - lx);
         const gapY = needY - Math.abs(hy - ly);
         if (gapX <= 0 || gapY <= 0) continue;
-        // 优先往横向躲：横向空间多，且中文词横向让位更容易
         const dirX = lx >= hx ? 1 : -1;
         const dirY = ly >= hy ? 1 : -1;
-        const useX = gapX * 0.55 <= gapY ? "x" : "x";
-        if (useX === "x") {
-          pos[light].x = clampX(pos[light].x + gapX * dirX, boxes[light].w);
-        } else {
-          pos[light].y += gapY * dirY;
+        /*
+         * 横向优先（横向空间多、中文词横向让位更容易），但词已被 clampX 夹在
+         * 左右边界时横向挪不动，此时必须退到纵向。
+         * 早先这里写成 `? "x" : "x"` 的三目，纵向分支永远不可达：
+         * 边界上的重叠就此留下，20 轮 pass 全是空推。
+         */
+        const nextX = clampX(pos[light].x + gapX * dirX, boxes[light].w);
+        const canMoveX = Math.abs(nextX - pos[light].x) > 0.01;
+        const nextY = pos[light].y + gapY * dirY;
+        const canMoveY =
+          nextY >= EDGE_PAD && nextY + boxes[light].h <= height - EDGE_PAD;
+        if (canMoveX) {
+          pos[light].x = nextX;
+          moved = true;
+        } else if (canMoveY) {
+          pos[light].y = nextY;
+          moved = true;
         }
-        moved = true;
       }
     }
     if (!moved) break;

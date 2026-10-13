@@ -1,0 +1,302 @@
+{
+  "readTimes": {
+    "1790784000": 4206,
+    "1791388800": 4761,
+    "1791475200": 1664,
+    "1791734400": 1054,
+    "1791820800": 343
+  },
+  "readDays": 5,
+  "readLongest": [
+    {
+      "book": {
+        "bookId": "3300229320",
+        "deepLink": "https://weread.qq.com/book-detail?type=1&v=9db32d80813abc014g010967",
+        "title": "背叛（《天道》原著作者豆豆开山之作）",
+        "author": "豆豆",
+        "intro": "普通人乱世立身的终极法则，《天道》原著作者豆豆开山之作！\n一段世纪之交的个人生命史，一部时代浪潮中的灵魂忏悔录！\n一次受人所托的探监，聪颖果决的记者夏英杰“慧眼识穷途”，爱上了入狱避祸的宋一坤。为了这段不被世人理解的感情，宋一坤随她避居海岛，从一本小说、一个商机起手，悄然撬动一场千万级商业风暴。\n他出身贫寒，却有看透机会的洞察与绝处逢生的胆识；\n她家境优渥，却不为名利所惑，只愿追随内心。\n一个靠天才与谋略织就财富迷局，一个为爱奔赴、为信念坚守底线。\n可当境外资本步步围猎，利益、友情、爱情与国有资产被同时推上赌桌，他们必须作出最残酷的选择。\n是追逐利益，还是坚守正义？\n是信奉弱肉强食，还是守住为人的底线？\n翻开本书，见证一场义与利交织的惊心博弈，看良知如何照亮命运！",
+        "cover": "https://cdn.weread.qq.com/weread/cover/10/cpplatform_tuc5xmx38rr9q484zmeduw/s_cpplatform_tuc5xmx38rr9q484zmeduw1788493997.jpg",
+        "version": 1583625478,
+        "format": "epub",
+        "type": 0,
+        "soldout": 0,
+        "bookStatus": 1,
+        "payType": 1048577,
+        "finished": 1,
+        "maxFreeChapter": 5,
+        "maxFreeInfo": {
+          "maxfreeChapterIdx": 5,
+          "maxfreeChapterUid": 5,
+          "maxfreeChapterRatio": 6
+        },
+        "free": 0,
+        "mcardDiscount": 0,
+        "ispub": 1,
+        "extra_type": 5,
+        "cpid": 14792401,
+        "publishTime": "2026-09-03 00:00:00",
+        "lastChapterIdx": 17,
+        "paperBook": {
+          "skuId": ""
+        },
+        "centPrice": 5800,
+        "copyrightChapterUids": [
+          2
+        ],
+        "inStoreBookId": "",
+        "blockSaveImg": 0,
+        "language": "zh-wr",
+        "isTraditionalChinese": false,
+        "hideUpdateTime": false,
+        "isEPUBComics": 0,
+        "isVerticalLayout": 0,
+        "isShowTTS": 1,
+        "selfProduceIncentive": false,
+        "webBookControl": 0,
+        "isAutoDownload": 1
+      },
+      "readTime": 11685,
+      "tags": [
+        "单日阅读最久"
+      ]
+    },
+    {
+      "book": {
+        "bookId": "3300062589",
+        "deepLink": "https://weread.qq.com/book-detail?type=1&v=c97321a0813ab7ef2g019557",
+        "title": "决胜B端：驱动数字化转型的产品经理（第2版）",
+        "author": "杨堃",
+        "intro": "本书试图提炼了互联网B端产品设计和管理的通用思路和方法，本书一共分为5篇。\"概述篇”描述产品经理的发展历程和演变，以及B端产品的分类和特点，让读者对互联网产品领域建立全面认知。 \"设计篇”详细讲述B端产品的设计，按照产品设计的实际流程，依次讲述市场分析、业务调研、架构设计、功能模块设计、演进蓝图设计、业务建模、流程和角色设计、权限设计等一系列关键环节。\"管理篇”讲述B端产品的管理，包括B端产品的项目管理、运营管理、需求管理、迭代优化，阐述了B端产品实施和运作过程中面临的一系列问题，包括复杂项目的推进、产品经理和业务团队的合作、需求和迭代的计划编排等。\"进阶篇”讲述企业级应用架构，从前面的单一产品建设扩展到体系化产品建设，旨在帮助读者从更宏观的角度思考产品，站在企业经营管理和发展的视角，重新审视互联网产品体系架构的设计原则和方法论。\"成长篇”描述了B端产品经理的职业发展方向，能力模型，学习建议，为未来的持续成长提供学习框架。 全书贯穿了一个实践性很强的案例：在\"设计篇”和\"管理篇”中，我们为一家成熟的集团企业搭建了一套完整的分销业务平台，带领读者逐步设计、实现一个B端产品；在\"进阶篇”中，讲述了这家集团企业是如何从小门店一步步发展起来的，重点分析企业的应用架构体系随业务发展的演进规律。 本书面向0到10岁的B端产品经理，以及所有对B端产品建设感兴趣的读者。",
+        "cover": "https://cdn.weread.qq.com/weread/cover/91/cpplatform_u7prs8za6z2myz7zedcvgb/s_cpplatform_u7prs8za6z2myz7zedcvgb1687835950.jpg",
+        "version": 1252771000,
+        "format": "epub",
+        "type": 0,
+        "soldout": 0,
+        "bookStatus": 1,
+        "payType": 1048577,
+        "finished": 1,
+        "maxFreeChapter": 12,
+        "maxFreeInfo": {
+          "maxfreeChapterIdx": 12,
+          "maxfreeChapterUid": 45,
+          "maxfreeChapterRatio": 39
+        },
+        "free": 0,
+        "mcardDiscount": 0,
+        "ispub": 1,
+        "extra_type": 5,
+        "cpid": 48492,
+        "publishTime": "2023-06-01 00:00:00",
+        "lastChapterIdx": 91,
+        "paperBook": {
+          "skuId": ""
+        },
+        "centPrice": 7000,
+        "copyrightChapterUids": [
+          2
+        ],
+        "inStoreBookId": "",
+        "blockSaveImg": 1,
+        "language": "zh-CN",
+        "isTraditionalChinese": false,
+        "hideUpdateTime": false,
+        "isEPUBComics": 0,
+        "isVerticalLayout": 0,
+        "isShowTTS": 1,
+        "selfProduceIncentive": false,
+        "webBookControl": 0,
+        "isAutoDownload": 1
+      },
+      "readTime": 343,
+      "tags": []
+    }
+  ],
+  "preferCategory": [
+    {
+      "categoryId": 100001,
+      "categoryTitle": "社会小说",
+      "parentCategoryId": 100000,
+      "parentCategoryTitle": "精品小说",
+      "readingCount": 1,
+      "readingTime": 11685
+    },
+    {
+      "categoryId": 1000000,
+      "categoryTitle": "个人成长",
+      "parentCategoryId": 1000000,
+      "parentCategoryTitle": "个人成长",
+      "readingCount": 0,
+      "readingTime": 0
+    },
+    {
+      "categoryId": 200000,
+      "categoryTitle": "历史",
+      "parentCategoryId": 200000,
+      "parentCategoryTitle": "历史",
+      "readingCount": 0,
+      "readingTime": 0
+    },
+    {
+      "categoryId": 300000,
+      "categoryTitle": "文学",
+      "parentCategoryId": 300000,
+      "parentCategoryTitle": "文学",
+      "readingCount": 0,
+      "readingTime": 0
+    },
+    {
+      "categoryId": 1100000,
+      "categoryTitle": "经济理财",
+      "parentCategoryId": 1100000,
+      "parentCategoryTitle": "经济理财",
+      "readingCount": 0,
+      "readingTime": 0
+    },
+    {
+      "categoryId": 900000,
+      "categoryTitle": "社会文化",
+      "parentCategoryId": 900000,
+      "parentCategoryTitle": "社会文化",
+      "readingCount": 0,
+      "readingTime": 0
+    },
+    {
+      "categoryId": 600000,
+      "categoryTitle": "哲学宗教",
+      "parentCategoryId": 600000,
+      "parentCategoryTitle": "哲学宗教",
+      "readingCount": 0,
+      "readingTime": 0
+    },
+    {
+      "categoryId": 800000,
+      "categoryTitle": "心理",
+      "parentCategoryId": 800000,
+      "parentCategoryTitle": "心理",
+      "readingCount": 0,
+      "readingTime": 0
+    }
+  ],
+  "preferCategoryWord": "偏好阅读社会小说",
+  "readStat": [
+    {
+      "stat": "读过",
+      "counts": "1本"
+    },
+    {
+      "stat": "读完",
+      "counts": "0本"
+    },
+    {
+      "stat": "阅读",
+      "counts": "5天"
+    },
+    {
+      "stat": "笔记",
+      "counts": "0条"
+    }
+  ],
+  "compare": -0.6925939367297597,
+  "dayAverageReadTime": 925,
+  "baseTime": 1790784000,
+  "totalReadTime": 12028,
+  "readDistributionWord": "点评分布",
+  "preferBooks": [
+    {
+      "type": 13,
+      "title": "我的最爱"
+    },
+    {
+      "type": 1,
+      "title": "近期偏爱"
+    },
+    {
+      "type": 0,
+      "title": "常读常新"
+    },
+    {
+      "type": 5,
+      "title": "思考最多"
+    },
+    {
+      "type": 3,
+      "title": "最沉浸的"
+    },
+    {
+      "type": 4,
+      "title": "读到深夜"
+    },
+    {
+      "type": 7,
+      "title": "第一本阅读"
+    },
+    {
+      "type": 6,
+      "title": "最爱社会小说",
+      "bookInfo": {
+        "bookId": "3300229320",
+        "deepLink": "https://weread.qq.com/book-detail?type=1&v=9db32d80813abc014g010967",
+        "title": "背叛（《天道》原著作者豆豆开山之作）",
+        "author": "豆豆",
+        "intro": "普通人乱世立身的终极法则，《天道》原著作者豆豆开山之作！\n一段世纪之交的个人生命史，一部时代浪潮中的灵魂忏悔录！\n一次受人所托的探监，聪颖果决的记者夏英杰“慧眼识穷途”，爱上了入狱避祸的宋一坤。为了这段不被世人理解的感情，宋一坤随她避居海岛，从一本小说、一个商机起手，悄然撬动一场千万级商业风暴。\n他出身贫寒，却有看透机会的洞察与绝处逢生的胆识；\n她家境优渥，却不为名利所惑，只愿追随内心。\n一个靠天才与谋略织就财富迷局，一个为爱奔赴、为信念坚守底线。\n可当境外资本步步围猎，利益、友情、爱情与国有资产被同时推上赌桌，他们必须作出最残酷的选择。\n是追逐利益，还是坚守正义？\n是信奉弱肉强食，还是守住为人的底线？\n翻开本书，见证一场义与利交织的惊心博弈，看良知如何照亮命运！",
+        "cover": "https://cdn.weread.qq.com/weread/cover/10/cpplatform_tuc5xmx38rr9q484zmeduw/s_cpplatform_tuc5xmx38rr9q484zmeduw1788493997.jpg",
+        "version": 1583625478,
+        "format": "epub",
+        "type": 0,
+        "soldout": 0,
+        "bookStatus": 1,
+        "payType": 1048577,
+        "finished": 1,
+        "maxFreeChapter": 5,
+        "maxFreeInfo": {
+          "maxfreeChapterIdx": 5,
+          "maxfreeChapterUid": 5,
+          "maxfreeChapterRatio": 6
+        },
+        "free": 0,
+        "mcardDiscount": 0,
+        "ispub": 1,
+        "extra_type": 5,
+        "cpid": 14792401,
+        "publishTime": "2026-09-03 00:00:00",
+        "lastChapterIdx": 17,
+        "paperBook": {
+          "skuId": ""
+        },
+        "centPrice": 5800,
+        "copyrightChapterUids": [
+          2
+        ],
+        "inStoreBookId": "",
+        "blockSaveImg": 0,
+        "language": "zh-wr",
+        "isTraditionalChinese": false,
+        "hideUpdateTime": false,
+        "isEPUBComics": 0,
+        "isVerticalLayout": 0,
+        "isShowTTS": 1,
+        "selfProduceIncentive": false,
+        "webBookControl": 0,
+        "isAutoDownload": 1
+      },
+      "reason": "阅读了6小时"
+    },
+    {
+      "type": 2,
+      "title": "最爱分享"
+    },
+    {
+      "type": 12,
+      "title": "共读最多"
+    },
+    {
+      "type": 10,
+      "title": "欣赏小众"
+    },
+    {
+      "type": 8,
+      "title": "总有一天读完"
+    }
+  ],
+  "readRecordsWord": "书籍分布"
+}
