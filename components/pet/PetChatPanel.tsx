@@ -25,43 +25,65 @@ const AssistantText = memo(function AssistantText({ text }: { text: string }) {
 });
 
 /**
- * 手机上贴底的输入胶囊要躲开软键盘：iOS 弹键盘时不缩布局视口，
- * 只能跟着 visualViewport 算出键盘占掉的底部高度。
+ * 手机上贴底的输入胶囊要躲开软键盘。
  *
- * 两个量必须同一套参照系：被减数是**布局视口**高度（`documentElement.clientHeight`，
- * 也就是 `position: fixed` 真正依据的那个盒子），减数是可见区下边缘（`offsetTop + height`）。
- * 拿 `window.innerHeight` 当被减数时，只要它和布局视口不同步（iOS 在键盘、输入辅助栏这类
- * 系统 UI 变化后重算布局视口，两者会有几十像素的差），算出的高度就偏大，
- * 面板连同蒙版一起被顶到键盘上方，中间那段就露出底层页面。
+ * 不能再拿「布局视口高度 − 可见区下边缘」当键盘高度了。iOS 26 Safari 弹键盘时
+ * 只缩**视觉**视口，布局视口高度不变（WebKit #304976：only the visual viewport is
+ * resized while the layout viewport remains unchanged），而 `position: fixed` 依据的
+ * 正是布局视口：式子退化成 `布局视口高 − 可见区高`，算出来恰好是一整个键盘高度，
+ * 面板被顶到键盘上方一整屏距离，中间那段就露出底层正文。
+ * 反方向也有坑：若哪天 Safari 改成缩布局视口，同一个式子又变成恒等于 0、输入框落到键盘后面。
+ * 两个方向都会在同一个式子上翻车，说明「先猜视口模型、再算一个像素值」这条路本身不可靠。
+ *
+ * 改成量出来：只测**输入框当前渲染在哪**（`getBoundingClientRect` 给的就是可见区坐标，
+ * 与 `visualViewport.height` 同一套参照系），把整块面板往上挪「它超出可见区下边的量」。
+ * 不假设固定元素挂在哪个盒子上，也不碰滚动位置——浏览器自己为了露出焦点元素
+ * 平移了多少（`offsetTop`）、有没有缩布局视口，全都体现在这一次测量里。
+ *
+ * 只向上挪（`Math.min(0, …)`）：宁可靠底也不能把面板推到可见区下面去。
+ * 量到的位移超过可见区高度 3/4 视为异常读数，放弃这次修正，不做离谱的跳位。
  */
-function useKeyboardInset(active: boolean) {
-  const [inset, setInset] = useState(0);
+const MAX_ANCHOR_SHIFT_RATIO = 0.75;
+
+function useVisualViewportAnchor(active: boolean, anchorRef: React.RefObject<HTMLDivElement | null>) {
+  const [offset, setOffset] = useState(0);
   useEffect(() => {
+    if (!active) return;
     const vv = typeof window !== "undefined" ? window.visualViewport : null;
-    if (!active || !vv) return;
-    let settle = 0;
-    const update = () => {
-      // clientHeight 取不到（0）时退回 innerHeight，宁可多留一点也不要落到键盘后面
-      const layoutViewport = document.documentElement.clientHeight || window.innerHeight;
-      setInset(Math.max(0, Math.round(layoutViewport - vv.offsetTop - vv.height)));
+    if (!vv) return; // 没有 visualViewport（老浏览器）：维持 CSS 的 bottom: 0，不猜
+    const measure = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      // 双指缩放中：矩形是缩放后的 CSS 像素，位移量要除以 scale 才等价，这里不硬猜
+      if (vv.scale !== 1) return;
+      const vvBottom = vv.offsetTop + vv.height;
+      // 已经挪过的那部分也算在这个矩形里，所以量出来的差值天然会收敛；
+      // 落在死区里就不动，避免一两像素的抖动让面板持续微震
+      const want = el.getBoundingClientRect().bottom - vvBottom;
+      if (Math.abs(want) < 2) {
+        setOffset(0);
+        return;
+      }
+      if (want > vv.height * MAX_ANCHOR_SHIFT_RATIO) {
+        setOffset(0);
+        return;
+      }
+      setOffset(Math.round(Math.min(0, want)));
     };
-    // 键盘与输入辅助栏（上下箭头 + 对勾）是分段动画的，动画途中的 resize 值不可靠；
-    // 每次事件后再补量一次落定值，避免停在中间估值上（量不到就维持现值，不会跳）
-    const schedule = () => {
-      update();
-      window.clearTimeout(settle);
-      settle = window.setTimeout(update, 320);
-    };
-    schedule();
-    vv.addEventListener("resize", schedule);
-    vv.addEventListener("scroll", schedule);
+    // 键盘、输入辅助栏（上下箭头 + 对勾）是分段动画的，动画途中每一帧都重量一次，
+    // 面板跟着可见区下边缘走，不会停在中间估值上
+    const onScroll = () => measure();
+    measure();
+    vv.addEventListener("resize", measure);
+    vv.addEventListener("scroll", onScroll);
+    window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
-      window.clearTimeout(settle);
-      vv.removeEventListener("resize", schedule);
-      vv.removeEventListener("scroll", schedule);
+      vv.removeEventListener("resize", measure);
+      vv.removeEventListener("scroll", onScroll);
+      window.removeEventListener("scroll", onScroll);
     };
-  }, [active]);
-  return active ? inset : 0;
+  }, [active, anchorRef]);
+  return active ? offset : 0;
 }
 
 /** 右侧空白栏至少要这么宽才放得下对话；更窄（手机、小屏）时退回页面底部浮字 */
@@ -138,10 +160,12 @@ export function PetChatPanel({
   const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // 输入胶囊：键盘弹起后以它为基准量「有没有被可见区下边切掉」，见 useVisualViewportAnchor
+  const inputRowRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const statusRequested = useRef(false);
   const small = useMediaQuery("(max-width: 639px)");
-  const keyboardInset = useKeyboardInset(open && small);
+  const anchorOffset = useVisualViewportAnchor(open && small, inputRowRef);
   const pathname = usePathname();
   const gutter = useGutterBox(open, pathname);
 
@@ -251,10 +275,19 @@ export function PetChatPanel({
   // 打开的过渡期间背后评论会清晰透出。磨砂卡片改为底色与模糊一起渐入，文字等其余部分各自淡入
   const fade = `transition-apple transition-apple-slow motion-reduce:transition-none ${open ? "opacity-100" : "opacity-0"}`;
 
-  // 宽屏：正文右侧空白栏，从顶部到宠物上方（宠物占底部约 104px）；否则浮在页面底部
+  // 宽屏：正文右侧空白栏，从顶部到宠物上方（宠物占底部约 104px）；否则浮在页面底部。
+  // 窄屏不再用 bottom 去躲键盘（那个算式在 iOS 26 上会多顶一整个键盘高度，见 useVisualViewportAnchor），
+  // 改成贴底 + 实测位移。transitionProperty 只留 translate（打开/收起的那点位移）：
+  // transform 若也参与 350ms 过渡，键盘弹起时面板要慢慢挪上来，动画途中输入框是看不见的
   const rootStyle = gutter
     ? { left: gutter.left, width: gutter.width, top: 24, bottom: 120, transitionProperty: "translate" }
-    : { left: 0, right: 0, bottom: keyboardInset, transitionProperty: "translate" };
+    : {
+        left: 0,
+        right: 0,
+        bottom: 0,
+        transform: anchorOffset ? `translateY(${anchorOffset}px)` : undefined,
+        transitionProperty: "translate",
+      };
 
   return (
     <>
@@ -299,18 +332,9 @@ export function PetChatPanel({
         />
       )}
 
-      {/* 蒙版的下沿不能再跟着「键盘高度」走：键盘与 iOS 输入辅助栏都是系统层，浮在网页之上，
-          并不会改小布局视口，面板按键盘高度抬起后留下的那段也仍属于可视区。
-          所以把蒙版一路垫到布局视口底边（键盘盖住的部分看不见，无副作用），
-          系统辅助栏浮在垫好的底子上，不会再有底层页面从缺口透出来。
-          键盘收起时这段高度为 0、gutter 模式不渲染：桌面端与右侧栏外观与改动前完全一致 */}
-      {!gutter && keyboardInset > 0 && (
-        <div
-          aria-hidden="true"
-          style={{ height: keyboardInset }}
-          className={`absolute inset-x-0 top-full bg-white/85 backdrop-blur-md dark:bg-black/80 ${fade}`}
-        />
-      )}
+      {/* 键盘占掉的那段不再垫磨砂：面板已经被实测位移顶到可见区下边缘，缝不存在了。
+          旧版本靠「布局视口底边 − 可见区下边缘」当键盘高度，那个值在 iOS 26 上恰好是一整个
+          键盘高度（WebKit #304976：弹键盘只缩视觉视口），越垫越错。gutter 模式照旧不渲染 */}
 
 
       <div
@@ -387,8 +411,9 @@ export function PetChatPanel({
             {chat.streaming ? "" : last?.role === "assistant" && last.content ? "已回复" : ""}
           </p>
 
-          {/* 输入胶囊：半透明，不做白底框 */}
+          {/* 输入胶囊：半透明，不做白底框。ref 给 useVisualViewportAnchor 量底边位置用 */}
           <div
+            ref={inputRowRef}
             className={`pointer-events-auto mt-2 flex items-end gap-2 rounded-[22px] bg-white/25 py-2 pl-4 pr-2 focus-within:bg-white/40 dark:bg-white/[0.08] dark:focus-within:bg-white/[0.14] ${fade}`}
           >
             <textarea
