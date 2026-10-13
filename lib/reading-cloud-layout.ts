@@ -89,7 +89,28 @@ function greenStyle(rank: number, total: number): { shade: 1 | 2 | 3; bold: bool
  * 高估的代价是长拉丁名被降字号压小（排松一点），低估的代价是字形被画布裁掉。
  */
 const EM_DIGIT = 0.6;
-const EM_WIDE = 1.0;
+/**
+ * 空格按 0.3em、其它标点按 0.5em。这两档是评审用浏览器实测反推的：
+ * 一律按 1em 时 `Penguin Random House`（20 字）会被估成 300px、压到 6px 下限，
+ * 而它实测只有约 150px。空格在多数拉丁字体里是 0.25~0.33em，标点 0.3~0.6em。
+ */
+const EM_SPACE = 0.3;
+const EM_PUNCT = 0.5;
+/**
+ * 拉丁字母按 1em。这是**有意的保守值**：字母内部字宽差异极大
+ * （`W` 实测 0.944em、`i` 只有 0.28em），按「大写/小写」分档解决不了 ——
+ * 分档时 `WWWWWWWW` 低估 24%、`W. W. NORTON` 又高估 36%。
+ *
+ * 高估的代价已量化，写在下面，免得以后有人以为这是没算过的：
+ * `Penguin Random House`（20 字）与 `W. W. NORTON`（12 字）拿真实回包的短语比例
+ * 各自拟合出 α≈0.75 / α≈0.70，而这里的 α=1 收敛到一个固定值 1.09，
+ * 因此这两个词会走降字号循环分别压到 6px 与 12px。
+ * 取舍理由：真实数据全是中文（作者名、分类名、出版社名），汉字按 1em 估的误差为 0；
+ * 拉丁只在中文出版社/作者名的极端情形出现，那时「排得松」远好过「字形被裁」。
+ * 若将来真出现长拉丁词主导的榜单，正确的修法是在客户端用 Canvas 量一次真实宽度
+ * （首帧仍用估宽），而不是继续调这几个系数。
+ */
+const EM_LETTER = 1.0;
 /**
  * emoji 按宽字形算：它们是位图字形，实测 15px 的 `📚📖📕📗` 约 19px/字（≈1.27em），
  * 按 0.95em 估会低估总宽、右端被裁，这里取 1.6em（宁可高估排松一点）。
@@ -102,10 +123,11 @@ export function estimateWordWidth(name: string, fontSize: number): number {
   for (const ch of name) {
     if (/[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch)) em += 1;
     else if (EMOJI_RE.test(ch)) em += EM_EMOJI;
+    else if (ch === " ") em += EM_SPACE;
     else if (/[0-9]/.test(ch)) em += EM_DIGIT;
-    // 其余（字母、标点、符号）：按 1em 估。`@` 实测 1.016em 因此不再被低估；
-    // 空格实际只有约 0.3em，高估属安全方向。
-    else em += EM_WIDE;
+    else if (/[A-Za-z]/.test(ch)) em += EM_LETTER;
+    // 标点与符号：按 0.5em 估
+    else em += EM_PUNCT;
   }
   return em * fontSize;
 }
@@ -130,6 +152,11 @@ const GOLDEN_ANGLE = 2.39996;
 /** 排斥强度与向心强度：排斥要够大才铺得开，向心保证不散成一把沙子 */
 const REPEL = 0.8;
 const CENTER_PULL = 0.0045;
+/**
+ * 长词降字号的硬下限。正常数据不会触发（真实回包最长 11 字，压到 11px 就够）；
+ * 只有单词宽度超过整块画布时才往下压，压到这里为止 —— 6px 已接近可辨认的边界。
+ */
+const HARD_MIN_PX = 6;
 /**
  * 长词降字号的次数上限（每次 1px），避免病态输入下死循环。
  * 32 次足以让 20 字的中文词从 15px 一路压到 9px 以下仍放进 126px 宽，
@@ -181,8 +208,7 @@ export function layoutCloud(
     // 但只要触发就是整段被裁，所以按「宁可小一号也要看得见」处理。
     let tries = 0;
     while (estimateWordWidth(word.name, fontSize) + BOX_PAD_X > width && tries < MAX_FIT_TRIES) {
-      // 下限是 6px：再小就没有可读性，那时宁可让它贴边（真实数据最长 11 字，用不到这一档）。
-      fontSize = Math.max(6, fontSize - 1);
+      fontSize = Math.max(HARD_MIN_PX, fontSize - 1);
       tries++;
     }
     return {

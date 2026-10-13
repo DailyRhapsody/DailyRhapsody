@@ -496,6 +496,39 @@ test("缓存形状校验与构建器同口径，不误杀合法缓存", () => {
   }
 });
 
+test("带前缀的时长串也能解析（全串扫描，不是只匹配 index 0）", () => {
+  // 回归用例：时长段可空时正则会在 index 0 匹配空串、exec 不再向后找，
+  // 于是 `"总计：5小时30分钟"` 这类带前缀的写法被判空。
+  const cases = [
+    ["总计：5小时30分钟", "5h 30m"],
+    ["2026-10-05 5小时0分钟", "5h"],
+    ["编号A-12 5小时", "5h"],
+    ["5小时30分钟额外文字", "5h 30m"],
+    ["+5小时", "5h"],
+  ];
+  for (const [readTime, note] of cases) {
+    const s = buildReadingStats({ totalReadTime: 600 }, { preferAuthor: [{ name: "X", readTime }] });
+    assert.equal(s.authorClouds[0]?.words[0]?.note, note, `${readTime} 应解析为 ${note}`);
+  }
+  // 减号族的完整覆盖：全部整条拒（含 U+2043 与 U+2796 这类既不属于 Pd
+  // 也不属于 Sm 的符号）。
+  // 注意 U+30FC（片假名长音符）**不在**此列：它属于字母，日语里「ー」后跟数字完全合法，
+  // 把它当负号会把正常的日文时长串判空（独立评审的清单一度把它列进来，实测复现后剔除）。
+  const dashes = [
+    "\u002d", "\u2212", "\u2013", "\u2014", "\u2012", "\u2015", "\u2010", "\u2011",
+    "\uff0d", "\ufe63", "\ufe58", "\u02d7", "\u2043", "\u2796", "\u2216", "\u208b",
+  ];
+  for (const d of dashes) {
+    const readTime = `${d}5小时`;
+    const s = buildReadingStats({ totalReadTime: 600 }, { preferAuthor: [{ name: "X", readTime }] });
+    assert.deepEqual(
+      s.authorClouds[0]?.words ?? [],
+      [],
+      `${JSON.stringify(readTime)} 是负时长，应被拒`,
+    );
+  }
+});
+
 test("超出合理量级的秒数被拒，不会出现 277777h 这种 note", () => {
   const s = buildReadingStats({ totalReadTime: 600 }, {
     preferAuthor: [

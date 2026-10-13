@@ -200,18 +200,50 @@ function parseFormattedDuration(text: unknown): number | null {
    * 把数字前紧邻的一个字符一起捕获，去掉空白与 `+` 之后若还剩字符，
    * 说明那里是负号或别的垃圾前缀，整条拒掉。任何符号都拦得住，也不会误伤 `+5小时`。
    */
-  const parsed =
-    /(?:([^\s\d]?)\s*(\d+(?:\.\d+)?)\s*(?:小时|h))?\s*(?:([^\s\d]?)\s*(\d+)\s*(?:分钟|分|min))?/iu.exec(text);
-  if (!parsed || (!parsed[2] && !parsed[4])) return null;
-  for (const [prefix, digits] of [
-    [parsed[1], parsed[2]],
-    [parsed[3], parsed[4]],
-  ]) {
-    if (!digits) continue;
+  // 捕获组用「非空白、非数字、非字母」的宽类：减号散落在 Pd/Sm/Sk/So/No/Po 多个类里
+  // （➖ 在 So、⁃ 在 Po、˗ 在 Sk），枚举必然漏。宽类一次收全，再由下面的校验排除 `+`。
+  /*
+   * 捕获组只收「减号族」：`\p{Pd}`（连字符/破折号：- U+2010~2015 U+FE58 U+FE63 U+FF0D）、
+   * `\p{Sm}`（数学符号：∖ U+2216）、`\p{Sk}`（修饰符号：˗ U+02D7），
+   * 再补两个散落在别处的：U+2043（连字符项目符号）、U+2796（粗减号）。
+   * 只收减号族是有意的：早先用「非空白非数字非字母」的宽类，会把中文冒号 `：`
+   * 也捕获成「前缀」并当成负号，把 `"总计：5小时30分钟"` 判空（实测踩过）。
+   */
+  const DASH = "\\p{Pd}\\p{Sm}\\p{Sk}\\u2043\\u2796";
+  const re = new RegExp(
+    `([${DASH}]?)\\s*(\\d+(?:\\.\\d+)?)\\s*(?:小时|h)\\s*(?:([${DASH}]?)\\s*(\\d+)\\s*(?:分钟|分|min))?|([${DASH}]?)\\s*(\\d+)\\s*(?:分钟|分|min)`,
+    "giu",
+  );
+  /*
+   * 用 lastIndex 步进扫描，而不是让 exec 自己找最左匹配：模式里的时长段可空，
+   * exec 可能停在一个能匹配空串的位置而不再向后找。逐步前进保证整条文本都被扫到 ——
+   * 带前缀的写法（`"总计：5小时30分钟"`、`"2026-10-05 5小时0分钟"`）因此也能解析。
+   * 命中条件是 `hit.index >= pos`（而不是 `=== pos`）：`+5小时` 这类串里 `+` 不在
+   * 捕获组内，匹配只能从 `+` 之后开始，用严格相等会把整条判空。
+   */
+  let parsed: RegExpExecArray | null = null;
+  for (let pos = 0; pos <= text.length; pos++) {
+    re.lastIndex = pos;
+    const hit = re.exec(text);
+    if (hit && hit.index >= pos) {
+      parsed = hit;
+      break;
+    }
+  }
+  if (!parsed) return null;
+  // 两个分支的捕获组：1~4 是「时+分钟」，5~6 是「只有分钟」
+  const hDigits = parsed[2];
+  const mDigits = parsed[4] ?? parsed[6];
+  if (!hDigits && !mDigits) return null;
+  /*
+   * 前缀只放过空串与正号 `+`（`+` 属 Sm，会被捕获组吃掉，是正号不是负号）；
+   * 其余任何减号族前缀一律整条拒。
+   */
+  for (const prefix of [parsed[1], parsed[3], parsed[5]]) {
     if (prefix && prefix !== "+") return null;
   }
-  const hours = parsed[2] ? Number(parsed[2]) : 0;
-  const mins = parsed[4] ? Number(parsed[4]) : 0;
+  const hours = hDigits ? Number(hDigits) : 0;
+  const mins = mDigits ? Number(mDigits) : 0;
   const minutes = Math.round(hours * 60 + mins);
   return minutes > 0 ? minutes : null;
 }
