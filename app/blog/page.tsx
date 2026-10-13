@@ -1,4 +1,5 @@
 import { getProfile } from "@/lib/profile-store";
+import { getReadingStats } from "@/lib/weread";
 import EntriesPageClient from "./EntriesPageClient";
 
 /**
@@ -7,6 +8,9 @@ import EntriesPageClient from "./EntriesPageClient";
  *
  * Server component: 预取 profile 后再把结果作为 initialProfile 下传给客户端组件，
  * 避免首帧 profile===null 时 StickyProfileHeader 走居中兜底 → 数据到达后跳到左对齐。
+ *
+ * 微信读书阅读数据同样在服务端预取：它是只读 Redis 缓存，不带 API Key 进浏览器，
+ * 也不需要新增公开路由与 proxy matcher 条目。缓存由每日 Cron 预热。
  */
 export default async function EntriesPage() {
   let initialProfile = null;
@@ -15,5 +19,15 @@ export default async function EntriesPage() {
   } catch {
     initialProfile = null;
   }
-  return <EntriesPageClient initialProfile={initialProfile} />;
+
+  let readingStats = null;
+  try {
+    readingStats = await getReadingStats();
+  } catch {
+    readingStats = null;
+  }
+
+  return (
+    <EntriesPageClient initialProfile={initialProfile} readingStats={readingStats} />
+  );
 }

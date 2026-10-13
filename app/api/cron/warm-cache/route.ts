@@ -17,6 +17,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { warmDiariesCache } from "@/lib/notion";
 import { warmMomentsCache } from "@/lib/notion-moments";
 import { warmReferenceCache } from "@/lib/notion-reference";
+import { refreshReadingStats } from "@/lib/weread";
 
 // 三个数据源顺序全量抓取（diaries 实测 20-53s），显式给足预算
 export const maxDuration = 300;
@@ -57,7 +58,20 @@ export async function GET(req: NextRequest) {
     result.diaries = "failed";
   }
 
-  const failed = Object.values(result).includes("failed");
+  // 微信读书放在三源之后：它失败时有上一份缓存可用，是最适合牺牲的一段；
+  // 自带独立超时（lib/weread.ts GATEWAY_TIMEOUT_MS），不持有 Notion 侧的刷新锁。
+  // 它的状态是独立字段，且不参与下面的 failed 判定 —— 否则微信读书单次失败会让
+  // 整个 Cron 返回 500，掩盖真正的 Notion 故障。
+  try {
+    result.weread = await refreshReadingStats();
+  } catch (e) {
+    console.warn("[cron/warm-cache] weread failed:", e);
+    result.weread = "failed";
+  }
+
+  const failed = ["moments", "reference", "diaries"].some(
+    (k) => result[k] === "failed"
+  );
   return NextResponse.json(
     { ...result, tookMs: Date.now() - startedAt },
     { status: failed ? 500 : 200 }
