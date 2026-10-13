@@ -242,6 +242,15 @@ function parseFormattedDuration(text: unknown): number | null {
   for (const prefix of [parsed[1], parsed[3], parsed[5]]) {
     if (prefix && prefix !== "+") return null;
   }
+  /*
+   * 已知限制一：`"5小时（-30分钟）"` 这类把负号放进括号、与数字隔了括号的写法，
+   * 逐段判据看不出来，会按「5 小时」接受、忽略那一段。为它加一次全串扫描会把
+   * 日期前缀（`"2026-10-05 5小时"`）也误判成负号，得不偿失。
+   *
+   * 已知限制二：本函数只认「小时/时/h」与「分钟/分/min」两种单位。
+   * 上游回包实测是 `"21小时45分钟"` 这类裸格式，两种单位足够；
+   * 出现「天」「秒」等单位时整条解析不了，会被当成没有时长而丢弃。
+   */
   const hours = hDigits ? Number(hDigits) : 0;
   const mins = mDigits ? Number(mDigits) : 0;
   const minutes = Math.round(hours * 60 + mins);
