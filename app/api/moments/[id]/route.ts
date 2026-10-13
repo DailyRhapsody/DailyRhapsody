@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isAdmin } from "@/lib/auth";
 import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
 import { getMoments, isMomentsConfigured } from "@/lib/notion-moments";
 
@@ -31,6 +32,16 @@ export async function GET(
       NextResponse.json({ error: "Not found" }, { status: 404 })
     );
   }
+
+  // 公开性判定与日记、收藏详情一致：非管理员拿不到 Public=false 的动态，
+  // 返回 404 而不是 403，避免用状态码区分「不存在」与「存在但私密」。
+  const admin = await isAdmin();
+  if (!admin && m.isPublic === false) {
+    return withAntiScrapeHeaders(
+      NextResponse.json({ error: "Not found" }, { status: 404 })
+    );
+  }
+
   return withAntiScrapeHeaders(NextResponse.json(m));
 }
 
