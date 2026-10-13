@@ -30,6 +30,31 @@ export type ReadingBook = {
 /** 偏好行，label 是「分类／作者／出版社」这类中文标签 */
 export type ReadingPreference = { label: string; value: string };
 
+/**
+ * 词云里的一个词。weight 是**归一化到 0~100 的相对权重**，不是原始数值：
+ * 作者用阅读秒数、出版社用书籍本数，两者量级差好几个数量级
+ * （作者 168300 秒 vs 出版社 32 本），原样交给卡片会让字号映射无法共用一套算法。
+ * 归一化在**每张云图内部**做，因此同一张卡里各屏的字号都可以直接比。
+ */
+export type ReadingCloudWord = {
+  name: string;
+  weight: number;
+  /** 原始口径的可读文案，如作者的「46h 50m」、出版社的「32 本」 */
+  note: string;
+};
+
+/**
+ * 一张云图，对应轮播卡里的一屏。
+ *
+ * 屏内不再有「分类／作者／出版社」这类字段名：字段名是接口的组织方式，
+ * 不是读者要看的信息，画面让给词本身。口径说明只进 aria-label 与悬停提示。
+ */
+export type ReadingCloud = {
+  /** 无障碍与悬停用的口径说明，如「作者 · 按累计阅读时长」，不显示在卡面上 */
+  label: string;
+  words: ReadingCloudWord[];
+};
+
 export type ReadingStats = {
   /** 展示用的月份标识，形如 2026-10 */
   month: string;
@@ -46,6 +71,21 @@ export type ReadingStats = {
   /** 累计偏好，取自 overall 周期，每类第 1 名 */
   preferences: ReadingPreference[];
   /**
+   * 作者类云图，按屏排列。当前两屏，每屏一个口径：
+   * 1. preferAuthor 前 AUTHOR_CLOUD_MAX_WORDS 条，按累计阅读时长加权
+   * 2. preferCategory 前 AUTHOR_CLOUD_MAX_WORDS 条（读的是什么类型），按累计阅读时长加权
+   * 曾经的「readLongest 每本书的作者」一屏已删除：与 preferAuthor 高度重合。
+   * 每屏各自归一到 0~100，因此同一张卡里各屏的字号都可以直接比。
+   */
+  authorClouds: ReadingCloud[];
+  /**
+   * 出版社类云图，一屏，取前 CLOUD_MAX_WORDS 家：
+   * preferPublisher（10 条）∪ preferCp（10 条），同名取较大 count，按本数加权。
+   * 条目里没有 readTime —— 接口不提供按社时长，只能按本数。
+   * 曾经把第 7 名之后拆成第二、第三屏，已删除：一屏足够说明谁占主导。
+   */
+  publisherClouds: ReadingCloud[];
+  /**
    * 累计阅读时段：24 个点的秒数。下标 0 对应 6 时，末位对应次日 5 时，
    * 与接口口径一致 —— 这个起点顺序容易误判成 0 时开始，卡片上必须标出来。
    */
@@ -55,10 +95,11 @@ export type ReadingStats = {
   refreshedAt: number;
 };
 
-// v6：偏好回到每类单值；书目不再在解析层截断，改由卡片按高度决定展示几条。
+// v8：字段名屏换成作者／出版社两张**云图轮播**卡，ReadingStats 的
+// authorCloud / publisherCloud 变成按屏排列的 authorClouds / publisherClouds。
 // 与 Notion 侧同一约定：回包结构一变就推进版本号，否则旧结构会留在缓存里 ——
 // 新字段读不到、卡片少一屏，而且看起来像接口没返回数据。
-const CACHE_KEY = "dr:weread:monthly:v6";
+const CACHE_KEY = "dr:weread:monthly:v8";
 /** 与 Notion 侧同策略：硬 TTL 48h，对每日一次的 Cron 留出一整天余量 */
 const CACHE_HARD_TTL_S = 48 * 60 * 60;
 /** 独立超时预算。Cron 共享 300s 预算，微信读书失败可读上一份缓存，是最适合牺牲的一段 */
@@ -138,13 +179,82 @@ function toMinutes(seconds: unknown): number | null {
   return Math.round(n / 60);
 }
 
-/** 形如「5小时30分钟」「21小时45分钟」的格式化字符串，preferAuthor[].readTime 就是这种 */
+/**
+ * 形如「5小时30分钟」「21小时45分钟」的格式化字符串，preferAuthor[].readTime 就是这种。
+ *
+ * 负值必须先挡掉：正则本身不含符号位，`"-5小时"` 会被读成 `5` 小时，
+ * 与同文件 `toMinutes` 对负数的处理口径相反（那条路径是直接拒掉的）。
+ * 符号要认全：ASCII 连字符、U+2212 数学减号、U+2013/2014 破折号都可能出现在上游文本里，
+ * 只挡 ASCII 会漏（自测发现 `"−5小时"` 仍被读成 +5 小时）。
+ * 任何一段带负号都直接拒：`"5小时-30分钟"` 的取负意图无法可靠区分，
+ * 但把负段当正段加进去一定是错的。
+ */
 function parseFormattedDuration(text: unknown): number | null {
   if (typeof text !== "string") return null;
-  const h = /(\d+(?:\.\d+)?)\s*(?:小时|h)/i.exec(text);
-  const m = /(\d+)\s*(?:分钟|分|min)/i.exec(text);
-  if (!h && !m) return null;
-  return Math.round((h ? Number(h[1]) * 60 : 0) + (m ? Number(m[1]) : 0));
+  /*
+   * 用**一个**正则同时捕获时与分两段：分两次 exec 会互相吃掉对方的数字
+   * （`"0小时30分钟"` 的 `30` 会被「小时」那段当成 0 小时匹配掉，分钟段就落空）。
+   *
+   * 符号位的判据不是「枚举哪些字符算负号」（枚举必然漏：U+2043、U+2796 既不属于
+   * Pd 也不属于 Sm），而是「数字前面除了空白与正号，不许有别的东西」：
+   * 把数字前紧邻的一个字符一起捕获，去掉空白与 `+` 之后若还剩字符，
+   * 说明那里是负号或别的垃圾前缀，整条拒掉。任何符号都拦得住，也不会误伤 `+5小时`。
+   */
+  // 捕获组用「非空白、非数字、非字母」的宽类：减号散落在 Pd/Sm/Sk/So/No/Po 多个类里
+  // （➖ 在 So、⁃ 在 Po、˗ 在 Sk），枚举必然漏。宽类一次收全，再由下面的校验排除 `+`。
+  /*
+   * 捕获组只收「减号族」：`\p{Pd}`（连字符/破折号：- U+2010~2015 U+FE58 U+FE63 U+FF0D）、
+   * `\p{Sm}`（数学符号：∖ U+2216）、`\p{Sk}`（修饰符号：˗ U+02D7），
+   * 再补两个散落在别处的：U+2043（连字符项目符号）、U+2796（粗减号）。
+   * 只收减号族是有意的：早先用「非空白非数字非字母」的宽类，会把中文冒号 `：`
+   * 也捕获成「前缀」并当成负号，把 `"总计：5小时30分钟"` 判空（实测踩过）。
+   */
+  const DASH = "\\p{Pd}\\p{Sm}\\p{Sk}\\u2043\\u2796";
+  const re = new RegExp(
+    `([${DASH}]?)\\s*(\\d+(?:\\.\\d+)?)\\s*(?:小时|h)\\s*(?:([${DASH}]?)\\s*(\\d+)\\s*(?:分钟|分|min))?|([${DASH}]?)\\s*(\\d+)\\s*(?:分钟|分|min)`,
+    "giu",
+  );
+  /*
+   * 用 lastIndex 步进扫描，而不是让 exec 自己找最左匹配：模式里的时长段可空，
+   * exec 可能停在一个能匹配空串的位置而不再向后找。逐步前进保证整条文本都被扫到 ——
+   * 带前缀的写法（`"总计：5小时30分钟"`、`"2026-10-05 5小时0分钟"`）因此也能解析。
+   * 命中条件是 `hit.index >= pos`（而不是 `=== pos`）：`+5小时` 这类串里 `+` 不在
+   * 捕获组内，匹配只能从 `+` 之后开始，用严格相等会把整条判空。
+   */
+  let parsed: RegExpExecArray | null = null;
+  for (let pos = 0; pos <= text.length; pos++) {
+    re.lastIndex = pos;
+    const hit = re.exec(text);
+    if (hit && hit.index >= pos) {
+      parsed = hit;
+      break;
+    }
+  }
+  if (!parsed) return null;
+  // 两个分支的捕获组：1~4 是「时+分钟」，5~6 是「只有分钟」
+  const hDigits = parsed[2];
+  const mDigits = parsed[4] ?? parsed[6];
+  if (!hDigits && !mDigits) return null;
+  /*
+   * 前缀只放过空串与正号 `+`（`+` 属 Sm，会被捕获组吃掉，是正号不是负号）；
+   * 其余任何减号族前缀一律整条拒。
+   */
+  for (const prefix of [parsed[1], parsed[3], parsed[5]]) {
+    if (prefix && prefix !== "+") return null;
+  }
+  /*
+   * 已知限制一：`"5小时（-30分钟）"` 这类把负号放进括号、与数字隔了括号的写法，
+   * 逐段判据看不出来，会按「5 小时」接受、忽略那一段。为它加一次全串扫描会把
+   * 日期前缀（`"2026-10-05 5小时"`）也误判成负号，得不偿失。
+   *
+   * 已知限制二：本函数只认「小时/时/h」与「分钟/分/min」两种单位。
+   * 上游回包实测是 `"21小时45分钟"` 这类裸格式，两种单位足够；
+   * 出现「天」「秒」等单位时整条解析不了，会被当成没有时长而丢弃。
+   */
+  const hours = hDigits ? Number(hDigits) : 0;
+  const mins = mDigits ? Number(mDigits) : 0;
+  const minutes = Math.round(hours * 60 + mins);
+  return minutes > 0 ? minutes : null;
 }
 
 /**
@@ -286,6 +396,175 @@ function parsePreferences(overall: Record<string, unknown> | null): ReadingPrefe
 }
 
 /**
+ * 每屏云图最多几个词。云图屏在卡片的内容盒里（168 × 148 的卡减去 1px 边框与
+ * 20px 内边距，只有 126 × 106），词要在里面**圆形散开且互不压住**。
+ * 126px 宽放不下两个长词（出版社名 6~8 字，13px 就要 90~110px），
+ * 所以每屏只能取前几名：出版社 3、作者与分类 4。再多就得压到 9px 以下，
+ * 或者排成互相贴住的竖列 —— 两条路都渲染出来看过，都不像云图。
+ */
+const CLOUD_MAX_WORDS = 3;
+/** 作者名与分类名短（2~6 字），同样面积能多放一个 */
+const AUTHOR_CLOUD_MAX_WORDS = 4;
+
+/**
+ * 作者累计阅读时长的秒数。
+ *
+ * preferAuthor[].readTime 实测是「21小时45分钟」这类**格式化字符串**，不是秒数，
+ * 与 totalReadTime 的单位口径相反，先按字符串解析；真拿到纯数字时按秒处理，
+ * 免得哪天服务端改成数值口径后又把 168300 秒读成 168300 分钟。
+ *
+ * 数值分支的合理区间是 (0, 10 年]：上游给 `1e9` 会被当成 10 亿秒（≈277777 小时），
+ * 那个词会顶到首名、note 长到溢出卡面，所以超出上限一律判为脏数据丢弃。
+ */
+const MAX_PLAUSIBLE_SECONDS = 10 * 365 * 24 * 60 * 60;
+
+function preferenceSeconds(value: unknown): number | null {
+  const formatted = parseFormattedDuration(value);
+  if (formatted !== null) return formatted * 60;
+  // 只接数字与纯数字字符串：Boolean(true) → 1 秒会被当成合法时长，
+  // 生成一个 note 为 "0m" 的词，属脏数据进了榜单。
+  if (typeof value !== "number" && !(typeof value === "string" && /^\s*\d+(?:\.\d+)?\s*$/.test(value))) {
+    return null;
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0 || n > MAX_PLAUSIBLE_SECONDS) return null;
+  return n;
+}
+
+/** 秒 → 「46h 50m」；不足 1 小时只写分钟，避免出现「0h 35m」 */
+function formatSecondsAsHours(seconds: number): string {
+  const total = Math.round(seconds / 60);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (!h) return `${m}m`;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+/** 去重排序后但尚未归一化的词 */
+type RawCloudWord = { name: string; weight: number; note: string };
+
+/**
+ * 把 [{name, ...}] 这类数组整成排好序、去过重的词表，
+ * 同名取较大权重：接口偶尔会因译者、再版分成两条同名记录，
+ * 直接铺开会出现两个字号不同的「苏杰」。
+ * 这里不做归一化 —— 归一化是按**每张云图**做的，得等分屏切完再算。
+ */
+function collectWords(
+  items: unknown,
+  readName: (item: Record<string, unknown>) => string,
+  weightOf: (item: Record<string, unknown>) => number | null,
+  noteOf: (item: Record<string, unknown>, weight: number) => string,
+): RawCloudWord[] {
+  const byName = new Map<string, RawCloudWord>();
+  for (const item of Array.isArray(items) ? items : []) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const it = item as Record<string, unknown>;
+    const name = readName(it);
+    if (!name) continue;
+    const weight = weightOf(it);
+    if (weight === null || weight <= 0) continue;
+    // 去重键要折叠大小写：`MUJI` 与 `muji` 是同一家，按原始字符串建键会出两个词，
+    // 与上面「同名去重」的意图相反。展示名取**权重更大那条**的写法（同权重时保留首次出现的）。
+    const key = name.toLocaleLowerCase("zh-Hans-CN");
+    const prev = byName.get(key);
+    if (!prev || weight > prev.weight) {
+      byName.set(key, { name, weight, note: noteOf(it, weight) });
+    }
+  }
+  // 权重并列时按名称定序，保证同一天两次 Cron 拉到的顺序一致，缓存内容不抖
+  return [...byName.values()].sort(
+    (a, b) => b.weight - a.weight || a.name.localeCompare(b.name, "zh-Hans-CN"),
+  );
+}
+
+/** 每个词按本屏最大值归一到 0~100，同一张卡里各屏字号因此可比 */
+function normalizeCloud(words: RawCloudWord[]): ReadingCloudWord[] {
+  if (words.length === 0) return [];
+  const max = words[0].weight;
+  return words.map((w) => ({
+    name: w.name,
+    weight: Math.round((w.weight / max) * 1000) / 10,
+    note: w.note,
+  }));
+}
+
+/** 取一个对象的字符串字段；空串与纯空白都算没有 */
+function str(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/** 取 {name, ...} 或 {copyrightInfo: {name}} 两种形态里的名字 */
+function itemName(it: Record<string, unknown>): string {
+  const direct = str(it.name);
+  if (direct) return direct;
+  const nested = it.copyrightInfo;
+  if (typeof nested === "object" && nested !== null && !Array.isArray(nested)) {
+    return str((nested as Record<string, unknown>).name);
+  }
+  return "";
+}
+
+/** 本数权重：count 是「读过几本」，正数才算 */
+function countWeight(it: Record<string, unknown>): number | null {
+  const n = Number(it.count);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * 作者云图，按屏排列。两屏口径互不相同，都是接口直接给的词组：
+ *   第 1 屏 preferAuthor   —— 作者维度的偏爱，按累计阅读时长加权
+ *   第 2 屏 preferCategory —— 读的是什么类型，按累计阅读时长加权
+ * 空屏直接不出现，因此当月数据缺失时会少一屏而不是出现空白卡。
+ *
+ * 曾经的「readLongest 每本书的作者」屏已删：它与 preferAuthor 高度重合
+ * （同一批人换个口径再排一次），在 168px 的窄卡里不值得占掉一整屏轮播时间。
+ */
+function parseAuthorClouds(overall: Record<string, unknown> | null): ReadingCloud[] {
+  const screens: ReadingCloud[] = [];
+
+  const preferred = normalizeCloud(
+    collectWords(
+      overall?.preferAuthor,
+      (it) => str(it.name),
+      (it) => preferenceSeconds(it.readTime),
+      (_it, w) => formatSecondsAsHours(w),
+    ).slice(0, AUTHOR_CLOUD_MAX_WORDS),
+  );
+  if (preferred.length) screens.push({ label: "作者 · 按累计阅读时长", words: preferred });
+
+  const categories = normalizeCloud(
+    collectWords(
+      overall?.preferCategory,
+      (it) => str(it.categoryTitle),
+      (it) => preferenceSeconds(it.readingTime),
+      (_it, w) => formatSecondsAsHours(w),
+    ).slice(0, AUTHOR_CLOUD_MAX_WORDS),
+  );
+  if (categories.length) screens.push({ label: "阅读分类 · 按时长", words: categories });
+
+  return screens.filter((s) => s.words.length > 0);
+}
+
+/**
+ * 出版社云图，一屏：合并 preferPublisher 与 preferCp（同名取较大本数）后按本数排序，
+ * 取前 CLOUD_MAX_WORDS 家。一家都没有就整张卡不出现。
+ *
+ * 不再把第 7 名之后拆成第二、第三屏：一屏 6 家已经能把「谁占主导」说清楚，
+ * 168px 的窄卡里为 4 本的几家再开两屏，轮播时间全花在长尾上。
+ */
+function parsePublisherClouds(overall: Record<string, unknown> | null): ReadingCloud[] {
+  const merged = collectWords(
+    [...(Array.isArray(overall?.preferPublisher) ? overall.preferPublisher : []),
+     ...(Array.isArray(overall?.preferCp) ? overall.preferCp : [])],
+    itemName,
+    countWeight,
+    (_it, w) => `${w} 本`,
+  ).slice(0, CLOUD_MAX_WORDS);
+
+  return merged.length ? [{ label: "出版社 · 读得最多", words: normalizeCloud(merged) }] : [];
+}
+
+/**
  * 累计阅读时段。preferTime 是 24 个秒数，从 6 时起排到次日 5 时；
  * 全为 0 时视为无数据，卡片少一屏。
  */
@@ -329,9 +608,34 @@ export function buildReadingStats(
     books: parseBooks(monthly.readLongest),
     summary: parseSummary(monthly),
     preferences: parsePreferences(overall),
+    authorClouds: parseAuthorClouds(overall),
+    publisherClouds: parsePublisherClouds(overall),
     ...parseHourly(overall),
     refreshedAt: Date.now(),
   };
+}
+
+/**
+ * 缓存形状是否仍能被当前组件安全消费。
+ *
+ * 只查 daily 不够：组件会直接展开 authorClouds / publisherClouds，
+ * 缺字段时展开 undefined 抛 TypeError，整张卡渲染失败。
+ * 导出供测试直接校验（tests/weread-stats.test.mjs）。
+ */
+export function isUsableCachedStats(value: unknown): value is ReadingStats {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Partial<ReadingStats>;
+  return (
+    typeof v.month === "string" &&
+    // 与构建器同口径：buildReadingStats 在总时长 <= 0 时返回 null，缓存也不该接受这种值
+    typeof v.monthMinutes === "number" &&
+    v.monthMinutes > 0 &&
+    Array.isArray(v.daily) &&
+    Array.isArray(v.books) &&
+    Array.isArray(v.authorClouds) &&
+    Array.isArray(v.publisherClouds) &&
+    Array.isArray(v.hourly)
+  );
 }
 
 /**
@@ -346,9 +650,16 @@ export async function getReadingStats(): Promise<ReadingStats | null> {
     const redis = await getRedis();
     if (redis) {
       const cached = await redis.get<ReadingStats>(CACHE_KEY);
-      if (cached && typeof cached === "object" && Array.isArray(cached.daily)) {
+      /*
+       * 形状校验必须覆盖组件真正会读的字段，不能只看 daily：
+       * ReadingStatsCard 一上来就展开 `[...stats.authorClouds, ...stats.publisherClouds]`，
+       * 缓存里若是缺这两个数组的旧结构，展开 undefined 会直接抛 TypeError 把整张卡打崩。
+       * 这里判不合格就当作没有缓存，走下面的回源重新构建（键已带版本号，正常不会命中旧结构）。
+       */
+      if (isUsableCachedStats(cached)) {
         return cached;
       }
+      if (cached) console.warn("[weread] 缓存结构与当前版本不符，改为回源重建");
     }
 
     const filled = await withDeadline(fetchReadingStats(), PAGEVIEW_FILL_TIMEOUT_MS);

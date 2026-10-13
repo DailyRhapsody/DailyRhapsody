@@ -39,7 +39,7 @@ export default async function WereadPreviewPage() {
 
         <div
           data-hscroll
-          className="entries-top-cards mt-6 flex items-start gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="entries-top-cards mt-6 flex items-start gap-4 overflow-x-auto px-1 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           <div className="shrink-0">
             <CalendarHeatmap datesWithPosts={datesWithPosts} />
@@ -49,7 +49,7 @@ export default async function WereadPreviewPage() {
 
           <button
             type="button"
-            className="inline-flex h-[148px] w-[168px] shrink-0 flex-col items-start justify-center rounded-xl border border-zinc-200 bg-white/80 px-5 shadow-sm transition-apple opacity-60 dark:border-zinc-700 dark:bg-zinc-800/80"
+            className="inline-flex h-[148px] w-[168px] shrink-0 flex-col items-start justify-center rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm transition-apple opacity-60 dark:border-zinc-700 dark:bg-zinc-800/80"
           >
             <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">253</p>
             <p className="text-[0.7rem] text-zinc-500 dark:text-zinc-400">篇文章</p>
