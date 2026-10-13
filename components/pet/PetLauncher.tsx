@@ -14,7 +14,7 @@ const PetChatPanel = dynamic(() => import("@/components/pet/PetChatPanel").then(
 });
 
 /**
- * 右下角数字人入口。挂在根 layout：/blog 的翻转容器带 transform，
+ * 右下角 AI-Persona 入口。挂在根 layout：/blog 的翻转容器带 transform，
  * 放在页面树里 fixed 会变成相对容器定位；根 layout 跨路由不卸载，对话也不会丢。
  */
 export function PetLauncher() {

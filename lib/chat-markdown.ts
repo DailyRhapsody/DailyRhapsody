@@ -2,7 +2,7 @@ import { Marked } from "marked";
 import sanitizeHtml from "sanitize-html";
 
 /**
- * 数字人回复专用的 Markdown 渲染。
+ * AI-Persona 回复专用的 Markdown 渲染。
  *
  * 不复用 lib/markdown.ts 的 renderMarkdown：那条管线带博客专属预处理（#标签高亮、
  * 删纯标签行、Notion 标题转换），而且 marked.use 改的是全局单例；

@@ -192,7 +192,7 @@ export default function AvatarLifeRing({
           </g>
         </g>
       </svg>
-      {/* 与数字人对话时替代上面的呼吸灯：彩色光环 + 同色模糊光晕，样式与显隐在 globals.css 的 dr-pet-avatar-ring */}
+      {/* 与 AI-Persona 对话时替代上面的呼吸灯：彩色光环 + 同色模糊光晕，样式与显隐在 globals.css 的 dr-pet-avatar-ring */}
       <span
         aria-hidden
         className="dr-pet-avatar-ring pointer-events-none absolute"

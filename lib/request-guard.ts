@@ -209,7 +209,7 @@ export async function guardApiRequest(
     checkOrigin?: boolean;
     /** 是否要求 Sec-Fetch-Site=same-origin。默认开启；analytics/sendBeacon 等需要时可关闭。 */
     checkSecFetch?: boolean;
-    /** 超频是否记违规。数字人对话这类读者会反复点「发送」的接口关掉，免得正常读者被累计封 IP。 */
+    /** 超频是否记违规。AI-Persona 对话这类读者会反复点「发送」的接口关掉，免得正常读者被累计封 IP。 */
     recordRateLimitViolation?: boolean;
   }
 ): Promise<NextResponse | null> {

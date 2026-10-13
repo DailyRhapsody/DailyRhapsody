@@ -38,7 +38,7 @@ export type PersonaBundle = {
   notes: PersonaNote[];
   /** 面板空状态的开场建议问题 */
   starters: string[];
-  /** 访客检索时排除的博客标签（回避主题）；文章照常公开，只是数字人不引用 */
+  /** 访客检索时排除的博客标签（回避主题）；文章照常公开，只是 AI-Persona 不引用 */
   avoidTags: string[];
   /** 访客检索时逐篇排除的文章（Notion 页面 id）：标签太宽、按标签排除会误伤时用 */
   avoidIds: string[];

@@ -43,7 +43,7 @@ components/     前端组件（entries 列表与动态、AI-Persona 面板、通
 hooks/          数据获取与交互 hook
 lib/            数据层、门闸、限流、鉴权、人设与模型适配
   persona/      人设包契约、检索、提示词、模型适配
-docs/           域名防护、后台 AI 辅助、数字人说明
+docs/           域名防护、后台 AI 辅助、数字人说明（AI-Persona）
 tests/          离线回归用例
 data/           本地开发用的站点资料与访客统计文件（不进版本库）
 ```
@@ -376,7 +376,7 @@ Notion 数据库自动化的配置：触发条件选页面新增或属性修改�
 
 - 域名与边缘防护：[docs/custom-domain-cloudflare.md](./docs/custom-domain-cloudflare.md)
 - 后台编辑器的 AI 辅助：[docs/ai-assistant.md](./docs/ai-assistant.md)
-- 右下角 AI 数字人的人设分级、对话流程与上线顺序：[docs/pet-digital-twin.md](./docs/pet-digital-twin.md)
+- 右下角 AI 数字人（AI-Persona）的人设分级、对话流程与上线顺序：[docs/pet-digital-twin.md](./docs/pet-digital-twin.md)
 
 ## 6 关于存储
 

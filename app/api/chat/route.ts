@@ -125,7 +125,7 @@ export async function POST(req: Request) {
   // 只读缓存、不触发 Notion 冷拉；缓存缺席时不带原文片段照常回答。
   // 每轮都读：Notion 里刚转私密或删除的文章要立即从检索里消失，与其他接口一致
   const diaries = (await getCachedDiaries()) ?? [];
-  // 访客：只检索公开文章，并排除回避主题（按标签与逐篇清单；文章照常公开，数字人不引用）
+  // 访客：只检索公开文章，并排除回避主题（按标签与逐篇清单；文章照常公开，AI-Persona 不引用）
   const avoidTags = new Set(bundle.avoidTags);
   const avoidIds = new Set(bundle.avoidIds);
   const visible =

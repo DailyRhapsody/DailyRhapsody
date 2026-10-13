@@ -221,7 +221,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     return () => ctrl.abort();
   }, [selectedTag, loadPage, gateGen]);
 
-  /* 同页 hash 跳转（例如数字人回复里的文章链接）不会重载页面：递增一下让深链 effect
+  /* 同页 hash 跳转（例如 AI-Persona 回复里的文章链接）不会重载页面：递增一下让深链 effect
    * 立即处理新锚点，否则要等下一次翻页才生效，把读者从当前位置拉回去 */
   const [hashGen, setHashGen] = useState(0);
   useEffect(() => {

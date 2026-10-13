@@ -1,5 +1,5 @@
 /**
- * 数字人开关：NEXT_PUBLIC_PET_MODE
+ * AI-Persona 开关：NEXT_PUBLIC_PET_MODE
  * - off（默认）：不渲染宠物，/api/chat 返回 404。合进 main 后线上零变化。
  * - owner：宠物只对已登录管理员显示，用于上线前自己试聊、校人设；线上内容仍是 public 包。
  * - public：对所有访客开放。

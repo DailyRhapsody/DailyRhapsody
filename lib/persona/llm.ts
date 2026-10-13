@@ -1,5 +1,5 @@
 /**
- * 数字人对话的模型适配层，只做流式文本。
+ * AI-Persona 对话的模型适配层，只做流式文本。
  *
  * 两种协议覆盖绝大多数供应商：
  * - openai（默认）：/chat/completions，DeepSeek、Kimi、通义、OpenRouter 等兼容服务都走这条
