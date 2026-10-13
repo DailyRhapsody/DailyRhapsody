@@ -236,8 +236,11 @@ export default function EntriesPageClient({
           >
           <div className="px-4 pt-5">
           {/* data-hscroll：豁免整页横滑切 tab 的接管，让卡片条在触屏上能横向滚动。
-              见 hooks/useTabSwipeNavigation.ts 的 isExempt()。 */}
-          <div data-hscroll className="entries-top-cards mb-5 -mx-4 flex items-start gap-4 overflow-x-auto px-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              见 hooks/useTabSwipeNavigation.ts 的 isExempt()。
+              py-1 是给键盘焦点环留的位置：全局 :focus-visible 是 2px outline + 2px offset，
+              这张条 overflow-x-auto 的横向滚动会把 overflow-y 也算成 auto，没有纵向内边距时
+              焦点环的顶边整条被裁掉（评审逐像素量过）。 */}
+          <div data-hscroll className="entries-top-cards mb-5 -mx-4 flex items-start gap-4 overflow-x-auto px-4 py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {/* 日历热力图：始终显示，无选中态 */}
             <div className="shrink-0">
               <CalendarHeatmap datesWithPosts={datesWithPosts} />

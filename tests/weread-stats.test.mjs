@@ -687,65 +687,55 @@ test("字号按名次递减，颜色全部是绿色深浅（不出现灰阶）",
   assert.ok(shades.every((sh) => Number.isInteger(sh)), "档位必须是整数");
 });
 
-test("最浅一档的绿色在白底上仍有 3.7:1 对比度（不低于旧实现的 2.21:1）", () => {
-  // 回归用例：曾用「同一色 + 递减 opacity」，白底末名只有 2.21:1，几乎读不清。
-  // 现在最浅一档是实体 emerald-600，白底实测 3.77:1；正文标准 4.5:1 达不到
-  // （该色在白底的上限就是 3.66:1），属有意弱化的层级尾部，已在 README 注明。
+test("三档色值的对比度按卡片真实底色与渲染色核算", () => {
+  // 口径说明：独立评审用 Canvas 取卡面真实像素合成后实测，亮色底色是 rgb(254,254,254)
+  // 而不是纯白，emerald-600 实际渲染色是 rgb(0,153,102) 而不是 #059669。
+  // 早先按「纯白底 + 硬编码 #059669」算出 3.77 并把断言钉在 3.7，属假绿灯：
+  // 实际是 3.62:1，低于 WCAG 正文的 4.5:1，而这一档恰好用在最小的字号上。
+  // 这里按实测底色复算，把数字写实，见 README 的同段说明。
   const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-  const contrastOnWhite = (hex) => {
-    const rgb = [(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff].map((v) => v / 255);
-    const L = 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
-    return 1.05 / (L + 0.05);
-  };
-  const last = layoutCloud(
-    Array.from({ length: 5 }, (_, i) => ({ name: `词${i}`, note: "", weight: 100 - i * 10 })),
-    CLOUD_W,
-    CLOUD_H,
-  ).at(-1);
-  assert.equal(last.shade, 3, "末名应落在最浅一档");
-  // 组件里第 3 档对应的色值：亮色 emerald-600 (#059669)
-  // 色值取自 ReadingCloudScreen.tsx 的 SHADE_CLASS（亮色第 3 档 = emerald-600 #059669）。
-  // 组件改用别的档位时这里必须同步改，否则断言与实现脱钩。
-  const ratio = contrastOnWhite(0x059669);
-  assert.ok(ratio >= 3.7, `最浅一档对比度 ${ratio.toFixed(2)}:1，低于 3.7:1`);
-});
-
-test("三档色值在亮暗两种主题下都不低于 3.7:1", () => {
-  const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-  const L = (hex) => {
-    const rgb = [(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff].map((v) => v / 255);
-    return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
-  };
+  const L = (rgb) =>
+    0.2126 * lin(rgb[0] / 255) + 0.7152 * lin(rgb[1] / 255) + 0.0722 * lin(rgb[2] / 255);
   const ratio = (fg, bg) => {
     const [a, b] = [L(fg), L(bg)].sort((x, y) => y - x);
     return (a + 0.05) / (b + 0.05);
   };
-  const WHITE = 0xffffff;
-  const ZINC800 = 0x27272a; // 暗色卡片底
-  // 亮色三档：emerald-700 / 700 / 600（白底 5.48 / 5.48 / 3.77:1）；
-  // 暗色三档：emerald-300 / 400 / 500（zinc-800 底 9.77 / 7.75 / 5.87:1）
-  const light = [0x047857, 0x047857, 0x059669];
-  const dark = [0x6ee7b7, 0x34d399, 0x10b981];
-  for (const [i, hex] of light.entries()) {
-    const r = ratio(hex, WHITE);
-    assert.ok(r >= 3.7, `亮色第 ${i + 1} 档 ${r.toFixed(2)}:1 偏低`);
-  }
-  for (const [i, hex] of dark.entries()) {
-    const r = ratio(hex, ZINC800);
-    assert.ok(r >= 5, `暗色第 ${i + 1} 档 ${r.toFixed(2)}:1 偏低`);
+  const CARD_LIGHT = [254, 254, 254];
+  const CARD_DARK = [35, 35, 39];
+  const shades = {
+    light: [
+      [0, 122, 85], // emerald-700
+      [0, 122, 85],
+      [0, 153, 102], // emerald-600
+    ],
+    dark: [
+      [94, 233, 181], // emerald-300
+      [0, 212, 146], // emerald-400
+      [0, 188, 125], // emerald-500
+    ],
+  };
+  const lightRatios = shades.light.map((c) => ratio(c, CARD_LIGHT));
+  const darkRatios = shades.dark.map((c) => ratio(c, CARD_DARK));
+  // 亮色前两档必须过 AA 正文线
+  assert.ok(lightRatios[0] >= 4.5, `亮色档 1 ${lightRatios[0].toFixed(2)}:1 未达 4.5`);
+  assert.ok(lightRatios[1] >= 4.5, `亮色档 2 ${lightRatios[1].toFixed(2)}:1 未达 4.5`);
+  // 亮色档 3 是已知的层级尾部弱化：低于 4.5，但必须守住 3.6（实测 3.62）
+  assert.ok(
+    lightRatios[2] >= 3.6 && lightRatios[2] < 4.5,
+    `亮色档 3 实测 ${lightRatios[2].toFixed(2)}:1，与 README 记载的 3.62 不符`,
+  );
+  // 暗色三档全部过 AA
+  for (const [i, r] of darkRatios.entries()) {
+    assert.ok(r >= 4.5, `暗色档 ${i + 1} ${r.toFixed(2)}:1 未达 4.5`);
   }
 });
 
 test("真实回包的三张云图逐屏扫描：无重叠、无越界、居中", () => {
   // 与线上同一条数据路径：真实网关回包 → buildReadingStats → layoutCloud。
   // 现网词数（作者/分类 4、出版社 3）在 126 × 106 内容盒下必须完全干净；
-  // 「5 个同长词」这类物理装不下的输入不在断言范围内（见下一条用例）。
-  const monthly = JSON.parse(
-    readFileSync(new URL("./fixtures/weread-monthly.json", import.meta.url), "utf8"),
-  );
-  const overall = JSON.parse(
-    readFileSync(new URL("./fixtures/weread-overall.json", import.meta.url), "utf8"),
-  );
+  // 「5 个同长词」这类物理装不下的输入不在断言范围内（硬上限已把它们挡在 4 个以内）。
+  const monthly = JSON.parse(readFileSync(new URL("./fixtures/weread-monthly.json", import.meta.url), "utf8"));
+  const overall = JSON.parse(readFileSync(new URL("./fixtures/weread-overall.json", import.meta.url), "utf8"));
   const stats = buildReadingStats(monthly, overall);
   assert.ok(stats, "真实回包应能构建出统计对象");
   const clouds = [...stats.authorClouds, ...stats.publisherClouds];
@@ -757,7 +747,10 @@ test("真实回包的三张云图逐屏扫描：无重叠、无越界、居中",
     for (const p of out) {
       const w = estimateWordWidth(p.name, p.fontSize) + 4;
       assert.ok(p.x >= -0.6 && p.x + w <= CLOUD_W + 0.6, `${cloud.label} 的 ${p.name} 横向越界`);
-      assert.ok(p.y >= -0.6 && p.y + p.fontSize * 1.25 <= CLOUD_H + 0.6, `${cloud.label} 的 ${p.name} 纵向越界`);
+      assert.ok(
+        p.y >= -0.6 && p.y + p.fontSize * 1.25 <= CLOUD_H + 0.6,
+        `${cloud.label} 的 ${p.name} 纵向越界`,
+      );
     }
   }
 });

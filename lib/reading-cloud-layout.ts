@@ -58,9 +58,10 @@ function fontPx(rank: number, total: number): number {
  *
  * 早先用「同一色 + 递减透明度」表达层级，实测白底上末名只有 2.21:1 对比度，
  * 排在最后的词几乎读不清；而且这套主题色在白底上无论怎么调透明度都到不了
- * WCAG 正文的 4.5:1（emerald-600 的上限就是 3.66:1）。
- * 因此改成三档**实体色**：亮色 700 / 700 / 600（最浅一档 3.77:1，作为层级尾部
- * 有意弱化，已在 README 注明），暗色 300 / 400 / 500（均 ≥ 5.8:1）。
+ * WCAG 正文的 4.5:1。
+ * 因此改成三档**实体色**：亮色 700 / 700 / 600，暗色 300 / 400 / 500
+ * （对比度按卡片真实底色实测：亮色 5.32 / 5.32 / 3.62:1，暗色 10.29 / 8.08 / 6.33:1）。
+ * 亮色最浅一档低于 AA 正文线且用的正是最小字号，属有意弱化的层级尾部，已在 README 注明。
  * 层级同时由字号与字重承担。
  */
 function greenStyle(rank: number, total: number): { shade: 1 | 2 | 3; bold: boolean } {
@@ -70,17 +71,38 @@ function greenStyle(rank: number, total: number): { shade: 1 | 2 | 3; bold: bool
 }
 
 /**
+ * 非 CJK 字符在估宽里的 em 系数。
+ *
+ * 取 0.85 而不是 0.55：0.55 只够覆盖「小写拉丁 + 数字 + 空格」的平均字宽，
+ * 遇到大写与 `W`/`@` 这类宽字形会严重低估 —— 独立评审用真实字形量过，
+ * 15px 的 `W. W. NORTON` 估 99 / 实测 108（右端被裁 2.85px）、
+ * `@@@@@@@@` 估 66 / 实测 117（被裁 46px）。
+ * 估宽是横向硬约束的判据，低估会直接让字形落到画布外被 overflow:hidden 切掉，
+ * 因此宁可高估（排得松一点）也不能低估。emoji 是位图字形，估宽仍可能偏小，
+ * 但云图取的是书名作者与出版社，正常数据里不会出现 emoji。
+ */
+const NON_CJK_EM = 0.85;
+
+/**
+ * emoji 按宽字形算。它们是位图字形，字宽通常大于 1em：
+ * 实测 15px 的 `📚📖📕📗` 渲染墨迹约 19px/字（≈1.27em），按 0.85em 估会低估约 21px 总宽、
+ * 右端被裁。这里按 1.6em 估（宁可高估排松一点）。
+ */
+const EMOJI_EM = 1.6;
+const EMOJI_RE = /\p{Extended_Pictographic}|\p{Emoji_Presentation}/u;
+
+/**
  * 估算词盒宽度（px）。装在浏览器里必然有 Canvas 量文本的能力，但那样只能在客户端量、
- * 首帧会闪；这里按字符类别估：中日韩与全角标点按 1em，其余（拉丁字母、数字、空格）按 0.55em。
- * 汉字与全角标点的估算实测误差为 0（15px 的「尤瓦尔·赫拉利」估 90、实测 88.6），
- * 但**拉丁字母与 emoji 会低估**（`W`/`@` 这类宽字形按 0.55em 算，实际接近 1em，
- * emoji 更是位图字形）；低估方向会压缩横向余量，因此 BOX_PAD_X 留了缓冲，
- * 并且真实数据下的可见重叠已用浏览器逐词量过（见 tests 的不重叠断言）。
+ * 首帧会闪；这里按字符类别估：中日韩与全角标点按 1em，其余按 NON_CJK_EM。
+ * 汉字与全角标点的估算实测误差为 0（15px 的「尤瓦尔·赫拉利」估 90、实测 88.6）。
+ * 导出供测试直接校验。
  */
 export function estimateWordWidth(name: string, fontSize: number): number {
   let em = 0;
   for (const ch of name) {
-    em += /[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch) ? 1 : 0.55;
+    if (/[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch)) em += 1;
+    else if (EMOJI_RE.test(ch)) em += EMOJI_EM;
+    else em += NON_CJK_EM;
   }
   return em * fontSize;
 }
