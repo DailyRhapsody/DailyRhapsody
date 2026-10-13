@@ -10,9 +10,14 @@ const WHEEL_SAME_DIR_COOLDOWN_MS = 300;
 const TOUCH_AXIS_LOCK_DELTA = 10;
 const TOUCH_TRIGGER_DELTA = 50;
 
-/** 监听挂在 document 上，React 里 stopPropagation 挡不住，只能按目标元素豁免 */
-function isInPetChat(target: EventTarget | null): boolean {
-  return !!(target as Element | null)?.closest?.("[data-pet-chat]");
+/**
+ * 监听挂在 document 上，React 里 stopPropagation 挡不住，只能按目标元素豁免。
+ * - data-pet-chat：AI-Persona 面板自己处理交互。
+ * - data-hscroll：自身要横向滚动的容器（/blog 顶部卡片条）。触屏横滑在这里被
+ *   preventDefault 会让容器永远滑不动，四张卡在窄屏只剩前两张可达。
+ */
+function isExempt(target: EventTarget | null): boolean {
+  return !!(target as Element | null)?.closest?.("[data-pet-chat], [data-hscroll]");
 }
 
 /**
@@ -52,8 +57,8 @@ export function useTabSwipeNavigation(
     let lastTriggerDir: 1 | -1 | 0 = 0;
 
     function onWheel(e: WheelEvent) {
-      // AI-Persona 面板里的横滚留给面板自己（代码块、表格横向滚动）
-      if (isInPetChat(e.target)) return;
+      // AI-Persona 面板里的横滚、卡片条自身的横滚都留给它们自己
+      if (isExempt(e.target)) return;
       // 只关心横向意图：deltaX 的绝对值要大于 deltaY 才算横滚
       if (!(Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 2)) return;
       e.preventDefault();
@@ -98,16 +103,16 @@ export function useTabSwipeNavigation(
     let startX = 0;
     let startY = 0;
     let isHz: boolean | null = null;
-    let inPetChat = false;
+    let exempt = false;
 
     function onTouchStart(e: TouchEvent) {
       startX = e.touches[0]?.clientX ?? 0;
       startY = e.touches[0]?.clientY ?? 0;
       isHz = null;
-      inPetChat = isInPetChat(e.target);
+      exempt = isExempt(e.target);
     }
     function onTouchMove(e: TouchEvent) {
-      if (inPetChat || isHz === false) return;
+      if (exempt || isHz === false) return;
       const dx = (e.touches[0]?.clientX ?? startX) - startX;
       const dy = (e.touches[0]?.clientY ?? startY) - startY;
       if (
@@ -119,7 +124,7 @@ export function useTabSwipeNavigation(
       if (isHz) e.preventDefault();
     }
     function onTouchEnd(e: TouchEvent) {
-      if (inPetChat || !isHz || !enabledRef.current) return;
+      if (exempt || !isHz || !enabledRef.current) return;
       const dx = (e.changedTouches[0]?.clientX ?? startX) - startX;
       if (Math.abs(dx) > TOUCH_TRIGGER_DELTA) {
         setTab((prev) =>

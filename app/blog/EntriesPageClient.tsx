@@ -8,6 +8,8 @@ import ConfettiBurst from "@/components/ConfettiBurst";
 import StickyProfileHeader from "@/components/StickyProfileHeader";
 import { MomentLightbox } from "@/components/entries/MomentLightbox";
 import { CalendarHeatmap } from "@/components/entries/CalendarHeatmap";
+import { ReadingStatsCard } from "@/components/entries/ReadingStatsCard";
+import type { ReadingStats } from "@/lib/weread";
 import { EntryCard } from "@/components/entries/EntryCard";
 import { ScrollTimeline } from "@/components/entries/ScrollTimeline";
 import { entryTimelineRows, momentTimelineRows } from "@/components/entries/timelineRows";
@@ -32,8 +34,10 @@ const MOMENT_MESSAGES = { loading: "正在载入更早的动态", failed: "未�
 
 export default function EntriesPageClient({
   initialProfile,
+  readingStats,
 }: {
   initialProfile: Profile | null;
+  readingStats: ReadingStats | null;
 }) {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const {
@@ -231,11 +235,15 @@ export default function EntriesPageClient({
             className={!hasMore && isRebounding ? "rebound-transition" : ""}
           >
           <div className="px-4 pt-5">
-          <div className="entries-top-cards mb-5 -mx-4 flex items-start gap-4 overflow-x-auto px-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          {/* data-hscroll：豁免整页横滑切 tab 的接管，让卡片条在触屏上能横向滚动。
+              见 hooks/useTabSwipeNavigation.ts 的 isExempt()。 */}
+          <div data-hscroll className="entries-top-cards mb-5 -mx-4 flex items-start gap-4 overflow-x-auto px-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {/* 日历热力图：始终显示，无选中态 */}
             <div className="shrink-0">
               <CalendarHeatmap datesWithPosts={datesWithPosts} />
             </div>
+            {/* 微信读书阅读数据：无数据时组件自行返回 null，不占位 */}
+            <ReadingStatsCard stats={readingStats} />
             {/* 博客卡片：activeTopTab===0 选中 */}
             <button
               type="button"
