@@ -9,11 +9,6 @@
 const MIN_PX = 11;
 const MAX_PX = 15;
 /**
- * 长词降字号的硬下限。正常数据的字号区间是 MIN_PX~MAX_PX，只有单词宽度就超过
- * 整个画布时才往下压，压到这个值为止（再小就无法辨认，宁可让它贴边裁剪）。
- */
-const HARD_MIN_PX = 9;
-/**
  * 一屏最多容纳的词数。这是**几何约束**而不是展示偏好：
  * 126 × 106 的画布上，5 个同长中文词的词盒面积已超过画布，硬分离无法把它们
  * 全部推开（实测 5×8 字时残留 2 对约 2.7px 盒重叠）。
@@ -81,28 +76,36 @@ function greenStyle(rank: number, total: number): { shade: 1 | 2 | 3; bold: bool
  * 因此宁可高估（排得松一点）也不能低估。emoji 是位图字形，估宽仍可能偏小，
  * 但云图取的是书名作者与出版社，正常数据里不会出现 emoji。
  */
-const NON_CJK_EM = 0.85;
-
 /**
- * emoji 按宽字形算。它们是位图字形，字宽通常大于 1em：
- * 实测 15px 的 `📚📖📕📗` 渲染墨迹约 19px/字（≈1.27em），按 0.85em 估会低估约 21px 总宽、
- * 右端被裁。这里按 1.6em 估（宁可高估排松一点）。
+ * 非 CJK、非 emoji 字符的 em 系数，按「数字 0.6、其余 1.0」两档。
+ *
+ * 为什么不做更细的字母分档（大写 0.72 / 小写 0.55 之类）：同一类内部字宽差异比类间还大 ——
+ * `W` 实测 0.944em、`i` 只有 0.28em，按「大写/小写」分档时 `WWWWWWWW` 低估 24%、
+ * `W. W. NORTON` 又高估 36%（两组数都来自独立评审的浏览器实测）。分档解决不了这个，
+ * 只会把误差在两类之间搬来搬去。
+ *
+ * 收紧到这两档的理由：这套云图的真实数据全是中文（作者名、分类名、出版社名），
+ * 汉字按 1em 估的实测误差为 0；拉丁只出现在极端上游数据里，此时「宁可高估」是对的 ——
+ * 高估的代价是长拉丁名被降字号压小（排松一点），低估的代价是字形被画布裁掉。
  */
-const EMOJI_EM = 1.6;
+const EM_DIGIT = 0.6;
+const EM_WIDE = 1.0;
+/**
+ * emoji 按宽字形算：它们是位图字形，实测 15px 的 `📚📖📕📗` 约 19px/字（≈1.27em），
+ * 按 0.95em 估会低估总宽、右端被裁，这里取 1.6em（宁可高估排松一点）。
+ */
+const EM_EMOJI = 1.6;
 const EMOJI_RE = /\p{Extended_Pictographic}|\p{Emoji_Presentation}/u;
 
-/**
- * 估算词盒宽度（px）。装在浏览器里必然有 Canvas 量文本的能力，但那样只能在客户端量、
- * 首帧会闪；这里按字符类别估：中日韩与全角标点按 1em，其余按 NON_CJK_EM。
- * 汉字与全角标点的估算实测误差为 0（15px 的「尤瓦尔·赫拉利」估 90、实测 88.6）。
- * 导出供测试直接校验。
- */
 export function estimateWordWidth(name: string, fontSize: number): number {
   let em = 0;
   for (const ch of name) {
     if (/[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch)) em += 1;
-    else if (EMOJI_RE.test(ch)) em += EMOJI_EM;
-    else em += NON_CJK_EM;
+    else if (EMOJI_RE.test(ch)) em += EM_EMOJI;
+    else if (/[0-9]/.test(ch)) em += EM_DIGIT;
+    // 其余（字母、标点、符号）：按 1em 估。`@` 实测 1.016em 因此不再被低估；
+    // 空格实际只有约 0.3em，高估属安全方向。
+    else em += EM_WIDE;
   }
   return em * fontSize;
 }
@@ -127,8 +130,12 @@ const GOLDEN_ANGLE = 2.39996;
 /** 排斥强度与向心强度：排斥要够大才铺得开，向心保证不散成一把沙子 */
 const REPEL = 0.8;
 const CENTER_PULL = 0.0045;
-/** 长词降字号的次数上限（每次 1px），避免病态输入下死循环 */
-const MAX_FIT_TRIES = 12;
+/**
+ * 长词降字号的次数上限（每次 1px），避免病态输入下死循环。
+ * 32 次足以让 20 字的中文词从 15px 一路压到 9px 以下仍放进 126px 宽，
+ * 而不是像早先那样停在 12 次（14 字词仍超出 1px 被裁）。
+ */
+const MAX_FIT_TRIES = 32;
 /** 每轮单次位移上限，避免大词把小词一脚踢出画布 */
 const MAX_STEP = 4;
 
@@ -147,13 +154,20 @@ interface RawWord {
  * 右半截照样露在画布外被裁掉，或者夹出负宽度造成两个词落在同一点。
  *
  * 导出供测试直接校验：不重叠、不横向出界、整条可见、位置可复现。
+ *
+ * 入参多于 MAX_WORDS_PER_CLOUD 个时只取权重最高的那几个，**返回长度可能小于入参**。
  */
 export function layoutCloud(
   input: RawWord[],
   width: number,
   height: number,
 ): CloudPlacement[] {
-  const words = input.slice(0, MAX_WORDS_PER_CLOUD);
+  // 截断取**权重最高的 N 个**，不是输入顺序的前 N 个：调用方通常已排好序，
+  // 但布局层既然承担了「最多几个」的硬约束，就该自己保证取的是最重要的那几个
+  // （评审用乱序入参证明过：权重 [1,999,50,5,5000] 会丢掉最重的 5000）。
+  const words = [...input]
+    .sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name, "zh-Hans-CN"))
+    .slice(0, MAX_WORDS_PER_CLOUD);
   const total = words.length;
   if (total === 0) return [];
   const cx = width / 2;
@@ -167,7 +181,8 @@ export function layoutCloud(
     // 但只要触发就是整段被裁，所以按「宁可小一号也要看得见」处理。
     let tries = 0;
     while (estimateWordWidth(word.name, fontSize) + BOX_PAD_X > width && tries < MAX_FIT_TRIES) {
-      fontSize = Math.max(HARD_MIN_PX, fontSize - 1);
+      // 下限是 6px：再小就没有可读性，那时宁可让它贴边（真实数据最长 11 字，用不到这一档）。
+      fontSize = Math.max(6, fontSize - 1);
       tries++;
     }
     return {

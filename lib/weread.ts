@@ -191,14 +191,28 @@ function toMinutes(seconds: unknown): number | null {
  */
 function parseFormattedDuration(text: unknown): number | null {
   if (typeof text !== "string") return null;
-  const sign = "[\\-\\u2212\\u2013\\u2014]";
-  const h = new RegExp(`(${sign}?\\s*\\d+(?:\\.\\d+)?)\\s*(?:小时|h)`, "i").exec(text);
-  const m = new RegExp(`(${sign}?\\s*\\d+)\\s*(?:分钟|分|min)`, "i").exec(text);
-  if (!h && !m) return null;
-  for (const part of [h, m]) {
-    if (part && new RegExp(`^\\s*${sign}`).test(part[1])) return null;
+  /*
+   * 用**一个**正则同时捕获时与分两段：分两次 exec 会互相吃掉对方的数字
+   * （`"0小时30分钟"` 的 `30` 会被「小时」那段当成 0 小时匹配掉，分钟段就落空）。
+   *
+   * 符号位的判据不是「枚举哪些字符算负号」（枚举必然漏：U+2043、U+2796 既不属于
+   * Pd 也不属于 Sm），而是「数字前面除了空白与正号，不许有别的东西」：
+   * 把数字前紧邻的一个字符一起捕获，去掉空白与 `+` 之后若还剩字符，
+   * 说明那里是负号或别的垃圾前缀，整条拒掉。任何符号都拦得住，也不会误伤 `+5小时`。
+   */
+  const parsed =
+    /(?:([^\s\d]?)\s*(\d+(?:\.\d+)?)\s*(?:小时|h))?\s*(?:([^\s\d]?)\s*(\d+)\s*(?:分钟|分|min))?/iu.exec(text);
+  if (!parsed || (!parsed[2] && !parsed[4])) return null;
+  for (const [prefix, digits] of [
+    [parsed[1], parsed[2]],
+    [parsed[3], parsed[4]],
+  ]) {
+    if (!digits) continue;
+    if (prefix && prefix !== "+") return null;
   }
-  const minutes = Math.round((h ? Number(h[1]) * 60 : 0) + (m ? Number(m[1]) : 0));
+  const hours = parsed[2] ? Number(parsed[2]) : 0;
+  const mins = parsed[4] ? Number(parsed[4]) : 0;
+  const minutes = Math.round(hours * 60 + mins);
   return minutes > 0 ? minutes : null;
 }
 
@@ -366,6 +380,11 @@ const MAX_PLAUSIBLE_SECONDS = 10 * 365 * 24 * 60 * 60;
 function preferenceSeconds(value: unknown): number | null {
   const formatted = parseFormattedDuration(value);
   if (formatted !== null) return formatted * 60;
+  // 只接数字与纯数字字符串：Boolean(true) → 1 秒会被当成合法时长，
+  // 生成一个 note 为 "0m" 的词，属脏数据进了榜单。
+  if (typeof value !== "number" && !(typeof value === "string" && /^\s*\d+(?:\.\d+)?\s*$/.test(value))) {
+    return null;
+  }
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0 || n > MAX_PLAUSIBLE_SECONDS) return null;
   return n;
@@ -404,7 +423,7 @@ function collectWords(
     const weight = weightOf(it);
     if (weight === null || weight <= 0) continue;
     // 去重键要折叠大小写：`MUJI` 与 `muji` 是同一家，按原始字符串建键会出两个词，
-    // 与上面「同名去重」的意图相反。展示名保留首次出现的写法。
+    // 与上面「同名去重」的意图相反。展示名取**权重更大那条**的写法（同权重时保留首次出现的）。
     const key = name.toLocaleLowerCase("zh-Hans-CN");
     const prev = byName.get(key);
     if (!prev || weight > prev.weight) {
