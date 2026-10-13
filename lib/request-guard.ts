@@ -171,6 +171,11 @@ export function checkSecFetchSiteSameOrigin(req: Request): boolean {
 }
 
 export function withAntiScrapeHeaders(res: NextResponse) {
+  // 顶层导航撞上封禁/限流时，浏览器会把响应当文档渲染。Content-Type 不带 charset
+  // 时中文会被按 Latin-1 解释，用户看到的是一串乱码（实测 Safari，用户已撞到两次，
+  // 都被误当成别的问题）。这里只在缺 charset 时补上，不覆盖调用方已设的值。
+  const ct = res.headers.get("Content-Type");
+  if (ct && !/charset/i.test(ct)) res.headers.set("Content-Type", `${ct}; charset=utf-8`);
   res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
   res.headers.set("Cache-Control", "private, no-store");
   return res;

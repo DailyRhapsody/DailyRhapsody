@@ -4,8 +4,8 @@ import { registerHooks } from "node:module";
 import { Socket } from "node:net";
 import { test } from "node:test";
 
-const CURRENT = "notion:diaries:v5";
-const LEGACY = "notion:diaries:v4";
+const CURRENT = "notion:diaries:v6";
+const LEGACY = "notion:diaries:v5";
 const DATABASE = "00000000000000000000000000000001";
 const richText = (text) => ({
   type: "text", text: { content: text, link: null }, plain_text: text, href: null,
@@ -69,16 +69,20 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     };
   });
   const retrieve = t.mock.fn(() => { throw new Error("Unexpected detail cache miss"); });
+  const defaultBody = async ({ block_id }) => ({
+    results: [{ object: "block", id: `${block_id}-body`, type: "paragraph", has_children: false,
+      paragraph: { rich_text: [richText(`body:${block_id}`)], color: "default" } }],
+    has_more: false, next_cursor: null,
+  });
+  let bodyReader = defaultBody;
+  const bodyCalls = [];
+
   t.mock.module("@notionhq/client", { exports: {
     Client: class {
       constructor({ auth }) { assert.equal(auth, "test-notion-token"); }
       databases = { query };
       pages = { retrieve };
-      blocks = { children: { list: async ({ block_id }) => ({
-        results: [{ object: "block", id: `${block_id}-body`, type: "paragraph", has_children: false,
-          paragraph: { rich_text: [richText(`body:${block_id}`)], color: "default" } }],
-        has_more: false, next_cursor: null,
-      }) } };
+      blocks = { children: { list: async (args) => { bodyCalls.push(args); return bodyReader(args); } } };
     },
     APIResponseError: { isAPIResponseError: () => false }, APIErrorCode: {},
     RequestTimeoutError: { isRequestTimeoutError: () => false },
@@ -106,9 +110,9 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     background = task;
     registered.resolve();
   } } });
-  const { getDiaries, warmDiariesCache, getCachedDiaries, getDiaryById, markDiariesCacheStale } = await import("../lib/notion.ts");
+  const { getDiaries, warmDiariesCache, getCachedDiaries, getDiaryById, markDiariesCacheStale, getAnalysisDiaries, IncompleteAnalysisSourceError } = await import("../lib/notion.ts");
 
-  await t.test("maps Date.created_time, sorts by milliseconds with pinned first, and warms v5", async () => {
+  await t.test("maps Date.created_time, sorts by milliseconds with pinned first, and warms v6", async () => {
     pages = [
       page("early", "2026-09-30T16:30:00.001Z"),
       page("pin-early", "2026-09-30T16:00:00.001Z", true),
@@ -133,20 +137,20 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
       ["warmed", "2026-10-02", "2026-10-01T16:00:00.456Z"]);
     assert.equal(warmed.summary, "body:warmed");
     assert.equal(query.mock.callCount(), 2);
-    assert.equal(store.has(LEGACY), false, "refresh writes only v5");
+    assert.equal(store.has(LEGACY), false, "refresh writes only v6");
   });
 
-  await t.test("v5 wins when an older deployment writes or overwrites v4", async () => {
+  await t.test("v6 wins when an older deployment writes or overwrites v5", async () => {
     const current = await getCachedDiaries();
-    for (const summary of ["old", "overwritten by v4"]) {
+    for (const summary of ["old", "overwritten by v5"]) {
       store.set(LEGACY, { data: [{ id: "warmed", date: "2026-10-01", summary }], refreshedAt: Date.now() });
       assert.deepEqual(await getDiaries(), current);
       assert.deepEqual(await getCachedDiaries(), current);
     }
-    assert.equal(query.mock.callCount(), 2, "fresh v5 causes no SDK query");
+    assert.equal(query.mock.callCount(), 2, "fresh v6 causes no SDK query");
   });
 
-  await t.test("v4 remains a read-only media seed when v5 is missing, then refreshes", async () => {
+  await t.test("v5 remains a read-only media seed when v6 is missing, then refreshes", async () => {
     store.delete(CURRENT);
     const legacy = [{ id: "seed", date: "2026-09-30", isPublic: true,
       summary: "![](/api/media/b/test/abc)", images: ["/api/media/p/test/abc"] }];
@@ -311,7 +315,7 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     assert.deepEqual(store.get(LEGACY), legacy);
   });
 
-  await t.test("shared invalidation refreshes a fresh v5 snapshot after a busy lock is released", async () => {
+  await t.test("shared invalidation refreshes a fresh v6 snapshot after a busy lock is released", async () => {
     const signalKey = "notion:diaries:v2:invalidatedAt";
     const lockKey = "notion:diaries:v2:refreshLock";
     const freshSeed = [{ id: "fresh-seed", date: "2026-10-01", summary: "cached body", pinned: true }];
@@ -334,4 +338,63 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     assert.equal(query.mock.callCount() - callsBefore, 2);
     assert.equal((await getCachedDiaries()).some((d) => d.id === "fresh-seed"), false);
   });
+  await t.test("analysis requires verified complete bodies, reuses unchanged versions and excludes private sources", async () => {
+    store.delete("notion:diaries:v2:invalidatedAt");
+    const verified = page("verified", "2026-10-08T00:00:00Z");
+    verified.last_edited_time = "2026-10-08T01:00:00Z";
+    pages = [verified]; bodyReader = defaultBody;
+    await warmDiariesCache();
+    const first = await getAnalysisDiaries();
+    assert.equal(first[0].bodyStatus, "complete");
+    const count = bodyCalls.length;
+    await warmDiariesCache();
+    assert.equal(bodyCalls.length, count, "unchanged complete body is reusable");
+    verified.last_edited_time = "2026-10-08T02:00:00Z";
+    bodyReader = async () => { throw new Error("offline simulated failure"); };
+    await warmDiariesCache();
+    const old = (await getCachedDiaries())[0];
+    assert.equal(old.summary, first[0].summary, "display retains old body");
+    assert.equal(old.bodyStatus, "stale", "old body cannot certify new page");
+    store.set("notion:diaries:v2:refreshLock", "another-instance");
+    registered = Promise.withResolvers();
+    assert.equal(await getAnalysisDiaries(), null);
+    await registered.promise; await background;
+    store.delete("notion:diaries:v2:refreshLock");
+    bodyReader = defaultBody;
+    await warmDiariesCache();
+    assert.equal((await getAnalysisDiaries())[0].bodyStatus, "complete");
+    verified.properties.Public.checkbox = false;
+    await warmDiariesCache();
+    assert.deepEqual(await getAnalysisDiaries(), []);
+  });
+
+  await t.test("deep text and equations are included; unsupported text returns an explicit terminal condition", async () => {
+    pages = [page("depth-0", "2026-10-08T00:00:00Z")];
+    bodyReader = async ({ block_id }) => {
+      const depth = Number(block_id.split("-")[1]);
+      return { has_more: false, next_cursor: null, results: depth < 7
+        ? [{object:"block",id:`depth-${depth + 1}`,type:"toggle",has_children:true,toggle:{rich_text:[richText(`level ${depth}`)]}}]
+        : [{object:"block",id:"tail",type:"paragraph",has_children:false,paragraph:{rich_text:[richText("尾部反例，不能遗漏。")]}},
+           {object:"block",id:"formula",type:"equation",has_children:false,equation:{expression:"E=mc^2"}}] };
+    };
+    await warmDiariesCache();
+    const d = (await getAnalysisDiaries())[0];
+    assert(d.summary.includes("尾部反例")); assert(d.summary.includes("E=mc^2"));
+    bodyReader = async () => ({has_more:false,next_cursor:null,results:[{object:"block",id:"unsupported",type:"unsupported",has_children:false,unsupported:{}}]});
+    await warmDiariesCache();
+    assert.equal((await getCachedDiaries())[0].bodyStatus, "partial");
+    await assert.rejects(getAnalysisDiaries(), IncompleteAnalysisSourceError);
+    bodyReader = defaultBody;
+  });
+
+  await t.test("invalidated snapshot cannot publish an analysis while another instance refreshes", async () => {
+    await warmDiariesCache();
+    store.set("notion:diaries:v2:invalidatedAt", Date.now() + 1000);
+    store.set("notion:diaries:v2:refreshLock", "another-instance");
+    registered = Promise.withResolvers();
+    assert.equal(await getAnalysisDiaries(), null);
+    await registered.promise; await background;
+    store.delete("notion:diaries:v2:refreshLock");
+  });
+
 });
