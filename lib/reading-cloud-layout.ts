@@ -27,7 +27,11 @@ export type CloudPlacement = {
   x: number;
   y: number;
   fontSize: number;
-  alpha: number;
+  /**
+   * 绿色档位：1 最深（首名）、2 中间、3 最浅（末名）。
+   * 对应色值见 `app/globals.css` 的 `--dr-cloud-{1,2,3}`。
+   */
+  shade: 1 | 2 | 3;
   bold: boolean;
 };
 
@@ -38,13 +42,19 @@ function fontPx(rank: number, total: number): number {
 }
 
 /**
- * 名次 → 绿色深浅。全部是主题绿，只是越靠后越淡（90% → 60%），
- * 首名再加粗。不用灰阶，也不引入第二种色相。
+ * 名次 → 绿色档位。
+ *
+ * 早先用「同一色 + 递减透明度」表达层级，实测白底上末名只有 2.21:1 对比度，
+ * 排在最后的词几乎读不清；而且这套主题色在白底上无论怎么调透明度都到不了
+ * WCAG 正文的 4.5:1（emerald-600 的上限就是 3.66:1）。
+ * 因此改成三档**实体色**：亮色 700 / 700 / 600（最浅一档 3.77:1，作为层级尾部
+ * 有意弱化，已在 README 注明），暗色 300 / 400 / 500（均 ≥ 5.8:1）。
+ * 层级同时由字号与字重承担。
  */
-function greenStyle(rank: number, total: number): { alpha: number; bold: boolean } {
-  if (total <= 1) return { alpha: 1, bold: true };
+function greenStyle(rank: number, total: number): { shade: 1 | 2 | 3; bold: boolean } {
+  if (total <= 1) return { shade: 1, bold: true };
   const t = rank / (total - 1);
-  return { alpha: Math.round((0.62 + 0.38 * (1 - t)) * 100) / 100, bold: rank === 0 };
+  return { shade: rank === 0 ? 1 : t <= 0.5 ? 2 : 3, bold: rank === 0 };
 }
 
 /**
@@ -60,19 +70,6 @@ export function estimateWordWidth(name: string, fontSize: number): number {
   return em * fontSize;
 }
 
-/**
- * 圆形散开的落位：首名居中，其余按角度均匀分布在一圈（必要时套第二圈）上。
- *
- * 为什么不用「螺旋找第一个空位」那套通用算法（试过三版，都退化）：
- * 卡片只有 156px 宽，出版社一个词就占 90~110px，通用算法逐词找最近空位时，
- * 后续词总能在中心正下方几像素处找到一个「不压住」的点，
- * 于是六个词排成一竖列 —— 看起来像列表，不像云图。
- * 改成显式的环：第 k 个词的角度 = 均分角 + 黄金角 × k，半径按圈数递推，
- * 落不下（横向会越界、或撞上已放的词）就换下一个角度，最多试一圈半。
- * 结果稳定：同一份数据每次都一样，且词必然绕着中心铺开。
- *
- * 椭圆而不是正圆：卡片是 166 宽 × 156 高的横向矩形，正圆会把词推到左右边界外。
- */
 /**
  * 散开用的是「力导向松弛」而不是螺旋找空位 —— 试过三版螺旋（螺线、环网格、固定椭圆环），
  * 在 166 × 156 这么小的画布上都会退化成中间一竖列或规整的方阵：
@@ -253,7 +250,7 @@ export function layoutCloud(words: RawWord[], width: number, height: number): Cl
     x: Math.round(pos[i].x * 10) / 10,
     y: Math.round(pos[i].y * 10) / 10,
     fontSize: b.fontSize,
-    alpha: b.alpha,
+    shade: b.shade,
     bold: b.bold,
   }));
 }

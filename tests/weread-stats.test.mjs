@@ -605,10 +605,56 @@ test("字号按名次递减，颜色全部是绿色深浅（不出现灰阶）",
   assert.deepEqual(out.map((p) => p.fontSize), [15, 14, 12, 11]);
   assert.equal(out[0].bold, true, "首名应加粗");
   assert.equal(out[3].bold, false);
-  // alpha 递减且都在 (0, 1]，组件据此做 color-mix，没有灰阶分支
-  const alphas = out.map((p) => p.alpha);
-  assert.deepEqual(alphas, [...alphas].sort((a, b) => b - a));
-  assert.ok(alphas.every((a) => a > 0 && a <= 1));
+  // 绿色档位由浅入深：首名 1，越靠后档位数字越大，组件按档位取实体色，没有灰阶分支
+  const shades = out.map((p) => p.shade);
+  assert.deepEqual(shades, [1, 2, 3, 3]);
+  assert.ok(shades.every((sh) => sh === 1 || sh === 2 || sh === 3));
+});
+
+test("最浅一档的绿色在白底上仍有 3.7:1 对比度（不低于旧实现的 2.21:1）", () => {
+  // 回归用例：曾用「同一色 + 递减 opacity」，白底末名只有 2.21:1，几乎读不清。
+  // 现在最浅一档是实体 emerald-600，白底实测 3.77:1；正文标准 4.5:1 达不到
+  // （该色在白底的上限就是 3.66:1），属有意弱化的层级尾部，已在 README 注明。
+  const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const contrastOnWhite = (hex) => {
+    const rgb = [(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff].map((v) => v / 255);
+    const L = 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+    return 1.05 / (L + 0.05);
+  };
+  const last = layoutCloud(
+    Array.from({ length: 5 }, (_, i) => ({ name: `词${i}`, note: "", weight: 100 - i * 10 })),
+    CLOUD_W,
+    CLOUD_H,
+  ).at(-1);
+  assert.equal(last.shade, 3, "末名应落在最浅一档");
+  // 组件里第 3 档对应的色值：亮色 emerald-600 (#059669)
+  const ratio = contrastOnWhite(0x059669);
+  assert.ok(ratio >= 3.7, `最浅一档对比度 ${ratio.toFixed(2)}:1，低于 3.7:1`);
+});
+
+test("三档色值在亮暗两种主题下都不低于 3.7:1", () => {
+  const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const L = (hex) => {
+    const rgb = [(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff].map((v) => v / 255);
+    return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+  };
+  const ratio = (fg, bg) => {
+    const [a, b] = [L(fg), L(bg)].sort((x, y) => y - x);
+    return (a + 0.05) / (b + 0.05);
+  };
+  const WHITE = 0xffffff;
+  const ZINC800 = 0x27272a; // 暗色卡片底
+  // 亮色三档：emerald-700 / 700 / 600；暗色三档：emerald-300 / 400 / 500
+  const light = [0x047857, 0x047857, 0x059669];
+  const dark = [0x6ee7b7, 0x34d399, 0x10b981];
+  for (const [i, hex] of light.entries()) {
+    const r = ratio(hex, WHITE);
+    assert.ok(r >= 3.7, `亮色第 ${i + 1} 档 ${r.toFixed(2)}:1 偏低`);
+  }
+  for (const [i, hex] of dark.entries()) {
+    const r = ratio(hex, ZINC800);
+    assert.ok(r >= 5, `暗色第 ${i + 1} 档 ${r.toFixed(2)}:1 偏低`);
+  }
 });
 
 test("同一份数据每次排布完全一致（缓存与 SSR 不会抖）", () => {
