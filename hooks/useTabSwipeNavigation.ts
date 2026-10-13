@@ -52,7 +52,7 @@ export function useTabSwipeNavigation(
     let lastTriggerDir: 1 | -1 | 0 = 0;
 
     function onWheel(e: WheelEvent) {
-      // 数字人面板里的横滚留给面板自己（代码块、表格横向滚动）
+      // AI-Persona 面板里的横滚留给面板自己（代码块、表格横向滚动）
       if (isInPetChat(e.target)) return;
       // 只关心横向意图：deltaX 的绝对值要大于 deltaY 才算横滚
       if (!(Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 2)) return;

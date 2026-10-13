@@ -2,7 +2,7 @@ import type { Diary } from "@/lib/notion";
 import { postTitle } from "@/lib/persona/retrieve";
 
 /**
- * 博客概况：每轮对话按当前日记缓存实时统计，让数字人答得出「多少篇」「最早哪天」这类问题。
+ * 博客概况：每轮对话按当前日记缓存实时统计，让 AI-Persona 答得出「多少篇」「最早哪天」这类问题。
  * 数据与页面上显示的同源，不额外请求。
  */
 export type BlogFacts = {

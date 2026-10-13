@@ -248,7 +248,7 @@ export function PetChatPanel({
       )}
     <div
       role="dialog"
-      aria-label="滕君的 AI-Persona"
+      aria-label="滕君的数字人"
       aria-hidden={!open}
       inert={!open}
       data-pet-chat
@@ -353,7 +353,7 @@ export function PetChatPanel({
               onKeyDown={onKeyDown}
               maxLength={2000}
               disabled={notReady}
-              placeholder={notReady ? "还在准备中" : "问问滕君的 AI-Persona"}
+              placeholder={notReady ? "还在准备中" : "问问滕君的数字人"}
               aria-label="输入消息"
               // 全局 :focus-visible 轮廓不在 layer 里，工具类盖不过
               style={{ outline: "none" }}

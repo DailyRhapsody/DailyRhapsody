@@ -56,7 +56,7 @@ function newId(): string {
 }
 
 /**
- * 数字人对话状态。对话只存在本标签页的 sessionStorage：站内链接整页跳转后能接上，
+ * AI-Persona 对话状态。对话只存在本标签页的 sessionStorage：站内链接整页跳转后能接上，
  * 关掉标签页即清空，不在服务端留存。
  */
 export function usePetChat() {

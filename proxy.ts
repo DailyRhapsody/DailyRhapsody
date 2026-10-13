@@ -44,7 +44,7 @@ function passPublicDataApi(req: NextRequest): boolean {
 
 function isProtectedPublicApi(pathname: string, method: string): boolean {
   if (method === "GET" && pathname === "/api/profile") return true;
-  // 数字人对话：花钱的接口，必须先过 PoW 握手
+  // AI-Persona 对话：花钱的接口，必须先过 PoW 握手
   if ((method === "GET" || method === "POST") && pathname === "/api/chat") return true;
   if (method === "GET" && pathname.startsWith("/api/moments")) return true;
   if (method === "GET" && pathname.startsWith("/api/reference")) return true;
