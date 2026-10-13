@@ -70,7 +70,7 @@ function Launcher() {
           setEverOpened(true);
           setOpen((v) => !v);
         }}
-        aria-label={open ? "收起对话" : "和滕君的 AI 分身聊聊"}
+        aria-label={open ? "收起对话" : "和滕君的 AI-Persona 聊聊"}
         aria-expanded={open}
         // 不用 env(safe-area-inset-*)：页面没有 viewport-fit=cover，它恒为 0。宠物上线后 Safari 26
         // 顶栏下方出现白缝，这是当时全站唯一新增的 safe-area 引用，去掉无副作用
