@@ -77,7 +77,7 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
   let bodyReader = defaultBody;
   const bodyCalls = [];
 
-  t.mock.module("@notionhq/client", { exports: {
+  t.mock.module("@notionhq/client", { namedExports: {
     Client: class {
       constructor({ auth }) { assert.equal(auth, "test-notion-token"); }
       databases = { query };
@@ -88,7 +88,7 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     RequestTimeoutError: { isRequestTimeoutError: () => false },
   } });
   const read = (key) => structuredClone(store.get(key) ?? null);
-  t.mock.module("@upstash/redis", { exports: { Redis: class {
+  t.mock.module("@upstash/redis", { namedExports: { Redis: class {
     constructor({ url, token }) {
       assert.equal(url, env.UPSTASH_REDIS_REST_URL);
       assert.equal(token, "test-redis-token");
@@ -106,7 +106,7 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
       return store.get(key) === token ? Number(store.delete(key)) : 0;
     }
   } } });
-  t.mock.module("@vercel/functions", { exports: { waitUntil(task) {
+  t.mock.module("@vercel/functions", { namedExports: { waitUntil(task) {
     background = task;
     registered.resolve();
   } } });
@@ -217,8 +217,8 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     let admin = false;
     // Only the request identity/guard are stubbed; data mapping, sorting, filtering,
     // pagination, outline construction and NextResponse serialization are real.
-    t.mock.module("../lib/auth.ts", { exports: { isAdmin: async () => admin } });
-    t.mock.module("../lib/request-guard.ts", { exports: {
+    t.mock.module("../lib/auth.ts", { namedExports: { isAdmin: async () => admin } });
+    t.mock.module("../lib/request-guard.ts", { namedExports: {
       guardApiRequest: async () => null,
       withAntiScrapeHeaders: (response) => response,
     } });

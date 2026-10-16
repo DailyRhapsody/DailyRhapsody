@@ -10,6 +10,7 @@
  */
 
 import { IncompleteAnalysisSourceError } from "@/lib/notion";
+import { runCoreValues } from "@/lib/persona/core-values-route";
 import { runFirstPrinciples } from "@/lib/persona/first-principles-route";
 import type { SkillId } from "@/lib/persona/skills";
 
@@ -34,6 +35,17 @@ export type SkillRunner = {
 export const SKILL_RUNNERS: Record<SkillId, SkillRunner> = {
   "first-principles": {
     run: ({ req, authorize }) => runFirstPrinciples(req, authorize),
+    failure: (e) =>
+      e instanceof IncompleteAnalysisSourceError
+        ? {
+            status: 422,
+            error: `${e.count} 篇公开文章含尚未完整读取的文字，请补齐正文后再分析。`,
+          }
+        : null,
+  },
+  "core-values": {
+    run: ({ req, authorize }) => runCoreValues(req, authorize),
+    // 与第一个 skill 读同一份来源，正文不完整时的失败形状相同，文案可共用
     failure: (e) =>
       e instanceof IncompleteAnalysisSourceError
         ? {

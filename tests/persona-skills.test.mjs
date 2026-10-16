@@ -74,6 +74,23 @@ test('对外名称是「第一性原理洞察」，协议 id 保持不变', () =
   assert.equal(meta.quota, 'analysis');
 });
 
+test('对外名称是「核心价值观」，协议 id 独立于展示文案', () => {
+  const meta = findSkill('core-values');
+  assert.equal(meta.label, '核心价值观');
+  assert.equal(meta.id, 'core-values');
+  assert.equal(meta.quota, 'analysis');
+});
+
+test('核心价值观自己认领正文不完整的失败，其余交给通用文案', () => {
+  const runner = skillRunner('core-values');
+  const failure = runner.failure?.(new IncompleteAnalysisSourceError(2));
+  assert.equal(failure?.status, 422);
+  assert.match(failure.error, /2 篇/);
+  // 认不出来的异常返回 null，由路由回落到目录里的 failure 文案
+  assert.equal(runner.failure?.(new Error('boom')), null);
+  assert.equal(skillRunner('core-values').failure?.('not an error'), null);
+});
+
 test('目录必须保持客户端安全：不得出现运行期 import', async () => {
   // 目录会被打进浏览器产物，实现不会。这条守卫防的是「顺手 import 一个服务端模块」——
   // 那种改动 next build 不会报错（@/lib/notion 这类真实模块能解析），
@@ -100,7 +117,8 @@ test('runner 依赖图不得触达人设包、提示词与鉴权', async () => {
   // 它返回未过滤缓存（含 isPublic === false 的私域文章），而 lib/notion.ts
   // 本来就在依赖图里，改一个词就能拿到。
   const forbidden = ['@/lib/persona/store', '@/lib/persona/prompt', '@/lib/auth', 'getCachedDiaries'];
-  for (const file of ['skill-runners.ts', 'first-principles-route.ts', 'first-principles.ts']) {
+  for (const file of ['skill-runners.ts', 'first-principles-route.ts', 'first-principles.ts',
+    'core-values-route.ts', 'core-values.ts']) {
     const src = await readFile(new URL(`../lib/persona/${file}`, import.meta.url), 'utf8');
     for (const bad of forbidden) {
       assert.ok(!src.includes(bad), `${file} 不得引用 ${bad}`);
