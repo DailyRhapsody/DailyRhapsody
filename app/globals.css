@@ -161,7 +161,7 @@ input[type="number"] {
 }
 
 
-/* 右下角像素宇航员：失重漂浮 + 面罩里眨眼；生成回复时眼睛闪烁、纸飞机绕飞 */
+/* 右下角像素宇航员：失重漂浮 + 面罩里眨眼；生成回复时眼睛闪烁 */
 @keyframes dr-pet-float {
   0%,
   100% {
@@ -204,143 +204,6 @@ input[type="number"] {
   animation: dr-pet-think 0.9s ease-in-out infinite;
 }
 
-/* 纸飞机沿圆周绕飞，机头始终朝切线方向 */
-@keyframes dr-pet-plane {
-  from {
-    transform: rotate(0deg) translateX(44px) rotate(100deg);
-  }
-  to {
-    transform: rotate(360deg) translateX(44px) rotate(100deg);
-  }
-}
-.dr-pet-plane {
-  animation: dr-pet-plane 2.4s linear infinite;
-}
-
-/* 数据轨道：面罩里叠一层 HUD 栅格，身体外侧绕一圈像素粒子（细虚线圈出轨道）。
-   颜色只取精灵自身的中性灰 #a9a9af，不引入新色相；尺寸按百分比给，随 scale 变化；
-   叠加层都不接事件，按钮的可点区域与改动前一致 */
-.dr-pet-visor {
-  position: absolute;
-  left: 9.1%;
-  top: 8.7%;
-  width: 81.8%;
-  height: 47.8%;
-  border-radius: 7%;
-  /* 只在面罩玻璃的左右两条边带留栅格，中间整条让开，不切五官 */
-  background: repeating-linear-gradient(to bottom, rgb(39 39 42 / 0.22) 0 1px, transparent 1px 5px);
-  -webkit-mask-image: linear-gradient(to right, #000 0 16%, transparent 27% 73%, #000 84% 100%);
-  mask-image: linear-gradient(to right, #000 0 16%, transparent 27% 73%, #000 84% 100%);
-  pointer-events: none;
-}
-.dr-pet-orbit {
-  position: absolute;
-  inset: 0;
-  transform: scaleY(0.55);
-  pointer-events: none;
-}
-.dr-pet-orbit-track,
-.dr-pet-ring {
-  position: absolute;
-  left: -9%;
-  top: -9%;
-  width: 118%;
-  height: 118%;
-  border-radius: 50%;
-}
-.dr-pet-orbit-track {
-  border: 1px dashed rgb(169 169 175 / 0.55);
-}
-.dr-pet-ring {
-  animation: dr-pet-orbit-spin 7s linear infinite;
-}
-.dr-pet-ring-slow {
-  animation-direction: reverse;
-  animation-duration: 13s;
-}
-.dr-pet-ring > i {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  width: 4px;
-  height: 4px;
-  margin: -2px 0 0 -2px;
-  background: #a9a9af;
-}
-.dr-pet-ring > i:nth-child(2) {
-  left: 6.7%;
-  top: 75%;
-}
-.dr-pet-ring > i:nth-child(3) {
-  left: 93.3%;
-  top: 75%;
-}
-/* 慢环与快环同在一个类上（dr-pet-ring dr-pet-ring-slow），所以这两条必须排在快环之后 */
-.dr-pet-ring-slow > i:nth-child(1) {
-  left: 6.7%;
-  top: 25%;
-}
-.dr-pet-ring-slow > i:nth-child(2) {
-  left: 93.3%;
-  top: 25%;
-}
-@keyframes dr-pet-orbit-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.dr-pet-motes {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-.dr-pet-motes > i {
-  position: absolute;
-  bottom: 10%;
-  width: 4px;
-  height: 4px;
-  margin-left: -2px;
-  background: #a9a9af;
-  opacity: 0;
-  animation: dr-pet-mote 2.6s linear infinite;
-}
-.dr-pet-motes > i:nth-child(1) {
-  left: 26%;
-}
-.dr-pet-motes > i:nth-child(2) {
-  left: 50%;
-  animation-delay: 0.7s;
-}
-.dr-pet-motes > i:nth-child(3) {
-  left: 74%;
-  animation-delay: 1.3s;
-}
-@keyframes dr-pet-mote {
-  0% {
-    bottom: 10%;
-    opacity: 0;
-    transform: scale(0.6);
-  }
-  20% {
-    opacity: 0.9;
-  }
-  100% {
-    bottom: 94%;
-    opacity: 0;
-    transform: scale(1);
-  }
-}
-/* 生成回复时：轨道转得更快、方块上浮更快 */
-html[data-pet-chat="thinking"] .dr-pet-ring {
-  animation-duration: 3s;
-}
-html[data-pet-chat="thinking"] .dr-pet-ring-slow {
-  animation-duration: 5.5s;
-}
-html[data-pet-chat="thinking"] .dr-pet-motes > i {
-  animation-duration: 1.8s;
-}
-
 @keyframes dr-pet-dot {
   0%,
   80%,
@@ -361,16 +224,8 @@ html[data-pet-chat="thinking"] .dr-pet-motes > i {
   .dr-pet-float,
   .dr-pet-eyes,
   .dr-pet-eyes-think,
-  .dr-pet-plane,
-  .dr-pet-dot,
-  .dr-pet-ring,
-  .dr-pet-motes > i {
+  .dr-pet-dot {
     animation: none;
-  }
-  .dr-pet-plane,
-  .dr-pet-orbit,
-  .dr-pet-motes {
-    display: none;
   }
 }
 

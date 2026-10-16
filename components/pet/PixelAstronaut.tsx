@@ -1,8 +1,7 @@
 /**
  * 右下角的像素宇航员，照作者本人画：透明面罩里是短寸头、圆框玳瑁眼镜，
- * 灰色卫衣质感的宇航服、黑色背包肩带，红臂章与纸飞机取自站点头像。
- * 待机时失重漂浮、镜片后的眼睛眨动；生成回复时眼睛闪烁、纸飞机绕飞。
- * orbit 打开时在面罩里叠 HUD 栅格、身体外侧绕一圈像素粒子（数据轨道）。
+ * 灰色卫衣质感的宇航服、黑色背包肩带，红臂章取自站点头像。
+ * 待机时失重漂浮、镜片后的眼睛眨动；生成回复时眼睛闪烁。
  * 动画都在 globals.css 的 dr-pet-* 里，prefers-reduced-motion 下全部关闭。
  */
 
@@ -32,16 +31,6 @@ const ASTRONAUT = [
   "...KKKKKK..KKKKKKK....",
 ];
 
-const PLANE = [
-  "........KK",
-  ".....KKKPK",
-  "..KKKPPPK.",
-  "KKPPPPPK..",
-  ".KKQQPK...",
-  "...KKQK...",
-  ".....KK...",
-];
-
 const PALETTE: Record<string, string> = {
   K: "#27272a", // 描边
   G: "#dbeafe", // 面罩玻璃
@@ -61,8 +50,6 @@ const PALETTE: Record<string, string> = {
   D: "#a9a9af",
   B: "#1f1f22", // 背包肩带
   R: "#ef4444", // 红臂章
-  P: "#ffffff", // 纸飞机
-  Q: "#e4e4e7",
 };
 
 type Run = { x: number; y: number; w: number; c: string };
@@ -89,7 +76,6 @@ function toRuns(sprite: string[]): Run[] {
 
 const BODY_RUNS = toRuns(ASTRONAUT).filter((r) => r.c !== "E");
 const EYE_RUNS = toRuns(ASTRONAUT).filter((r) => r.c === "E");
-const PLANE_RUNS = toRuns(PLANE);
 
 function Rects({ runs }: { runs: Run[] }) {
   return (
@@ -105,43 +91,17 @@ export function PixelAstronaut({
   scale = 3,
   thinking = false,
   still = false,
-  orbit = false,
 }: {
   /** 每个像素的屏幕尺寸（px） */
   scale?: number;
   thinking?: boolean;
   /** 面板头像等小尺寸处不漂浮 */
   still?: boolean;
-  /** 数据轨道：面罩 HUD 栅格与绕体像素粒子，只给右下角入口用 */
-  orbit?: boolean;
 }) {
   const w = ASTRONAUT[0].length;
   const h = ASTRONAUT.length;
   return (
     <span className="relative inline-block" style={{ width: w * scale, height: h * scale }} aria-hidden="true">
-      {orbit && (
-        <>
-          <span className="dr-pet-orbit">
-            <span className="dr-pet-orbit-track" />
-            <span className="dr-pet-ring">
-              <i />
-              <i />
-              <i />
-            </span>
-            <span className="dr-pet-ring dr-pet-ring-slow">
-              <i />
-              <i />
-            </span>
-          </span>
-          {thinking && (
-            <span className="dr-pet-motes">
-              <i />
-              <i />
-              <i />
-            </span>
-          )}
-        </>
-      )}
       <svg
         className={`absolute inset-0 overflow-visible ${still ? "" : "dr-pet-float"}`}
         width={w * scale}
@@ -154,21 +114,6 @@ export function PixelAstronaut({
           <Rects runs={EYE_RUNS} />
         </g>
       </svg>
-      {/* 面罩栅格要盖在精灵上，放在 svg 之后 */}
-      {orbit && <span className="dr-pet-visor" />}
-      {thinking && !still && (
-        <span className="dr-pet-plane pointer-events-none absolute left-1/2 top-1/2">
-          <svg
-            width={PLANE[0].length * Math.max(1, scale - 1)}
-            height={PLANE.length * Math.max(1, scale - 1)}
-            viewBox={`0 0 ${PLANE[0].length} ${PLANE.length}`}
-            shapeRendering="crispEdges"
-            className="-translate-x-1/2 -translate-y-1/2"
-          >
-            <Rects runs={PLANE_RUNS} />
-          </svg>
-        </span>
-      )}
     </span>
   );
 }
