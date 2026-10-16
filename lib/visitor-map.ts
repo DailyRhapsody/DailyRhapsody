@@ -49,12 +49,31 @@ export function worldCellFor(lat: number, lon: number): WorldCell {
   };
 }
 
-/** 格子中心点的经纬度（对外发布点位时用它替代精确坐标）。 */
+/**
+ * 格子中心点的经纬度（对外发布点位时用它替代精确坐标）。
+ * 收敛到 3 位小数：格子本身约 1.9°，多出来的浮点位没有信息量，只会让「格子中心」看起来像精确坐标。
+ */
 export function worldCellCenter(cell: WorldCell): { lat: number; lon: number } {
   const lon = -180 + ((cell.col + 0.5) / WORLD_MASK_W) * 360;
   const lat =
     WORLD_LAT_TOP - ((cell.row + 0.5) / WORLD_MASK_H) * (WORLD_LAT_TOP - WORLD_LAT_BOTTOM);
-  return { lat, lon };
+  return { lat: Math.round(lat * 1000) / 1000, lon: Math.round(lon * 1000) / 1000 };
+}
+
+/**
+ * 发布点位的运行时校验：缓存读回来的值同样要过关（同一 Redis 库里还存着 Notion 缓存、
+ * 限流计数与 profile，不能假设 dr:visitormap:* 里的东西一定是本函数写进去的）。
+ */
+export function isValidVisitorMapPoint(p: unknown): p is VisitorMapPoint {
+  const v = p as VisitorMapPoint | null;
+  if (!v || typeof v !== "object") return false;
+  if (!Number.isFinite(v.lat) || !Number.isFinite(v.lon) || !Number.isFinite(v.count)) return false;
+  if (v.lat < WORLD_LAT_BOTTOM || v.lat > WORLD_LAT_TOP) return false;
+  if (v.lon < -180 || v.lon > 180) return false;
+  if (v.count <= 0 || !Number.isInteger(v.count)) return false;
+  const cell = worldCellFor(v.lat, v.lon);
+  const center = worldCellCenter(cell);
+  return Math.abs(center.lat - v.lat) < 1e-6 && Math.abs(center.lon - v.lon) < 1e-6;
 }
 
 export type VisitorMapSourcePoint = { lat: number; lng: number; count: number };

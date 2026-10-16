@@ -258,6 +258,7 @@ export const config = {
     "/api/profile",
     "/api/chat",
     "/api/analytics/collect",
+    "/api/analytics/visitor-map",
     "/api/gate/:path*",
     "/api/honeypot",
     "/",

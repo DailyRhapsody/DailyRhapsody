@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   WORLD_LAT_BOTTOM,
   WORLD_LAT_TOP,
@@ -26,12 +26,10 @@ import {
 export function VisitorWorldMap({
   points,
   intensity = 1,
-  className = "",
 }: {
   points: VisitorMapPoint[] | null;
   /** 底图与光点的整体强度，1 是默认的弱化档 */
   intensity?: number;
-  className?: string;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLCanvasElement>(null);
@@ -40,6 +38,34 @@ export function VisitorWorldMap({
   const stateRef = useRef({ cell: 0, top: 0, w: 0, h: 0 });
 
   const landBits = useRef<Uint8Array | null>(null);
+
+  /* 系统配色与「减弱动态效果」：只在媒体变化时更新 state，底图与光点都跟着重绘。
+     之前每帧都读两次 matchMedia，运行时切主题时虽然能跟上，但代价是每帧都在做媒体查询。 */
+  const [scheme, setScheme] = useState({ dark: false, reduce: false });
+  useEffect(() => {
+    const darkMq = window.matchMedia("(prefers-color-scheme: dark)");
+    const reduceMq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setScheme({ dark: darkMq.matches, reduce: reduceMq.matches });
+    sync();
+    darkMq.addEventListener("change", sync);
+    reduceMq.addEventListener("change", sync);
+    return () => {
+      darkMq.removeEventListener("change", sync);
+      reduceMq.removeEventListener("change", sync);
+    };
+  }, []);
+
+  /* 最亮三个光点的 key：按 points 算一次，不进 rAF 循环（否则每帧 sort 一遍） */
+  const brightestKeys = useMemo(
+    () =>
+      new Set(
+        [...(points ?? [])]
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 3)
+          .map((p) => `${p.lat},${p.lon}`),
+      ),
+    [points],
+  );
 
   const decodeOnce = useCallback(() => {
     if (!landBits.current) landBits.current = decodeWorldMask();
@@ -75,7 +101,7 @@ export function VisitorWorldMap({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const dark = scheme.dark;
     const alpha = (dark ? 0.26 : 0.22) * intensity;
     ctx.fillStyle = dark
       ? `rgba(190,190,200,${alpha})`
@@ -95,7 +121,7 @@ export function VisitorWorldMap({
     view.setTransform(dpr, 0, 0, dpr, 0, 0);
     view.clearRect(0, 0, w, h);
     view.drawImage(off, 0, 0, w, h);
-  }, [decodeOnce, intensity]);
+  }, [decodeOnce, intensity, scheme.dark]);
 
   const paintDots = useCallback(
     (t: number) => {
@@ -110,11 +136,8 @@ export function VisitorWorldMap({
       ctx.clearRect(0, 0, w, h);
       if (!points || points.length === 0) return;
 
-      const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const brightest = new Set(
-        [...points].sort((a, b) => b.count - a.count).slice(0, 3).map((p) => `${p.lat},${p.lon}`),
-      );
+      const { dark, reduce } = scheme;
+      const brightest = brightestKeys;
 
       for (const p of points) {
         const x = ((p.lon + 180) / 360) * WORLD_MASK_W * cell;
@@ -159,30 +182,40 @@ export function VisitorWorldMap({
         }
       }
     },
-    [intensity, points],
+    [brightestKeys, intensity, points, scheme],
   );
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    paintMap();
+    // ResizeObserver 在 observe 时会立刻回调一次，所以这里不再单独调用 paintMap()，
+    // 否则首帧会把 4344 个陆地格画两遍。
     const ro = new ResizeObserver(() => paintMap());
     ro.observe(host);
-    const onScheme = () => paintMap();
-    const scheme = window.matchMedia("(prefers-color-scheme: dark)");
-    scheme.addEventListener("change", onScheme);
-    return () => {
-      ro.disconnect();
-      scheme.removeEventListener("change", onScheme);
-    };
+    return () => ro.disconnect();
   }, [paintMap]);
 
   useEffect(() => {
     if (!points || points.length === 0) {
-      const ctx = dotRef.current?.getContext("2d");
-      const { w, h } = stateRef.current;
-      if (ctx && w && h) ctx.clearRect(0, 0, w, h);
+      const canvas = dotRef.current;
+      const ctx = canvas?.getContext("2d");
+      if (canvas && ctx) {
+        // 复位变换后按位图尺寸清：带着 dpr 缩放用 CSS 尺寸清，只会清掉 (1/dpr)^2 那一块
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
       return;
+    }
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) {
+      // 动效被禁用时画一帧就结束：视觉上本来就是静止的，没有理由继续 60Hz 重绘
+      paintDots(0);
+      const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+      const onReduceChange = () => {
+        if (mq.matches) paintDots(0);
+      };
+      mq.addEventListener("change", onReduceChange);
+      return () => mq.removeEventListener("change", onReduceChange);
     }
     let raf = 0;
     const tick = (t: number) => {
@@ -191,13 +224,13 @@ export function VisitorWorldMap({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [paintDots, points]);
+  }, [paintDots, points, scheme.reduce]);
 
   return (
     <div
       ref={hostRef}
       aria-hidden="true"
-      className={`pointer-events-none fixed inset-0 -z-10 overflow-hidden ${className}`}
+      className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
     >
       <div
         className="absolute inset-0"
