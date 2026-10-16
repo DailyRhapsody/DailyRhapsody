@@ -102,7 +102,7 @@ export function VisitorWorldMap({
     ctx.clearRect(0, 0, w, h);
 
     const dark = scheme.dark;
-    const alpha = (dark ? 0.26 : 0.22) * intensity;
+    const alpha = (dark ? 0.52 : 0.18) * intensity;
     ctx.fillStyle = dark
       ? `rgba(190,190,200,${alpha})`
       : `rgba(82,82,91,${alpha})`;
