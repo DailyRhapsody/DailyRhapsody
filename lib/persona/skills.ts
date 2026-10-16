@@ -43,6 +43,17 @@ export const SKILLS = [
     quota: "analysis",
     failure: "本次分析未完成，已保留进度，请重试。",
   },
+  {
+    // 与第一条共用同一批公开文章与同一份分析额度，但产出的是价值层结论：
+    // 取舍方向与排序，而不是命题层的共同前提。
+    id: "core-values",
+    label: "核心价值观",
+    hint: "分析全部公开文章，归纳作者看重的价值、取舍代价与价值排序",
+    progress: "正在读取公开文章",
+    prompt: "用核心价值观分析全部公开文章，梳理价值取向、取舍代价与价值排序。",
+    quota: "analysis",
+    failure: "本次分析未完成，已保留进度，请重试。",
+  },
 ] as const satisfies readonly SkillMeta[];
 
 /** 目录条目的联合类型。id 保持字面量，查表之后才能直接当作 SkillId 用。 */
