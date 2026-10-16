@@ -190,6 +190,46 @@ test("摘要字段异常时为空串，不抛异常", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 累计总览：总时长 / 读过本数 / 阅读天数（取自 overall 周期）
+// ---------------------------------------------------------------------------
+
+test("累计三项取自 overall：总时长按秒、读过取 readStat、天数取 readDays", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    totalReadTime: 4265472,
+    readDays: 1484,
+    readStat: [
+      { stat: "读过", counts: "404本" },
+      { stat: "读完", counts: "235本" },
+    ],
+  });
+  assert.equal(s.totalMinutes, 71091, "4265472 秒 = 71091.2 分 → 71091");
+  assert.equal(s.booksRead, 404);
+  assert.equal(s.totalDays, 1484);
+});
+
+test("累计周期缺失或字段异常时三项都不出现，首屏随之下线，不抛异常", () => {
+  const absent = buildReadingStats({ totalReadTime: 600 }, null);
+  for (const k of ["totalMinutes", "booksRead", "totalDays"]) {
+    assert.equal(k in absent, false, `${k} 不应存在`);
+  }
+  const bad = buildReadingStats({ totalReadTime: 600 }, {
+    totalReadTime: "abc",
+    readDays: -3,
+    readStat: [null, 42, { stat: "读过", counts: 7 }, { stat: "读过", counts: "0本" }],
+  });
+  for (const k of ["totalMinutes", "booksRead", "totalDays"]) {
+    assert.equal(k in bad, false, `${k} 不应存在（输入异常）`);
+  }
+});
+
+test("读过计数带万／亿量纲时不猜，宁可不显示", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    readStat: [{ stat: "读过", counts: "1.7万本" }],
+  });
+  assert.equal("booksRead" in s, false);
+});
+
+// ---------------------------------------------------------------------------
 // 累计偏好：每类取前 2 名
 // ---------------------------------------------------------------------------
 
@@ -491,6 +531,14 @@ test("缓存形状校验与构建器同口径，不误杀合法缓存", () => {
   assert.equal(isUsableCachedStats({ ...good, monthMinutes: -1 }), false);
   // 空数组是合法状态（当月没读到书、时段未达阈值），不能因此回源
   assert.equal(isUsableCachedStats({ ...good, books: [], hourly: [] }), true);
+  // 累计三项可选：缺失合法（overall 没拿到），存在时必须是正数
+  assert.equal(
+    isUsableCachedStats({ ...good, totalMinutes: 71091, booksRead: 404, totalDays: 1484 }),
+    true,
+  );
+  assert.equal(isUsableCachedStats({ ...good, totalMinutes: "x" }), false, "脏缓存不得让首屏渲染 NaNh");
+  assert.equal(isUsableCachedStats({ ...good, totalMinutes: 0 }), false);
+  assert.equal(isUsableCachedStats({ ...good, booksRead: -1 }), false);
   for (const bad of [null, undefined, "x", 42, {}]) {
     assert.equal(isUsableCachedStats(bad), false);
   }
@@ -785,6 +833,9 @@ test("真实回包的三张云图逐屏扫描：无重叠、无越界、居中",
   const overall = JSON.parse(readFileSync(new URL("./fixtures/weread-overall.json", import.meta.url), "utf8"));
   const stats = buildReadingStats(monthly, overall);
   assert.ok(stats, "真实回包应能构建出统计对象");
+  assert.equal(stats.totalMinutes, 71091, "夹具里的累计总时长照实解析");
+  assert.equal(stats.booksRead, 404);
+  assert.equal(stats.totalDays, 1484);
   const clouds = [...stats.authorClouds, ...stats.publisherClouds];
   assert.equal(clouds.length, 3, "现网应为作者 2 屏 + 出版社 1 屏");
   for (const cloud of clouds) {

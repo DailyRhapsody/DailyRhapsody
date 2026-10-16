@@ -68,6 +68,16 @@ export type ReadingStats = {
   books: ReadingBook[];
   /** 本月统计摘要，如「读过 1 本 · 阅读 4 天」，取自 readStat；书目少时用它填满该屏 */
   summary: string;
+  /**
+   * 累计口径三项，取自 overall 周期（首屏「累计总览」用）。
+   * overall 缺失或字段异常时整体不出现 —— 首屏随之下线，不显示半截数据；
+   * 因此是可选字段，缓存形状校验只在字段存在时管类型。
+   */
+  totalMinutes?: number;
+  /** 累计读过本数，取自 overall readStat 的「读过」一行 */
+  booksRead?: number;
+  /** 累计阅读天数，取自 overall readDays */
+  totalDays?: number;
   /** 累计偏好，取自 overall 周期，每类第 1 名 */
   preferences: ReadingPreference[];
   /**
@@ -95,11 +105,11 @@ export type ReadingStats = {
   refreshedAt: number;
 };
 
-// v8：字段名屏换成作者／出版社两张**云图轮播**卡，ReadingStats 的
-// authorCloud / publisherCloud 变成按屏排列的 authorClouds / publisherClouds。
+// v9：首屏改为「累计总览」（累计时长／读过本数／阅读天数，取自 overall 周期），
+// 原「本月时长」屏顺位第二；ReadingStats 随之增加 totalMinutes / booksRead / totalDays。
 // 与 Notion 侧同一约定：回包结构一变就推进版本号，否则旧结构会留在缓存里 ——
 // 新字段读不到、卡片少一屏，而且看起来像接口没返回数据。
-const CACHE_KEY = "dr:weread:monthly:v8";
+const CACHE_KEY = "dr:weread:monthly:v9";
 /** 与 Notion 侧同策略：硬 TTL 48h，对每日一次的 Cron 留出一整天余量 */
 const CACHE_HARD_TTL_S = 48 * 60 * 60;
 /** 独立超时预算。Cron 共享 300s 预算，微信读书失败可读上一份缓存，是最适合牺牲的一段 */
@@ -351,6 +361,36 @@ function parseSummary(monthly: Record<string, unknown>): string {
     .filter(([, counts]) => !/^0\D/.test(counts as string))
     .map(([stat, counts]) => `${stat} ${counts}`)
     .join(" · ");
+}
+
+/**
+ * 累计总览三项：总时长 / 读过本数 / 阅读天数，全部来自 overall 周期。
+ * 任何一项解析不出来就不带该字段（卡片逐项按有无渲染），不编造数字。
+ */
+function parseTotals(
+  overall: Record<string, unknown> | null,
+): Pick<ReadingStats, "totalMinutes" | "booksRead" | "totalDays"> {
+  if (!overall) return {};
+  const out: Pick<ReadingStats, "totalMinutes" | "booksRead" | "totalDays"> = {};
+
+  const minutes = toMinutes(overall.totalReadTime);
+  if (minutes !== null && minutes > 0) out.totalMinutes = minutes;
+
+  const days = Number(overall.readDays);
+  if (Number.isFinite(days) && days > 0) out.totalDays = Math.round(days);
+
+  const items = Array.isArray(overall.readStat) ? overall.readStat : [];
+  for (const item of items) {
+    if (typeof item !== "object" || item === null) continue;
+    const it = item as Record<string, unknown>;
+    if (it.stat !== "读过" || typeof it.counts !== "string") continue;
+    // 只认纯数字计数（实测「404本」）。带「万／亿」量纲的写法不猜，宁可不显示。
+    const m = /^(\d+)/.exec(it.counts.trim());
+    if (!m || /[万亿]/.test(it.counts)) continue;
+    const n = Number(m[1]);
+    if (n > 0) out.booksRead = n;
+  }
+  return out;
 }
 
 /**
@@ -611,6 +651,7 @@ export function buildReadingStats(
     authorClouds: parseAuthorClouds(overall),
     publisherClouds: parsePublisherClouds(overall),
     ...parseHourly(overall),
+    ...parseTotals(overall),
     refreshedAt: Date.now(),
   };
 }
@@ -634,7 +675,12 @@ export function isUsableCachedStats(value: unknown): value is ReadingStats {
     Array.isArray(v.books) &&
     Array.isArray(v.authorClouds) &&
     Array.isArray(v.publisherClouds) &&
-    Array.isArray(v.hourly)
+    Array.isArray(v.hourly) &&
+    // 累计三项是可选字段（overall 缺失时不存在）；存在时必须是正数，
+    // 免得脏缓存让首屏渲染出 NaNh 或「读过 undefined 本」
+    (v.totalMinutes === undefined || (typeof v.totalMinutes === "number" && v.totalMinutes > 0)) &&
+    (v.booksRead === undefined || (typeof v.booksRead === "number" && v.booksRead > 0)) &&
+    (v.totalDays === undefined || (typeof v.totalDays === "number" && v.totalDays > 0))
   );
 }
 
