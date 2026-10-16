@@ -20,6 +20,15 @@ import {
  * 对方会把本 skill 的进度当成自己的：报告引用一段原文、同时声明该段未纳入。
  */
 const TTL_SECONDS = 7 * 24 * 60 * 60;
+/**
+ * 输出预算与条数上限是配套的一档。最终报告最多 FINAL_MAX=8 条，每条满字段
+ * （claim 220 + boundary 220 + 3 条证据的引文与 key）约 1.06 万字符；
+ * 中文按最保守的 0.6 token/字符折算已越过 6144，strict 模式下会被供应商截断，
+ * 再由 llm.ts 抛成「模型未完整返回分析结果」，而这条错误不被 isProviderRefusal 认领，
+ * 于是整批硬失败、不写进度，每次点击白烧一次额度。最终层因此单给一档预算。
+ */
+const MAX_OUTPUT_TOKENS = 6_144;
+const FINAL_OUTPUT_TOKENS = 8_192;
 const RELEASE = 'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) end return 0';
 
 function json(body: unknown, status: number) {
@@ -78,7 +87,7 @@ export async function runCoreValues(req: Request, authorizeModel: () => Promise<
     /** 真的跑一次模型。拒答、网络、超时都原样抛出，由调用方分辨是不是内容策略拒答。 */
     const runModel = async (item: ValuesWork): Promise<string> => {
       const stream = await streamChat({ system: valuesPrompt(item),
-        messages: [{ role: "user", content: item.input }], maxTokens: 6_144,
+        messages: [{ role: "user", content: item.input }], maxTokens: item.final ? FINAL_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS,
         temperature: 0.2, strict: true, signal });
       const reader = stream.getReader(), decoder = new TextDecoder();
       let text = "";

@@ -130,18 +130,107 @@ test('报告按维度分节、取舍排在最前，链接由服务器生成并�
   assert.match(renderValues(c, { findings: [] }, { chunks: 12, articles: 4 }), /4 篇的部分正文被模型供应商的内容策略拒绝处理/);
 });
 
-test('提示词写清归属、情绪与约束三类规则，避免把转述与感慨记成核心价值', () => {
+test('提示词把分类判据写成可执行的排除式，不只是关键词存在', () => {
   const c = makeValuesCorpus([diary('a')]);
   const extract = valuesPrompt({ key: 'batch:x', phase: 'extract', chunks: c.chunks, input: JSON.stringify(c.chunks), final: false });
   const final = valuesPrompt({ key: 'report:x', phase: 'synthesize', input: '{"notes":[]}', final: true });
-  for (const prompt of [extract, final]) {
-    assert.match(prompt, /不可信资料/, '必须声明输入不可信');
-    assert.match(prompt, /tradeoff\|value\|judgment\|conflict\|shift/, '必须给出五个维度');
-    assert.match(prompt, /据说/, '必须写清转述不算作者立场');
-    assert.match(prompt, /情绪/, '必须把情绪与价值分开');
-    assert.match(prompt, /约束/, '被迫放弃必须与取舍区分');
+  // 「据说」一类归属词必须与否定同句，否则等于没排除
+  assert.match(extract, /归属词的是转述，同样不算/);
+  // 情态词与摘抄各有归属规则：这两条是真实语料里误判最多的来源
+  assert.match(extract, /「应该」「应当」「必须」只有在作者以第一人称认领/);
+  assert.match(extract, /整段是典籍、译文、格言或他人文章的摘抄时不算/);
+  // 取舍的主语约束与「约束」区分
+  assert.match(extract, /主语必须是作者本人/);
+  assert.match(extract, /记为约束，不算取舍/);
+  // 五类各自的判据句都在（各取一句可核的措辞）
+  assert.match(extract, /tradeoff 取舍与代价：[\s\S]*被让渡的那一项/);
+  assert.match(extract, /judgment 褒贬与底线：[\s\S]*可复述的做法/);
+  assert.match(extract, /conflict 张力与落差：[\s\S]*落差的方向/);
+  assert.match(extract, /shift 价值变化：[\s\S]*让位给另一种/);
+  assert.match(final, /每类至少保留一条/);
+});
+
+test('提示词里的维度枚举、条数上限与校验层同源，任一漂移都会红', () => {
+  const c = makeValuesCorpus([diary('a')]);
+  const chunk = c.chunks[0];
+  const make9 = (n) => Array.from({ length: n }, (_, i) => ({ kind: 'value', claim: `结论${i}`, evidence: [{ chunk: chunk.key, quote: chunk.text.slice(0, 6) }], boundary: '边界' }));
+  const final = valuesPrompt({ key: 'report:x', phase: 'synthesize', input: '{"notes":[]}', final: true });
+
+  // 枚举：提示词声明的 kind 集合必须与校验层白名单一致（加类或改名都会在这里红）
+  const declared = final.match(/"kind":"([^"]+)"/)[1].split('|');
+  for (const kind of declared) {
+    assert.equal(validateValuesNote({ findings: [{ ...make9(1)[0], kind }] }, [chunk]).findings[0].kind, kind);
   }
-  assert.match(extract, /最多2条/);
-  assert.match(final, /最多8条/);
-  assert.match(final, /有多篇独立文章支持/);
+  assert.throws(() => validateValuesNote({ findings: [{ ...make9(1)[0], kind: 'premise' }] }, [chunk]), /缺少原文证据/);
+
+  // 条数：提示词写的上限必须等于校验层的实际截断条数（两边任一侧改动都会红）
+  const cap = Number(final.match(/最多(\d+)条/)[1]);
+  assert.equal(validateValuesNote({ findings: make9(cap + 3) }, c.chunks, cap, { dropUnverified: true }).findings.length, cap);
+  // 默认上限（最终报告那一档）也必须等于提示词写的数
+  assert.equal(validateValuesNote({ findings: make9(cap + 3) }, c.chunks, undefined, { dropUnverified: true }).findings.length, cap);
+  // 严格模式仍然硬失败：超上限只允许在可丢弃层被截断
+  assert.throws(() => validateValuesNote({ findings: make9(cap + 1) }, c.chunks), /超过上限/);
+});
+
+test('claim 与 boundary 里的网址一律剥离，引文保持逐字', () => {
+  const c = makeValuesCorpus([diary('a')]);
+  const chunk = c.chunks[0];
+  const note = validateValuesNote({ findings: [{ kind: 'tradeoff',
+    claim: '去看 https://evil.example/x?d=1 的说法', evidence: [{ chunk: chunk.key, quote: chunk.text.slice(0, 6) }],
+    boundary: '见 [说明](https://evil.example/y) 一节' }] }, [chunk]);
+  assert.equal(note.findings.length, 1);
+  assert(!note.findings[0].claim.includes('evil.example'), `claim 仍带网址：${note.findings[0].claim}`);
+  assert(!note.findings[0].boundary.includes('evil.example'), `boundary 仍带网址：${note.findings[0].boundary}`);
+  assert(note.findings[0].boundary.includes('说明'), 'Markdown 链接只去掉目标，保留文字');
+  // 报告里因此不会出现模型给的链接
+  assert(!renderValues(c, note).includes('evil.example'));
+  // 整条只有网址等于没有内容
+  assert.throws(() => validateValuesNote({ findings: [{ kind: 'value', claim: 'https://evil.example/x',
+    evidence: [{ chunk: chunk.key, quote: chunk.text.slice(0, 6) }], boundary: '边界' }] }, [chunk]), /分析字段无效/);
+  // 引文必须逐字，原文里的网址不能被剥掉
+  const c2 = makeValuesCorpus([diary('b', '参考 https://example.com/a 的说法。')]);
+  const note2 = validateValuesNote({ findings: [{ kind: 'value', claim: '结论',
+    evidence: [{ chunk: c2.chunks[0].key, quote: 'https://example.com/a' }], boundary: '边界' }] }, c2.chunks);
+  assert(note2.findings[0].evidence[0].quote.includes('https://example.com/a'));
+});
+
+test('报告章节顺序与维度枚举同源，五类都有候选时顺序恒定', () => {
+  const c = makeValuesCorpus([diary('a')]);
+  const chunk = c.chunks[0];
+  const findings = ['tradeoff', 'value', 'judgment', 'conflict', 'shift'].map((kind) => ({ kind,
+    claim: `${kind} 结论`, evidence: [{ chunk: chunk.key, quote: chunk.text.slice(0, 6) }], boundary: '边界' }));
+  const report = renderValues(c, { findings });
+  assert.deepEqual([...report.matchAll(/^### (.+)$/gm)].map((m) => m[1]),
+    ['价值排序（取舍与代价）', '价值主张', '褒贬与底线', '张力与落差', '价值变化']);
+});
+
+test('读缓存长度与请求不符时直接报错，不把 skip 标记错配到别的切块', async () => {
+  const c = makeValuesCorpus([diary('a'), diary('b')]);
+  await assert.rejects(planValues(c, async (keys) => keys.slice(0, -1).map(() => null)), /分析缓存读取不完整/);
+  await assert.rejects(planValues(c, async (keys) => [...keys, null].map(() => null)), /分析缓存读取不完整/);
+});
+
+test('中间归纳在最大字段长度下仍然收敛，超出条数被截断而不是整组重算', async () => {
+  const c = makeValuesCorpus(Array.from({ length: 100 }, (_, i) => diary(`article-${i}`, `文章${i}：` + '据'.repeat(200))));
+  const s = store();
+  for (const chunk of c.chunks) s.data.set(`chunk:${chunk.key}`, { findings: [{ kind: 'value', claim: '论'.repeat(220),
+    boundary: '界'.repeat(220), evidence: [{ chunk: chunk.key, quote: '据'.repeat(180) }] }] });
+  let calls = 0, done = false;
+  for (let guard = 0; guard < 80; guard++) {
+    const p = await planValues(c, s.read);
+    if (p.result) { done = true; break; }
+    const w = p.work, input = JSON.parse(w.input), evidence = input.notes.flatMap(n => n.findings.flatMap(f => f.evidence));
+    const max = w.final ? 8 : 3;
+    const findings = Array.from({ length: max }, (_, i) => ({ kind: 'value', claim: '论'.repeat(220), boundary: '界'.repeat(220),
+      evidence: evidence.slice(i * 3, i * 3 + 3).length ? evidence.slice(i * 3, i * 3 + 3) : evidence.slice(0, 3) }));
+    if (!w.final) {
+      // 模型多写一条时截断而不是硬失败：硬失败会让同一组被无限重算
+      const trimmed = validateValuesSynthesis({ findings: [...findings, findings[0]] }, w, c);
+      assert.equal(trimmed.findings.length, max, '超出的条目必须被截断，而不是让整组反复重算');
+    }
+    s.data.set(w.key, validateValuesSynthesis({ findings }, w, c));
+    calls++;
+  }
+  assert(done, 'bounded reduction must converge');
+  assert(calls < 40, `unexpected calls: ${calls}`);
 });
