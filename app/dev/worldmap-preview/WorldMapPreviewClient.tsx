@@ -68,9 +68,8 @@ export default function WorldMapPreviewClient() {
   const [data, setData] = useState<EntriesPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [visible, setVisible] = useState(6);
-  // 卡片不透明度：预览里两套主题共用一个基准，深色低 0.15，与产品里写死的 0.70 / 0.55 对齐
-  const [cardA, setCardA] = useState(0.7);
-  const darkCardA = Math.max(0.2, cardA - 0.15);
+  // 页面纱层：底图之上、内容之下的那层渐变。0.75 对应产品里的 75%/55%（浅色）与 85%/55%/90%（深色）
+  const [veil, setVeil] = useState(0.75);
 
   useEffect(() => {
     fetch("/dev/api/entries", { cache: "no-store" })
@@ -86,7 +85,12 @@ export default function WorldMapPreviewClient() {
   const thisMonth = items.filter((d) => (d.publishedAt ?? d.date).slice(0, 7) === month).length;
 
   return (
-    <div className="min-h-screen select-none bg-gradient-to-b from-zinc-100/75 to-white/55 font-sans text-zinc-900 dark:from-black/85 dark:via-zinc-950/55 dark:to-black/90 dark:text-zinc-50">
+    <div
+      id="dev-root"
+      className="min-h-screen select-none bg-gradient-to-b from-zinc-100/75 to-white/55 font-sans text-zinc-900 dark:from-black/85 dark:via-zinc-950/55 dark:to-black/90 dark:text-zinc-50"
+    >
+      {/* 预览专用：纱层滑块只覆盖这一层渐变，产品类不动 */}
+      <style>{`#dev-root{background-image:linear-gradient(to bottom,rgba(244,244,245,${veil}),rgba(255,255,255,${(veil * 0.72).toFixed(3)}))}@media (prefers-color-scheme: dark){#dev-root{background-image:linear-gradient(to bottom,rgba(0,0,0,${Math.min(1, veil + 0.1).toFixed(3)}),rgba(9,9,11,${(veil * 0.73).toFixed(3)}),rgba(0,0,0,${Math.min(1, veil + 0.15).toFixed(3)}))}}`}</style>
       <VisitorWorldMap points={pointsOn ? DEMO_POINTS : null} intensity={intensity} />
 
       <div className="fixed left-4 top-4 z-50 w-[min(92vw,26rem)] rounded-xl border border-zinc-300 bg-white/95 p-3 text-xs shadow-lg dark:border-zinc-700 dark:bg-zinc-900/95">
@@ -114,14 +118,14 @@ export default function WorldMapPreviewClient() {
           显示访客光点
         </label>
         <label className="mt-1 flex items-center gap-2">
-          卡片不透明度 {cardA.toFixed(2)}
+          页面纱层 {veil.toFixed(2)}
           <input
             type="range"
-            min={0.3}
-            max={0.95}
+            min={0.2}
+            max={1}
             step={0.05}
-            value={cardA}
-            onChange={(e) => setCardA(Number(e.target.value))}
+            value={veil}
+            onChange={(e) => setVeil(Number(e.target.value))}
             className="flex-1"
           />
         </label>
@@ -176,9 +180,7 @@ export default function WorldMapPreviewClient() {
             </p>
           )}
 
-          {/* 预览专用：用滑块实时覆盖卡片底色，看中的数值写回 EntryCard 的类 */}
-          <style>{`#dev-feed article{background-color:rgba(255,255,255,${cardA})}@media (prefers-color-scheme: dark){#dev-feed article{background-color:rgba(24,24,27,${darkCardA})}}`}</style>
-          <section id="dev-feed" className="space-y-4 pt-5 text-sm">
+          <section className="space-y-4 pt-5 text-sm">
             {items.slice(0, visible).map((item) => (
               <EntryCard
                 key={item.id}
