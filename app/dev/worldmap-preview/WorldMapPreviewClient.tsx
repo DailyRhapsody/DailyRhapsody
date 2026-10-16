@@ -68,8 +68,8 @@ export default function WorldMapPreviewClient() {
   const [data, setData] = useState<EntriesPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [visible, setVisible] = useState(6);
-  // 页面纱层：整页均匀的一层底色。0.62 对应产品里的 bg-zinc-100/62（深色 0.68）
-  const [veil, setVeil] = useState(0.62);
+  // 页面纱层：整页均匀的一层底色。0.72 对应产品里的 bg-zinc-100/72（深色 0.78）
+  const [veil, setVeil] = useState(0.72);
   const darkVeil = Math.min(1, veil + 0.06);
 
   useEffect(() => {
@@ -88,7 +88,7 @@ export default function WorldMapPreviewClient() {
   return (
     <div
       id="dev-root"
-      className="min-h-screen select-none bg-zinc-100/62 font-sans text-zinc-900 dark:bg-zinc-950/68 dark:text-zinc-50"
+      className="min-h-screen select-none bg-zinc-100/72 font-sans text-zinc-900 dark:bg-zinc-950/78 dark:text-zinc-50"
     >
       {/* 预览专用：纱层滑块只覆盖这一层底色，产品类不动 */}
       <style>{`#dev-root{background-color:rgba(244,244,245,${veil})}@media (prefers-color-scheme: dark){#dev-root{background-color:rgba(9,9,11,${darkVeil.toFixed(3)})}}`}</style>
