@@ -68,6 +68,9 @@ export default function WorldMapPreviewClient() {
   const [data, setData] = useState<EntriesPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [visible, setVisible] = useState(6);
+  // 卡片不透明度：预览里两套主题共用一个基准，深色低 0.15，与产品里写死的 0.70 / 0.55 对齐
+  const [cardA, setCardA] = useState(0.7);
+  const darkCardA = Math.max(0.2, cardA - 0.15);
 
   useEffect(() => {
     fetch("/dev/api/entries", { cache: "no-store" })
@@ -109,6 +112,18 @@ export default function WorldMapPreviewClient() {
         <label className="mt-1 flex items-center gap-2">
           <input type="checkbox" checked={pointsOn} onChange={(e) => setPointsOn(e.target.checked)} />
           显示访客光点
+        </label>
+        <label className="mt-1 flex items-center gap-2">
+          卡片不透明度 {cardA.toFixed(2)}
+          <input
+            type="range"
+            min={0.3}
+            max={0.95}
+            step={0.05}
+            value={cardA}
+            onChange={(e) => setCardA(Number(e.target.value))}
+            className="flex-1"
+          />
         </label>
         <p className="mt-1 leading-5 text-zinc-500 dark:text-zinc-400">
           深浅色跟随系统外观；文章图片不显示（本地没有媒体代理凭证）。生产环境本页返回 404。
@@ -161,7 +176,9 @@ export default function WorldMapPreviewClient() {
             </p>
           )}
 
-          <section className="space-y-4 pt-5 text-sm">
+          {/* 预览专用：用滑块实时覆盖卡片底色，看中的数值写回 EntryCard 的类 */}
+          <style>{`#dev-feed article{background-color:rgba(255,255,255,${cardA})}@media (prefers-color-scheme: dark){#dev-feed article{background-color:rgba(24,24,27,${darkCardA})}}`}</style>
+          <section id="dev-feed" className="space-y-4 pt-5 text-sm">
             {items.slice(0, visible).map((item) => (
               <EntryCard
                 key={item.id}

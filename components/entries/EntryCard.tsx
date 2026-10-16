@@ -355,7 +355,7 @@ export function EntryCard({
     <>
     <article
       id={`entry-${item.id}`}
-      className="group relative flex flex-col gap-3 rounded-2xl px-3 py-4 transition-apple scroll-mt-24 hover:bg-zinc-100/70 hover:shadow-md dark:hover:bg-zinc-900/80 dark:hover:shadow-black/10"
+      className="group relative flex flex-col gap-3 rounded-2xl border border-zinc-200/70 bg-white/70 px-3 py-4 shadow-sm transition-apple scroll-mt-24 hover:bg-zinc-100/85 hover:shadow-md dark:border-zinc-800/70 dark:bg-zinc-900/55 dark:hover:bg-zinc-900/85 dark:hover:shadow-black/10"
       // 线程距文章顶 16px（top-4），再留出与底边同样的 16px
       style={marginThread && marginHeight > 0 ? { minHeight: marginHeight + 32 } : undefined}
     >
