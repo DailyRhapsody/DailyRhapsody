@@ -2,6 +2,7 @@
  * 右下角的像素宇航员，照作者本人画：透明面罩里是短寸头、圆框玳瑁眼镜，
  * 灰色卫衣质感的宇航服、黑色背包肩带，红臂章与纸飞机取自站点头像。
  * 待机时失重漂浮、镜片后的眼睛眨动；生成回复时眼睛闪烁、纸飞机绕飞。
+ * holo 打开时在身下加投影台、光锥与自上而下的扫描线（全息投影）。
  * 动画都在 globals.css 的 dr-pet-* 里，prefers-reduced-motion 下全部关闭。
  */
 
@@ -104,17 +105,30 @@ export function PixelAstronaut({
   scale = 3,
   thinking = false,
   still = false,
+  holo = false,
 }: {
   /** 每个像素的屏幕尺寸（px） */
   scale?: number;
   thinking?: boolean;
   /** 面板头像等小尺寸处不漂浮 */
   still?: boolean;
+  /** 全息投影：投影台、光锥与扫描线，只给右下角入口用 */
+  holo?: boolean;
 }) {
   const w = ASTRONAUT[0].length;
   const h = ASTRONAUT.length;
   return (
-    <span className="relative inline-block" style={{ width: w * scale, height: h * scale }} aria-hidden="true">
+    <span
+      className={`relative inline-block${holo ? " dr-pet-holo" : ""}`}
+      style={{ width: w * scale, height: h * scale }}
+      aria-hidden="true"
+    >
+      {holo && (
+        <>
+          <span className="dr-pet-beam" />
+          <span className="dr-pet-pad" />
+        </>
+      )}
       <svg
         className={`absolute inset-0 overflow-visible ${still ? "" : "dr-pet-float"}`}
         width={w * scale}
@@ -127,6 +141,7 @@ export function PixelAstronaut({
           <Rects runs={EYE_RUNS} />
         </g>
       </svg>
+      {holo && <span className="dr-pet-scan" />}
       {thinking && !still && (
         <span className="dr-pet-plane pointer-events-none absolute left-1/2 top-1/2">
           <svg
