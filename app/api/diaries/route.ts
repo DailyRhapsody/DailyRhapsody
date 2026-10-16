@@ -3,6 +3,7 @@ import { isAdmin } from "@/lib/auth";
 import { buildEntryOutline } from "@/lib/entry-outline";
 import type { EntryOutlineItem } from "@/components/entries/types";
 import { getDiaries, isNotionConfigured, type Diary } from "@/lib/notion";
+import { loadLocalDiaries } from "@/lib/dev-snapshot";
 import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
 
 // SWR 后台重拉（waitUntil）跑在本次函数调用里，受 maxDuration 约束。
@@ -32,7 +33,11 @@ export async function GET(req: Request) {
   });
   if (blocked) return blocked;
 
-  if (!isNotionConfigured()) {
+  // 本地预览：没有 Notion 凭证时，非生产环境回落到本机脱敏只读快照（data/diaries.json），
+  // 让 /blog 能带真实文章渲染。生产没有凭证仍然按配置错误处理，行为不变。
+  const localSnapshot = isNotionConfigured() ? null : await loadLocalDiaries();
+
+  if (!isNotionConfigured() && !localSnapshot) {
     return withAntiScrapeHeaders(
       NextResponse.json({ error: "Notion is not configured" }, { status: 503 })
     );
@@ -43,7 +48,7 @@ export async function GET(req: Request) {
 
   let diaries: Diary[];
   try {
-    diaries = await getDiaries();
+    diaries = localSnapshot ?? (await getDiaries());
   } catch (e) {
     console.error("[diaries] getDiaries failed:", e);
     return withAntiScrapeHeaders(
