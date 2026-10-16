@@ -21,7 +21,7 @@ import type { Diary } from "@/lib/notion";
 import { postTitle } from "@/lib/persona/retrieve";
 import { digest, isProviderRefusal, parseJson } from "@/lib/persona/first-principles";
 
-export const VALUES_VERSION = "v2";
+export const VALUES_VERSION = "v3";
 const CHUNK_CHARS = 6_000;
 const INPUT_CHARS = 18_000;
 const MAX_BATCH_CHUNKS = 12;
@@ -180,8 +180,24 @@ function synthesisInput(nodes: { note: ValuesNote }[], corpus: ValuesCorpus): st
 export function validateValuesSynthesis(raw: unknown, work: ValuesWork, corpus: ValuesCorpus): ValuesNote {
   const note = validateValuesNote(raw, corpus.chunks, work.final ? FINAL_MAX : 3, { dropUnverified: true });
   const input = JSON.parse(work.input) as { notes: ValuesNote[] };
-  const allowed = new Set(input.notes.flatMap((n) => n.findings.flatMap((f) => f.evidence.map((e) => JSON.stringify(e)))));
-  if (note.findings.some((f) => f.evidence.some((e) => !allowed.has(JSON.stringify(e))))) {
+  const allowed = new Map<string, string[]>();
+  for (const e of input.notes.flatMap((n) => n.findings.flatMap((f) => f.evidence))) {
+    const quotes = allowed.get(e.chunk);
+    if (quotes) quotes.push(e.quote);
+    else allowed.set(e.chunk, [e.quote]);
+  }
+  /**
+   * 综合层允许「重新切边界」，但只允许在同一处已核验证据的跨度内：
+   * 真实模型会把上一层的引文截短或续写（实测 82 字的引文被截成 80 字，仍是原文逐字子串），
+   * 这时按全等比较会整批失败，而失败会走成 502、下次重试大概率再犯，报告永远出不来。
+   * 判定沿用包含关系：同一 chunk 内存在一条已核验引文与它互相包含即视为继承；
+   * 同时要求不短于 12 字（或本身就是那条完整引文），避免退化成无意义的碎片。
+   * 跨块引用、以及与该处证据没有包含关系的新片段仍然拒绝——那才是「引入未核验的证据」。
+   */
+  const inherited = (e: ValuesEvidence): boolean =>
+    (allowed.get(e.chunk) ?? []).some((q) => (q.includes(e.quote) || e.quote.includes(q))
+      && e.quote.length >= Math.min(12, q.length));
+  if (note.findings.some((f) => f.evidence.some((e) => !inherited(e)))) {
     throw new Error("综合结果引入未核验的证据");
   }
   if (!work.final && synthesisInput([{ note }], corpus).length > INPUT_CHARS / 2 - 1024) {

@@ -7,7 +7,7 @@ import { test } from 'node:test';
  * 命名空间前的 skill 段是本 skill 与第一个 skill 的唯一隔离点（版本号两边取值相同、
  * 同一篇文章的切块键实测逐字节一致），测试里当常量锁住；改提示词或校验要换版本号。
  */
-const PREFIX = 'dr:blog:core-values:v2:test';
+const PREFIX = 'dr:blog:core-values:v3:test';
 
 test('核心价值观接口：分批、缓存、并发、撤回、拒答与命名空间隔离（仅离线）', async t => {
   const hooks = registerHooks({ resolve(s, c, n) { return n(s === 'next/server' ? 'next/server.js' : s.startsWith('@/') ? new URL(`../${s.slice(2)}.ts`, import.meta.url).href : s, c); } });

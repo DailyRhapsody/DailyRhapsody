@@ -83,15 +83,26 @@ test('全量分批至完成，综合只继承本批已验证证据；缓存命�
   assert((await planValues(c, s.read)).result, '缓存命中后必须直接给结果');
 });
 
-test('综合只能继承本批已核验的证据', async () => {
-  const c = makeValuesCorpus([diary('a'), diary('b')]);
+test('综合只能继承本批已核验的证据：允许重切边界，换一处文字或过短片段一律拒绝', async () => {
+  const text = '前言'.repeat(20) + '真正有收获需要先意识到并敢于舍弃糟粕，其次在追求的过程中还要守住底线。' + '余论'.repeat(20);
+  const c = makeValuesCorpus([diary('long', text), diary('b')]);
   const s = store();
-  for (const chunk of c.chunks) s.data.set(`chunk:${chunk.key}`, { findings: [finding(chunk)] });
+  const allowedQuote = '真正有收获需要先意识到并敢于舍弃糟粕，其次在追求的过程中还要守住底线。';
+  // 语料按 id 排序，不能假设切块顺序，按内容取
+  const c0 = c.chunks.find((x) => x.text.includes(allowedQuote));
+  const c1 = c.chunks.find((x) => x !== c0);
+  s.data.set(`chunk:${c0.key}`, { findings: [{ kind: 'value', claim: '结论', evidence: [{ chunk: c0.key, quote: allowedQuote }], boundary: '边界' }] });
+  s.data.set(`chunk:${c1.key}`, { findings: [finding(c1)] });
   const w = (await planValues(c, s.read)).work;
   assert.equal(w.phase, 'synthesize');
-  // 引文本身是真实原文（能过逐字核验），但它不在本批输入里，仍必须被拦下
-  const invented = { ...finding(c.chunks[0]), evidence: [{ chunk: c.chunks[0].key, quote: c.chunks[0].text.slice(0, 3) }] };
-  assert.throws(() => validateValuesSynthesis({ findings: [invented] }, w, c), /引入未核验的证据/);
+  const findingWith = (quote) => ({ findings: [{ kind: 'value', claim: '结论', evidence: [{ chunk: c0.key, quote }], boundary: '边界' }] });
+
+  // 真模型实测行为：把上一层 82 字的引文截成 80 字，仍是原文逐字子串 —— 算继承，不能整批失败
+  assert.equal(validateValuesSynthesis(findingWith(allowedQuote.slice(0, -2)), w, c).findings.length, 1);
+  // 同一个 chunk 里另一段文字：与已核验证据没有包含关系，属于引入新证据
+  assert.throws(() => validateValuesSynthesis(findingWith('前言前言前言前言前言前言前言'), w, c), /引入未核验的证据/);
+  // 过短片段：包含在已核验引文里也不接受，避免退化成无意义的碎片
+  assert.throws(() => validateValuesSynthesis(findingWith(allowedQuote.slice(0, 5)), w, c), /引入未核验的证据/);
 });
 
 test('被跳过切块与提炼结果的内容一起决定上层缓存键', async () => {
