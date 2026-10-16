@@ -68,8 +68,9 @@ export default function WorldMapPreviewClient() {
   const [data, setData] = useState<EntriesPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [visible, setVisible] = useState(6);
-  // 页面纱层：底图之上、内容之下的那层渐变。0.75 对应产品里的 75%/55%（浅色）与 85%/55%/90%（深色）
-  const [veil, setVeil] = useState(0.75);
+  // 页面纱层：整页均匀的一层底色。0.72 对应产品里的 bg-zinc-100/72（深色 0.78）
+  const [veil, setVeil] = useState(0.72);
+  const darkVeil = Math.min(1, veil + 0.06);
 
   useEffect(() => {
     fetch("/dev/api/entries", { cache: "no-store" })
@@ -87,10 +88,10 @@ export default function WorldMapPreviewClient() {
   return (
     <div
       id="dev-root"
-      className="min-h-screen select-none bg-gradient-to-b from-zinc-100/75 to-white/55 font-sans text-zinc-900 dark:from-black/85 dark:via-zinc-950/55 dark:to-black/90 dark:text-zinc-50"
+      className="min-h-screen select-none bg-zinc-100/72 font-sans text-zinc-900 dark:bg-zinc-950/78 dark:text-zinc-50"
     >
-      {/* 预览专用：纱层滑块只覆盖这一层渐变，产品类不动 */}
-      <style>{`#dev-root{background-image:linear-gradient(to bottom,rgba(244,244,245,${veil}),rgba(255,255,255,${(veil * 0.72).toFixed(3)}))}@media (prefers-color-scheme: dark){#dev-root{background-image:linear-gradient(to bottom,rgba(0,0,0,${Math.min(1, veil + 0.1).toFixed(3)}),rgba(9,9,11,${(veil * 0.73).toFixed(3)}),rgba(0,0,0,${Math.min(1, veil + 0.15).toFixed(3)}))}}`}</style>
+      {/* 预览专用：纱层滑块只覆盖这一层底色，产品类不动 */}
+      <style>{`#dev-root{background-color:rgba(244,244,245,${veil})}@media (prefers-color-scheme: dark){#dev-root{background-color:rgba(9,9,11,${darkVeil.toFixed(3)})}}`}</style>
       <VisitorWorldMap points={pointsOn ? DEMO_POINTS : null} intensity={intensity} />
 
       <div className="fixed left-4 top-4 z-50 w-[min(92vw,26rem)] rounded-xl border border-zinc-300 bg-white/95 p-3 text-xs shadow-lg dark:border-zinc-700 dark:bg-zinc-900/95">
