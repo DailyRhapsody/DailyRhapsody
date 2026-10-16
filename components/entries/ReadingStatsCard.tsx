@@ -7,10 +7,10 @@ import type { ReadingStats } from "@/lib/weread";
 /**
  * 微信读书阅读数据卡。
  *
- * 与卡片条另外三张同尺寸（168 × 148），按数据有无轮播最多六屏：
- * 本月时长曲线、本月读得最多、累计阅读时段，以及三屏**书籍分布云图** ——
- * 作者（累计时长）、作者（最长一本）、阅读分类。云图屏用的还是这一张卡，
- * 不额外占卡片条的位置；云图屏内不写字段名，只有词。
+ * 与卡片条另外三张同尺寸（168 × 148），按数据有无轮播最多七屏：
+ * 累计总览（累计时长 · 读过本数 · 阅读天数）、本月时长曲线、本月读得最多、
+ * 累计阅读时段，以及三屏**书籍分布云图**（作者、阅读分类、出版社）。
+ * 云图屏用的还是这一张卡，不额外占卡片条的位置；云图屏内不写字段名，只有词。
  * 某一屏没有数据就不出现，例如时段未达接口的展示阈值、或累计周期整个缺失时。
  *
  * 内边距与「博客数」卡对齐：四边都是 20px（p-5）。卡仍是 168 × 148，
@@ -171,6 +171,30 @@ const VALUE = "tabular-nums text-zinc-900 dark:text-zinc-50";
 const LABEL = "text-zinc-500 dark:text-zinc-400";
 const MUTED = "text-zinc-400 dark:text-zinc-500";
 
+/**
+ * 累计总览（首屏）：总时长 + 读过本数 + 阅读天数，全部取自 overall 周期。
+ * 三行都是「有则显示」——累计周期整个缺失时这一屏不出现（screens 里它的
+ * 入选条件是 totalMinutes），单项缺失时只少那一行，不显示占位。
+ */
+function TotalScreen({ stats }: { stats: ReadingStats }) {
+  return (
+    <div className="flex h-full flex-col">
+      <p className={`text-xl font-bold ${VALUE}`}>
+        {formatDuration(stats.totalMinutes ?? 0)}
+      </p>
+      <p className={`text-[0.7rem] leading-5 ${LABEL}`}>累计阅读时长</p>
+      <div className="mt-1 flex min-h-0 flex-1 flex-col justify-center gap-2">
+        {typeof stats.booksRead === "number" ? (
+          <p className={`text-[0.7rem] tabular-nums ${MUTED}`}>读过 {stats.booksRead} 本</p>
+        ) : null}
+        {typeof stats.totalDays === "number" ? (
+          <p className={`text-[0.7rem] tabular-nums ${MUTED}`}>阅读 {stats.totalDays} 天</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function DurationScreen({ stats }: { stats: ReadingStats }) {
   return (
     <div className="flex h-full flex-col">
@@ -240,6 +264,11 @@ export function ReadingStatsCard({ stats }: { stats: ReadingStats | null }) {
       node: <ReadingCloudScreen cloud={cloud} />,
     }));
     return [
+      // 累计总览放首屏：一眼能看到「总共读了多久、读过多少本」，本月曲线顺位第二。
+      // 累计周期缺失时它整体不出现，首屏回落到本月时长。
+      ...(stats.totalMinutes
+        ? [{ key: "total", label: "累计总览", node: <TotalScreen stats={stats} /> }]
+        : []),
       { key: "duration", label: "本月时长", node: <DurationScreen stats={stats} /> },
       ...(stats.books.length
         ? [{ key: "books", label: "本月读得最多", node: <BooksScreen stats={stats} /> }]
