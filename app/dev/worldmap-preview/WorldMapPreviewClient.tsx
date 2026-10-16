@@ -68,9 +68,9 @@ export default function WorldMapPreviewClient() {
   const [data, setData] = useState<EntriesPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [visible, setVisible] = useState(6);
-  // 页面纱层：整页均匀的一层底色。0.72 对应产品里的 bg-zinc-100/72（深色 0.78）
-  const [veil, setVeil] = useState(0.72);
-  const darkVeil = Math.min(1, veil + 0.06);
+  // 页面纱层：整页均匀的一层底色。0.80 + #f1f1f1 对应产品里的 bg-[#f1f1f1]/80（深色 bg-black/80）
+  const [veil, setVeil] = useState(0.8);
+  const darkVeil = veil;
 
   useEffect(() => {
     fetch("/dev/api/entries", { cache: "no-store" })
@@ -88,10 +88,10 @@ export default function WorldMapPreviewClient() {
   return (
     <div
       id="dev-root"
-      className="min-h-screen select-none bg-zinc-100/72 font-sans text-zinc-900 dark:bg-zinc-950/78 dark:text-zinc-50"
+      className="min-h-screen select-none bg-[#f1f1f1]/80 font-sans text-zinc-900 dark:bg-black/80 dark:text-zinc-50"
     >
       {/* 预览专用：纱层滑块只覆盖这一层底色，产品类不动 */}
-      <style>{`#dev-root{background-color:rgba(244,244,245,${veil})}@media (prefers-color-scheme: dark){#dev-root{background-color:rgba(9,9,11,${darkVeil.toFixed(3)})}}`}</style>
+      <style>{`#dev-root{background-color:rgba(241,241,241,${veil})}@media (prefers-color-scheme: dark){#dev-root{background-color:rgba(0,0,0,${darkVeil.toFixed(3)})}}`}</style>
       <VisitorWorldMap points={pointsOn ? DEMO_POINTS : null} intensity={intensity} />
 
       <div className="fixed left-4 top-4 z-50 w-[min(92vw,26rem)] rounded-xl border border-zinc-300 bg-white/95 p-3 text-xs shadow-lg dark:border-zinc-700 dark:bg-zinc-900/95">
