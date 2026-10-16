@@ -382,14 +382,15 @@ export async function queryAnalytics(q: AnalyticsQuery): Promise<AnalyticsReport
  * 结果缓存半小时：底图不需要秒级新鲜度，而逐个访客请求都去 LRANGE 全量键会把共享 Redis 拖垮。
  */
 /** 改动发布口径（窗口天数、吸附规则、字段）时必须推进版本号，避免读到旧形状的缓存 */
-const VISITOR_MAP_CACHE_KEY = "dr:visitormap:v1";
+const VISITOR_MAP_CACHE_KEY = "dr:visitormap:v2";   // v2：窗口由 7 天改为全量（保留期），键升版本避免读到旧的 7 天缓存
 const VISITOR_MAP_CACHE_LOCK_KEY = "dr:visitormap:lock";
 const VISITOR_MAP_TTL_SECONDS = 1800;
-/** 重建锁：只让一个请求去读 7 天的原始记录，其余等它写回缓存 */
+/** 重建锁：只让一个请求去读保留期内的原始记录，其余等它写回缓存 */
 const VISITOR_MAP_LOCK_SECONDS = 60;
-/** 底图的原始点位上限：远高于发布上限（400 格），保证先吸附后截断不丢次数 */
-const VISITOR_MAP_SOURCE_POINT_LIMIT = 5000;
-export const VISITOR_MAP_WINDOW_DAYS = 7;
+/** 底图的原始点位上限：全量口径下原始记录多一个量级，上限同步抬高（仍远高于发布上限 400 格） */
+const VISITOR_MAP_SOURCE_POINT_LIMIT = 20000;
+/** 光点的统计窗口：全量 = 原始记录的保留期上限（更早的按天过期，已经不在了） */
+export const VISITOR_MAP_WINDOW_DAYS = RETENTION_DAYS;
 
 export type VisitorMapPayload = {
   points: VisitorMapPoint[];
@@ -422,7 +423,7 @@ export async function getVisitorMapPayload(): Promise<VisitorMapPayload> {
   const cached = readCachedVisitorMap(await redis.get(VISITOR_MAP_CACHE_KEY));
   if (cached) return cached;
 
-  // 缓存过期时不让每个并发请求都去读 7 天原始记录：抢到锁的负责重建，没抢到的先算一份自己的
+  // 缓存过期时不让每个并发请求都去读保留期内的原始记录：抢到锁的负责重建，没抢到的先算一份自己的
   let holdingLock = false;
   try {
     holdingLock = (await redis.set(VISITOR_MAP_CACHE_LOCK_KEY, "1", { nx: true, ex: VISITOR_MAP_LOCK_SECONDS })) !== null;
