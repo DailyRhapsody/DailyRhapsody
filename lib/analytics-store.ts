@@ -2,6 +2,11 @@ import { Redis } from "@upstash/redis";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import {
+  aggregateVisitorPoints,
+  isValidVisitorMapPoint,
+  type VisitorMapPoint,
+} from "./visitor-map";
 
 const DATA_DIR = join(process.cwd(), "data");
 const JSONL_FILE = join(DATA_DIR, "analytics-visits.jsonl");
@@ -278,6 +283,23 @@ function countUnique(values: (string | null | undefined)[]): number {
   return new Set(values.filter((x): x is string => !!x && x.length > 0)).size;
 }
 
+/**
+ * 地理聚合（精确坐标 -> 计数）。后台报告用默认上限；底图走更大的上限，
+ * 因为它要先吸附到格子再截断，按精确坐标提前截断会丢掉这些访问的次数。
+ */
+function geoPointsFromRows(rows: VisitRow[], includeBots: boolean, limit: number): GeoPoint[] {
+  const filtered = includeBots ? rows : rows.filter((r) => !r.isBot);
+  const geoMap = new Map<string, GeoPoint>();
+  for (const r of filtered) {
+    if (r.latitude == null || r.longitude == null) continue;
+    const key = `${r.latitude.toFixed(2)},${r.longitude.toFixed(2)}`;
+    const existing = geoMap.get(key);
+    if (existing) existing.count++;
+    else geoMap.set(key, { lat: r.latitude, lng: r.longitude, count: 1, city: r.city, country: r.country });
+  }
+  return [...geoMap.values()].sort((a, b) => b.count - a.count).slice(0, limit);
+}
+
 function aggregateFromRows(all: VisitRow[], includeBots: boolean): Omit<AnalyticsReport, "rows" | "totalRows"> {
   const filtered = includeBots ? all : all.filter((r) => !r.isBot);
   const botTotal = all.filter((r) => r.isBot).length;
@@ -303,19 +325,8 @@ function aggregateFromRows(all: VisitRow[], includeBots: boolean): Omit<Analytic
     .map(([date, count]) => ({ date, count }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  // 地理聚合
-  const geoMap = new Map<string, GeoPoint>();
-  for (const r of filtered) {
-    if (r.latitude == null || r.longitude == null) continue;
-    const key = `${r.latitude.toFixed(2)},${r.longitude.toFixed(2)}`;
-    const existing = geoMap.get(key);
-    if (existing) {
-      existing.count++;
-    } else {
-      geoMap.set(key, { lat: r.latitude, lng: r.longitude, count: 1, city: r.city, country: r.country });
-    }
-  }
-  const geoPoints = [...geoMap.values()].sort((a, b) => b.count - a.count).slice(0, 500);
+  // 地理聚合（上限与底图不同，见 geoPointsFromRows）
+  const geoPoints = geoPointsFromRows(all, includeBots, 500);
 
   return {
     summary: {
@@ -361,4 +372,76 @@ export async function queryAnalytics(q: AnalyticsQuery): Promise<AnalyticsReport
   if (redis) return reportFromRows(await loadRedisVisits(redis, q.from, q.to), q);
   assertWritableStorage();
   return reportFromRows(await loadJsonlVisits(q.from, q.to, true), q);
+}
+
+/**
+ * 首页底图用的访客点位（对外公开的那一份）。
+ *
+ * 与后台 analytics 报告的区别只有两点，都是为了公开：只取近 7 天、不含爬虫；并且必须经过
+ * lib/visitor-map.ts 的格子吸附，发布出去的是格子中心坐标（约 1.9° 量级），不是访问记录里的精确经纬度。
+ * 结果缓存半小时：底图不需要秒级新鲜度，而逐个访客请求都去 LRANGE 全量键会把共享 Redis 拖垮。
+ */
+/** 改动发布口径（窗口天数、吸附规则、字段）时必须推进版本号，避免读到旧形状的缓存 */
+const VISITOR_MAP_CACHE_KEY = "dr:visitormap:v1";
+const VISITOR_MAP_CACHE_LOCK_KEY = "dr:visitormap:lock";
+const VISITOR_MAP_TTL_SECONDS = 1800;
+/** 重建锁：只让一个请求去读 7 天的原始记录，其余等它写回缓存 */
+const VISITOR_MAP_LOCK_SECONDS = 60;
+/** 底图的原始点位上限：远高于发布上限（400 格），保证先吸附后截断不丢次数 */
+const VISITOR_MAP_SOURCE_POINT_LIMIT = 5000;
+export const VISITOR_MAP_WINDOW_DAYS = 7;
+
+export type VisitorMapPayload = {
+  points: VisitorMapPoint[];
+  generatedAt: string;
+  windowDays: number;
+};
+
+function readCachedVisitorMap(raw: unknown): VisitorMapPayload | null {
+  const v = raw as VisitorMapPayload | null;
+  if (!v || typeof v !== "object" || !Array.isArray(v.points)) return null;
+  if (!v.points.every(isValidVisitorMapPoint)) return null;
+  return { points: v.points, generatedAt: v.generatedAt, windowDays: v.windowDays };
+}
+
+async function buildVisitorMapPayload(): Promise<VisitorMapPayload> {
+  const to = new Date();
+  const from = new Date(to.getTime() - VISITOR_MAP_WINDOW_DAYS * DAY_MS);
+  const rows = redis ? await loadRedisVisits(redis, from, to) : await loadJsonlVisits(from, to, true);
+  const source = geoPointsFromRows(rows, false, VISITOR_MAP_SOURCE_POINT_LIMIT);
+  return {
+    points: aggregateVisitorPoints(source),
+    generatedAt: to.toISOString(),
+    windowDays: VISITOR_MAP_WINDOW_DAYS,
+  };
+}
+
+export async function getVisitorMapPayload(): Promise<VisitorMapPayload> {
+  if (!redis) return buildVisitorMapPayload();   // 本地 JSONL：没有共享缓存与击穿问题
+
+  const cached = readCachedVisitorMap(await redis.get(VISITOR_MAP_CACHE_KEY));
+  if (cached) return cached;
+
+  // 缓存过期时不让每个并发请求都去读 7 天原始记录：抢到锁的负责重建，没抢到的先算一份自己的
+  let holdingLock = false;
+  try {
+    holdingLock = (await redis.set(VISITOR_MAP_CACHE_LOCK_KEY, "1", { nx: true, ex: VISITOR_MAP_LOCK_SECONDS })) !== null;
+  } catch {
+    holdingLock = true;   // 锁本身出错时不阻塞功能
+  }
+  if (!holdingLock) {
+    const again = readCachedVisitorMap(await redis.get(VISITOR_MAP_CACHE_KEY));
+    if (again) return again;
+  }
+
+  const payload = await buildVisitorMapPayload();
+  if (holdingLock) {
+    try {
+      await redis.set(VISITOR_MAP_CACHE_KEY, payload, { ex: VISITOR_MAP_TTL_SECONDS });
+      await redis.del(VISITOR_MAP_CACHE_LOCK_KEY);
+    } catch (e) {
+      console.warn("[analytics] visitor-map cache set failed:", e);
+    }
+  }
+  return payload;
 }
