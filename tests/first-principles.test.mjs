@@ -294,3 +294,14 @@ test('读缓存长度与请求不符时直接报错，不把 skip 标记错配�
   await assert.rejects(planAnalysis(corpus, async (keys) => keys.slice(0, -1).map(() => null)), /分析缓存读取不完整/);
   await assert.rejects(planAnalysis(corpus, async (keys) => [...keys, null].map(() => null)), /分析缓存读取不完整/);
 });
+
+test('单切块批次的模型输出写成对象也收，多切块批次仍只收数组', () => {
+  const one = makeCorpus([fpDiary('a', '判断必须回到原文。')]);
+  const chunk = one.chunks[0];
+  const row = { key: chunk.key, findings: [finding(chunk)] };
+  // 线上实测：输入只有一个元素时模型返回对象而不是 [对象]，旧写法会永久 502
+  assert.equal(validateExtraction(row, one.chunks).size, 1);
+  assert.equal(validateExtraction([row], one.chunks).size, 1);
+  const two = makeCorpus([fpDiary('a', '判断必须回到原文。'), fpDiary('b', '证据来自文本本身。')]);
+  assert.throws(() => validateExtraction({ key: two.chunks[0].key, findings: [] }, two.chunks), /没有覆盖全部正文分段/);
+});

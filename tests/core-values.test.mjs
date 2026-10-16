@@ -245,3 +245,14 @@ test('中间归纳在最大字段长度下仍然收敛，超出条数被截断�
   assert(done, 'bounded reduction must converge');
   assert(calls < 40, `unexpected calls: ${calls}`);
 });
+
+test('单切块批次的模型输出写成对象也收，多切块批次仍只收数组', () => {
+  const one = makeValuesCorpus([diary('a')]);
+  const chunk = one.chunks[0];
+  const row = { key: chunk.key, findings: [finding(chunk)] };
+  // 线上实测：补齐最后一个切块时输入只有一个元素，模型返回对象而不是 [对象]
+  assert.equal(validateValuesExtraction(row, one.chunks).size, 1);
+  assert.equal(validateValuesExtraction([row], one.chunks).size, 1);
+  const two = makeValuesCorpus([diary('a'), diary('b')]);
+  assert.throws(() => validateValuesExtraction({ key: two.chunks[0].key, findings: [] }, two.chunks), /没有覆盖全部正文分段/);
+});
