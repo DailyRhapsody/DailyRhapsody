@@ -217,6 +217,94 @@ input[type="number"] {
   animation: dr-pet-plane 2.4s linear infinite;
 }
 
+/* 全息投影：投影台 + 光锥 + 扫描线。尺寸按百分比给，随 scale 变化；
+   三个叠加层都不接事件，按钮的可点区域与改动前一致 */
+.dr-pet-holo > svg {
+  filter: drop-shadow(0 0 4px rgb(179 220 255 / 0.85)) drop-shadow(0 0 13px rgb(179 220 255 / 0.5));
+  opacity: 0.94;
+}
+.dr-pet-pad {
+  position: absolute;
+  left: 50%;
+  bottom: -9%;
+  width: 140%;
+  height: 22%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(179 220 255 / 0.85), rgb(179 220 255 / 0) 76%);
+  border: 1px solid rgb(179 220 255 / 0.75);
+  pointer-events: none;
+  animation: dr-pet-pad 3s ease-in-out infinite;
+}
+.dr-pet-beam {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 145%;
+  height: 140%;
+  transform: translateX(-50%);
+  background: linear-gradient(to top, rgb(179 220 255 / 0.3), rgb(179 220 255 / 0));
+  clip-path: polygon(19% 0, 81% 0, 100% 100%, 0 100%);
+  /* 顶部再压一道淡出，免得光锥收口处留下一道横向收边 */
+  -webkit-mask-image: linear-gradient(to top, #000 45%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 45%, transparent 100%);
+  pointer-events: none;
+}
+.dr-pet-scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgb(179 220 255 / 0.16) 0 1px, transparent 1px 4px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 70%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 70%, transparent);
+}
+.dr-pet-scan::after {
+  content: "";
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  top: 0;
+  height: 2px;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, #bdf5ec, transparent);
+  animation: dr-pet-sweep 3.2s linear infinite;
+}
+@keyframes dr-pet-sweep {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  12%,
+  88% {
+    opacity: 0.95;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+@keyframes dr-pet-pad {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: translateX(-50%) scale(0.97);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.03);
+  }
+}
+/* 生成回复时：扫描更快、发光更强 */
+html[data-pet-chat="thinking"] .dr-pet-scan::after {
+  animation-duration: 1.6s;
+}
+html[data-pet-chat="thinking"] .dr-pet-pad {
+  animation-duration: 1.4s;
+}
+html[data-pet-chat="thinking"] .dr-pet-holo > svg {
+  filter: drop-shadow(0 0 6px rgb(179 220 255 / 0.95)) drop-shadow(0 0 18px rgb(179 220 255 / 0.7));
+}
+
 @keyframes dr-pet-dot {
   0%,
   80%,
@@ -238,10 +326,13 @@ input[type="number"] {
   .dr-pet-eyes,
   .dr-pet-eyes-think,
   .dr-pet-plane,
-  .dr-pet-dot {
+  .dr-pet-dot,
+  .dr-pet-pad,
+  .dr-pet-scan::after {
     animation: none;
   }
-  .dr-pet-plane {
+  .dr-pet-plane,
+  .dr-pet-scan {
     display: none;
   }
 }
