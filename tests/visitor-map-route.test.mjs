@@ -20,7 +20,7 @@ const PAYLOAD = {
     { lat: -33.723, lon: 150.894, count: 8 },
   ],
   generatedAt: "2026-10-16T00:00:00.000Z",
-  windowDays: 7,
+  windowDays: 30,
 };
 
 /**
@@ -73,7 +73,7 @@ function registerMocks() {
         return {
           format: "module",
           shortCircuit: true,
-          source: `export const VISITOR_MAP_WINDOW_DAYS = 7;
+          source: `export const VISITOR_MAP_WINDOW_DAYS = 30;
 export const getVisitorMapPayload = async () => (${JSON.stringify(PAYLOAD)});`,
         };
       }
@@ -138,7 +138,7 @@ test("合法的 dr_gate（现签）：200 并返回点位", async () => {
 test("管理员会话：200 并返回点位", async () => {
   const { status, body } = await callRoute({ admin: true });
   assert.equal(status, 200);
-  assert.equal(body?.windowDays, 7);
+  assert.equal(body?.windowDays, 30);
   assert.equal(body?.points?.length, PAYLOAD.points.length);
 });
 
