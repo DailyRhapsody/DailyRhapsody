@@ -122,7 +122,17 @@ export function validateNote(
 }
 
 export function validateExtraction(raw: unknown, chunks: Chunk[]): Map<string, Note> {
-  if (!Array.isArray(raw) || raw.length !== chunks.length) throw new Error("分析没有覆盖全部正文分段");
+  if (!Array.isArray(raw) || raw.length !== chunks.length) {
+    /**
+     * 单切块批次：模型会把「只有一行」写成对象而不是 [对象]（2026-10-16 线上实测，
+     * 详见 core-values.ts 同名分支）。批次只有一个切块时两种形状都收，
+     * 段数与 key 归属照旧核对；多切块批次仍然只收数组。
+     */
+    if (chunks.length === 1 && raw && typeof raw === "object" && !Array.isArray(raw)) {
+      return validateExtraction([raw], chunks);
+    }
+    throw new Error("分析没有覆盖全部正文分段");
+  }
   const expected = new Map(chunks.map((c) => [c.key, c]));
   const results = new Map<string, Note>();
   for (const value of raw) {

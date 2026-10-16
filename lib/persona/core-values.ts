@@ -153,7 +153,19 @@ export function validateValuesNote(
 }
 
 export function validateValuesExtraction(raw: unknown, chunks: ValuesChunk[]): Map<string, ValuesNote> {
-  if (!Array.isArray(raw) || raw.length !== chunks.length) throw new Error("分析没有覆盖全部正文分段");
+  if (!Array.isArray(raw) || raw.length !== chunks.length) {
+    /**
+     * 单切块批次：模型会把「只有一行」写成对象而不是 [对象]（2026-10-16 线上实测：
+     * 补齐最后一个切块时输入只有一个元素，返回的是 {"key":…,"findings":[…]}，
+     * 而校验只收数组 → 每轮都抛「没有覆盖全部正文分段」→ 502 且重试永远同样输出，
+     * 分析停在最后一块上不动，每轮还真实烧一次额度）。批次只有一个切块时两种形状都收，
+     * 段数与 key 归属照旧核对。多切块批次仍然只收数组——那才是「漏段」的真实信号。
+     */
+    if (chunks.length === 1 && raw && typeof raw === "object" && !Array.isArray(raw)) {
+      return validateValuesExtraction([raw], chunks);
+    }
+    throw new Error("分析没有覆盖全部正文分段");
+  }
   const expected = new Map(chunks.map((c) => [c.key, c]));
   const results = new Map<string, ValuesNote>();
   for (const value of raw) {
