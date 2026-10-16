@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import Image from "next/image";
 import RainbowBrushTrail from "@/components/RainbowBrushTrail";
 import { VisitorWorldMap } from "@/components/entries/VisitorWorldMap";
+import { DevTuningPanel } from "@/app/dev/DevTuningPanel";
 import type { VisitorMapPoint } from "@/lib/visitor-map";
 import ConfettiBurst from "@/components/ConfettiBurst";
 import StickyProfileHeader from "@/components/StickyProfileHeader";
@@ -158,6 +159,8 @@ export default function EntriesPageClient({
   /* gate 握手完成前后各会跑一次：首屏这次多半拿不到 dr_gate（接口 403），
      握手完成后由 dr-gate-ready 再取一次。与 useEntries / useCommentCounts 的重拉写法一致。 */
   const [mapGateGen, setMapGateGen] = useState(0);
+  // 本地调档用：生产构建里 NODE_ENV === "production"，下面那两处引用会被整段消除
+  const [devMapIntensity, setDevMapIntensity] = useState<number | null>(null);
   useEffect(() => {
     const onGateReady = () => setMapGateGen((g) => g + 1);
     window.addEventListener("dr-gate-ready", onGateReady);
@@ -209,8 +212,14 @@ export default function EntriesPageClient({
 
   return (
     // 整页文字不可选中（输入框除外，访客写评论时照常能选）
-    <div className="min-h-screen select-none bg-zinc-100/62 font-sans text-zinc-900 dark:bg-zinc-950/68 dark:text-zinc-50 [&_:is(input,textarea,[contenteditable=true])]:select-text">
-      <VisitorWorldMap points={mapPoints} />
+    <div
+      id="blog-root"
+      className="min-h-screen select-none bg-zinc-100/62 font-sans text-zinc-900 dark:bg-zinc-950/68 dark:text-zinc-50 [&_:is(input,textarea,[contenteditable=true])]:select-text"
+    >
+      <VisitorWorldMap points={mapPoints} intensity={devMapIntensity ?? 1} />
+      {process.env.NODE_ENV !== "production" && (
+        <DevTuningPanel intensity={devMapIntensity ?? 1} onIntensity={setDevMapIntensity} />
+      )}
       <RainbowBrushTrail />
       <ConfettiBurst />
       {/* 必须在 entries-flip-wrapper 之外：它的 perspective/transform 会让 fixed 相对 main 定位 */}
