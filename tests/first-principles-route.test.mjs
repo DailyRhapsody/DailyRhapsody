@@ -16,15 +16,15 @@ test('全量分析接口：分批、缓存、并发、撤回和失败恢复（�
  let refuseMark=null,refuseMode='throw',networkFailAt=0,batchOnlyRefusal=false,pipelineBroken=false;
  const make=(id,text=`证据${id}：判断必须回到原文。`)=>({id,date:'2026-10-08',summary:text,isPublic:true,bodyStatus:'complete'});
  let diaries=[make('a'),make('b')];
- t.mock.module(new URL('../lib/notion.ts',import.meta.url).href,{exports:{getAnalysisDiaries:async()=>{sourceCalls++;return diaries===null?null:structuredClone(diaries);}}});
- t.mock.module(new URL('../lib/request-guard.ts',import.meta.url).href,{exports:{withAntiScrapeHeaders:r=>r}});
- t.mock.module('@upstash/redis',{exports:{Redis:class{
+ t.mock.module(new URL('../lib/notion.ts',import.meta.url).href,{namedExports:{getAnalysisDiaries:async()=>{sourceCalls++;return diaries===null?null:structuredClone(diaries);}}});
+ t.mock.module(new URL('../lib/request-guard.ts',import.meta.url).href,{namedExports:{withAntiScrapeHeaders:r=>r}});
+ t.mock.module('@upstash/redis',{namedExports:{Redis:class{
   async mget(...keys){return keys.map(k=>structuredClone(db.get(k)??null));}
   async set(k,v,opts){if(opts?.nx&&db.has(k))return null;db.set(k,structuredClone(v));return 'OK';}
   pipeline(){const queued=[];return {set(k,v){queued.push([k,v]);return this;},async exec(){if(pipelineBroken)throw new Error('redis pipeline failed');for(const[k,v]of queued){db.set(k,structuredClone(v));writes.push(k);}return queued.map(()=> 'OK');}};}
   async eval(_,[key],[token]){return db.get(key)===token?Number(db.delete(key)):0;}
  }}});
- t.mock.module(new URL('../lib/persona/llm.ts',import.meta.url).href,{exports:{streamChat:async opts=>{
+ t.mock.module(new URL('../lib/persona/llm.ts',import.meta.url).href,{namedExports:{streamChat:async opts=>{
   modelCalls++;assert.equal(opts.strict,true);assert(opts.signal);if(gate)await gate.promise;
   if(networkFailAt&&modelCalls===networkFailAt)throw new Error('network down');
   const input=JSON.parse(opts.messages[0].content);
