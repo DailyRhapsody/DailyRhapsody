@@ -2,6 +2,7 @@ import { Redis } from "@upstash/redis";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { aggregateVisitorPoints, type VisitorMapPoint } from "./visitor-map";
 
 const DATA_DIR = join(process.cwd(), "data");
 const JSONL_FILE = join(DATA_DIR, "analytics-visits.jsonl");
@@ -361,4 +362,48 @@ export async function queryAnalytics(q: AnalyticsQuery): Promise<AnalyticsReport
   if (redis) return reportFromRows(await loadRedisVisits(redis, q.from, q.to), q);
   assertWritableStorage();
   return reportFromRows(await loadJsonlVisits(q.from, q.to, true), q);
+}
+
+/**
+ * 首页底图用的访客点位（对外公开的那一份）。
+ *
+ * 与后台 analytics 报告的区别只有两点，都是为了公开：只取近 7 天、不含爬虫；并且必须经过
+ * lib/visitor-map.ts 的格子吸附，发布出去的是格子中心坐标（约 1.9° 量级），不是访问记录里的精确经纬度。
+ * 结果缓存半小时：底图不需要秒级新鲜度，而逐个访客请求都去 LRANGE 全量键会把共享 Redis 拖垮。
+ */
+const VISITOR_MAP_CACHE_KEY = "dr:visitormap:v1";
+const VISITOR_MAP_TTL_SECONDS = 1800;
+export const VISITOR_MAP_WINDOW_DAYS = 7;
+
+export type VisitorMapPayload = {
+  points: VisitorMapPoint[];
+  generatedAt: string;
+  windowDays: number;
+};
+
+export async function getVisitorMapPayload(): Promise<VisitorMapPayload> {
+  if (redis) {
+    const cached = await redis.get<VisitorMapPayload>(VISITOR_MAP_CACHE_KEY);
+    if (cached && Array.isArray(cached.points)) return cached;
+  }
+
+  const to = new Date();
+  const from = new Date(to.getTime() - VISITOR_MAP_WINDOW_DAYS * DAY_MS);
+  const rows = redis ? await loadRedisVisits(redis, from, to) : await loadJsonlVisits(from, to, true);
+  const geoPoints = aggregateFromRows(rows, false).geoPoints;
+  const payload: VisitorMapPayload = {
+    points: aggregateVisitorPoints(geoPoints),
+    generatedAt: to.toISOString(),
+    windowDays: VISITOR_MAP_WINDOW_DAYS,
+  };
+
+  if (redis) {
+    try {
+      await redis.set(VISITOR_MAP_CACHE_KEY, payload, { ex: VISITOR_MAP_TTL_SECONDS });
+    } catch (e) {
+      // 缓存写失败只影响下一次请求的成本，不影响本次结果
+      console.warn("[analytics] visitor-map cache set failed:", e);
+    }
+  }
+  return payload;
 }

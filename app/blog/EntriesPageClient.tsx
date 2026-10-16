@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, useCallback, type SetStateAction 
 import { usePathname } from "next/navigation";
 import Image from "next/image";
 import RainbowBrushTrail from "@/components/RainbowBrushTrail";
+import { VisitorWorldMap } from "@/components/entries/VisitorWorldMap";
+import type { VisitorMapPoint } from "@/lib/visitor-map";
 import ConfettiBurst from "@/components/ConfettiBurst";
 import StickyProfileHeader from "@/components/StickyProfileHeader";
 import { MomentLightbox } from "@/components/entries/MomentLightbox";
@@ -93,6 +95,9 @@ export default function EntriesPageClient({
   const profile = useProfile(initialProfile);
   const { isAdmin: isAdminSession } = useAdminSession();
   const [entriesFlipped, setEntriesFlipped] = useState(false);
+  /* ── 底图访客点位：延后 1.2s 再取，避免和文章流抢首屏带宽；失败就只留地图，不显示光点。
+        接口只返回格子级聚合点位（无 IP / 无城市名 / 无精确坐标），见 lib/visitor-map.ts ── */
+  const [mapPoints, setMapPoints] = useState<VisitorMapPoint[] | null>(null);
   /** 彩蛋只有在「最后一页且已有内容」时才允许触发 */
   const { eggPullY, isRebounding } = useEggPullToRefresh(!hasMore && totalPosts > 0);
   const contentWrapperRef = useRef<HTMLDivElement>(null);
@@ -150,6 +155,34 @@ export default function EntriesPageClient({
     return () => clearTimeout(t);
   }, []);
 
+  /* gate 握手完成前后各会跑一次：首屏这次多半拿不到 dr_gate（接口 403），
+     握手完成后由 dr-gate-ready 再取一次。与 useEntries / useCommentCounts 的重拉写法一致。 */
+  const [mapGateGen, setMapGateGen] = useState(0);
+  useEffect(() => {
+    const onGateReady = () => setMapGateGen((g) => g + 1);
+    window.addEventListener("dr-gate-ready", onGateReady);
+    return () => window.removeEventListener("dr-gate-ready", onGateReady);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(
+      () => {
+        fetch("/api/analytics/visitor-map", { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            if (!cancelled && d && Array.isArray(d.points)) setMapPoints(d.points as VisitorMapPoint[]);
+          })
+          .catch(() => {});
+      },
+      mapGateGen === 0 ? 1200 : 0,
+    );
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [mapGateGen]);
+
   /* ── 禁止复制：键盘、右键菜单的复制与剪切都拦下；输入框里（写评论）照常，
         「复制文章链接」走剪贴板接口或临时 textarea，不受影响 ── */
   useEffect(() => {
@@ -176,7 +209,8 @@ export default function EntriesPageClient({
 
   return (
     // 整页文字不可选中（输入框除外，访客写评论时照常能选）
-    <div className="min-h-screen select-none bg-gradient-to-b from-zinc-100 to-white font-sans text-zinc-900 dark:from-black dark:via-zinc-950 dark:to-black dark:text-zinc-50 [&_:is(input,textarea,[contenteditable=true])]:select-text">
+    <div className="min-h-screen select-none bg-gradient-to-b from-zinc-100/75 to-white/55 font-sans text-zinc-900 dark:from-black/85 dark:via-zinc-950/55 dark:to-black/90 dark:text-zinc-50 [&_:is(input,textarea,[contenteditable=true])]:select-text">
+      <VisitorWorldMap points={mapPoints} />
       <RainbowBrushTrail />
       <ConfettiBurst />
       {/* 必须在 entries-flip-wrapper 之外：它的 perspective/transform 会让 fixed 相对 main 定位 */}
