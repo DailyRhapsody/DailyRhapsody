@@ -209,7 +209,7 @@ export default function EntriesPageClient({
 
   return (
     // 整页文字不可选中（输入框除外，访客写评论时照常能选）
-    <div className="min-h-screen select-none bg-gradient-to-b from-zinc-100/75 to-white/55 font-sans text-zinc-900 dark:from-black/85 dark:via-zinc-950/55 dark:to-black/90 dark:text-zinc-50 [&_:is(input,textarea,[contenteditable=true])]:select-text">
+    <div className="min-h-screen select-none bg-zinc-100/62 font-sans text-zinc-900 dark:bg-zinc-950/68 dark:text-zinc-50 [&_:is(input,textarea,[contenteditable=true])]:select-text">
       <VisitorWorldMap points={mapPoints} />
       <RainbowBrushTrail />
       <ConfettiBurst />
