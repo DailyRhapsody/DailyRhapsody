@@ -389,3 +389,17 @@ html[data-pet-chat="thinking"] .dr-pet-panel-glow > span {
 .dr-callout-body { min-width: 0; flex: 1; }
 .dr-callout-body > :first-child { margin-top: 0; }
 .dr-callout-body > :last-child { margin-bottom: 0; }
+
+/* Notion toggle blocks render as <details> so readers can fold the content away.
+   Default open: the API does not expose the author's fold state, and hiding body
+   text inside an already "expanded" article would lose content. The marker is
+   drawn with ::before because the native triangle is too heavy for this layout. */
+.dr-toggle > summary { cursor: pointer; list-style: none; }
+.dr-toggle > summary::-webkit-details-marker { display: none; }
+.dr-toggle > summary::before {
+  content: "▸ ";
+  color: rgb(161 161 170);
+}
+.dr-toggle[open] > summary::before { content: "▾ "; }
+.dr-toggle-body { margin-top: 0.5rem; padding-left: 0.875rem; }
+.dr-toggle-body > * + * { margin-top: 1.15em; }

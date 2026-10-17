@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Diary } from "@/lib/notion";
 import type { PersonaNote } from "@/lib/persona/types";
+import { stripPrivateMarkers } from "@/lib/share-card";
 
 /**
  * 轻量检索：给本轮问题挑几段最相关的原文塞进上下文。
@@ -46,7 +47,7 @@ function countGrams(text: string): Map<string, number> {
 
 /** 正文里的图片是 /api/media 代理路径，对模型没有意义，检索前剥掉 */
 function cleanBody(md: string): string {
-  return md
+  return stripPrivateMarkers(md)
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
     .replace(/<[^>]+>/g, "")
     .replace(/\n{3,}/g, "\n\n")

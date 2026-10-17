@@ -37,6 +37,11 @@ export type Diary = {
   summary: string; // rich text → plain text
   /** 仅 complete 的文字正文可参与全量分析；旧缓存没有此字段。 */
   bodyStatus?: "complete" | "partial" | "stale";
+  /**
+   * 生成 summary 的正文转换器版本。换缩进/块渲染规则时 +1：
+   * 只看 sourceEditedAt 会把旧形状的正文当成可复用，导致新规则对存量文章不生效。
+   */
+  bodyVersion?: number;
   sourceEditedAt?: string;
   location?: string;
   tags?: string[];
@@ -86,8 +91,34 @@ async function getRedis() {
 
 // v6：记录正文完整性与来源版本，供全量文章分析核验。
 // v5 只作为展示种子；首次刷新后才能参与分析。
-const CACHE_KEY = "notion:diaries:v6";
-const LEGACY_CACHE_KEY = "notion:diaries:v5";
+// v7：正文转换支持嵌套列表缩进与 toggle 折叠块，正文形状变了，必须换键。
+// 旧键 v6 留作冷启动的种子：新键还没写时把旧数据当「已过期」返回，
+// 访客继续看到旧正文，后台重拉完成后自动切换，不会出现空白页。
+const CACHE_KEY = "notion:diaries:v7";
+const LEGACY_CACHE_KEY = "notion:diaries:v6";
+
+/**
+ * 正文转换器版本。改 blockToMarkdown / 缩进 / toggle 规则时 +1。
+ * 换缓存键只隔离新旧实例，不会让存量文章重新转换——必须靠这个版本号判断
+ * 「旧正文是不是当前转换器产出的」，否则 v6 的正文会被当成可复用写进 v7。
+ */
+export const BODY_VERSION = 7;
+
+/** 每轮刷新最多重转换多少篇老正文。全量 281 篇跑不进 200s 预算，分批迁移。 */
+const BODY_MIGRATION_BATCH = 40;
+
+/** 旧缓存是否就是当前转换器的产物（供 refresh 复用判断，也便于单测）。 */
+export function bodyIsCurrent(
+  old: Pick<Diary, "bodyStatus" | "bodyVersion" | "sourceEditedAt"> | undefined,
+  lastEditedAt: string
+): boolean {
+  return (
+    !!lastEditedAt &&
+    old?.bodyVersion === BODY_VERSION &&
+    old.bodyStatus === "complete" &&
+    old.sourceEditedAt === lastEditedAt
+  );
+}
 // Notion 自动化调用 /api/revalidate 时写入的时间戳：晚于快照开始时刻即视为过期。
 // 单独一个小键，不回写大缓存，避免与正在进行的全量刷新互相覆盖。
 // 失效信号和刷新锁继续与 v2 共享，让迁移期间的 webhook 和 Notion 限流保护仍然有效。
@@ -286,14 +317,22 @@ function blockToMarkdown(b: BlockObjectResponse, opts: BodyOptions): string {
       return `## ${richTextToMarkdown(b.heading_2.rich_text)}`;
     case "heading_3":
       return `### ${richTextToMarkdown(b.heading_3.rich_text)}`;
-    case "bulleted_list_item":
-      return `- ${richTextToMarkdown(b.bulleted_list_item.rich_text)}`;
-    case "numbered_list_item":
-      return `1. ${richTextToMarkdown(b.numbered_list_item.rich_text)}`;
+    case "bulleted_list_item": {
+      const text = richTextToMarkdown(b.bulleted_list_item.rich_text);
+      // 空项只能是裸 "-"：带尾空格的 "- " 会被 marked 解析成普通段落，列表项消失
+      return text ? `- ${text}` : "-";
+    }
+    case "numbered_list_item": {
+      const text = richTextToMarkdown(b.numbered_list_item.rich_text);
+      return text ? `1. ${text}` : "1.";
+    }
     case "quote":
       return `> ${richTextToMarkdown(b.quote.rich_text)}`;
-    case "to_do":
-      return `- [${b.to_do.checked ? "x" : " "}] ${richTextToMarkdown(b.to_do.rich_text)}`;
+    case "to_do": {
+      const text = richTextToMarkdown(b.to_do.rich_text);
+      // 空待办没有内容可勾：GFM 要求 "] " 后有正文，输出 "- [ ]" 会渲染成字面 "[ ]"
+      return text ? `- [${b.to_do.checked ? "x" : " "}] ${text}` : "";
+    }
     case "code": {
       const lang = b.code.language === "plain text" ? "" : b.code.language;
       // 代码块内容按纯文本输出：加粗 / 链接的 markdown 标记在 <pre> 里会变成字面量，
@@ -324,13 +363,10 @@ function blockToMarkdown(b: BlockObjectResponse, opts: BodyOptions): string {
       return b.bookmark.url ? `[${b.bookmark.url}](${b.bookmark.url})` : "";
     case "embed":
       return b.embed.url ? `[${b.embed.url}](${b.embed.url})` : "";
-    case "toggle":
-      // 折叠块：标题作为段落输出，子内容由 walkBlocks 递归追加在后面
-      return richTextToMarkdown(b.toggle.rich_text);
     case "synced_block":
     case "column_list":
     case "column":
-      // 容器型 block 自身没有内容，子节点会被 walkBlocks 递归输出
+      // 容器型 block 自身没有内容，子节点由 renderChildren 递归输出
       return "";
     default:
       return "";
@@ -429,19 +465,86 @@ async function tableToMarkdown(
 }
 
 /**
- * 递归遍历 page 下的所有 block，处理 toggle / column_list / synced_block 等容器。
+ * 列表项的「族」：相邻同族项用单换行连接，否则 marked 会判成 loose list（每项包一层 <p>）；
+ * 异族之间、列表与段落之间才用空行。
+ */
+type ListFamily = "bullet" | "number" | "todo";
+
+/** 一个已渲染块：family 只用于决定与相邻块之间的分隔符。 */
+type Emitted = { text: string; family: ListFamily | null };
+
+/** 本层行首缩进；width 只在列表项里非零，表示子块要缩进到它的正文列。 */
+type BlockCtx = { indent: number; width: number };
+
+const LIST_FAMILY: Partial<Record<BlockObjectResponse["type"], ListFamily>> = {
+  bulleted_list_item: "bullet",
+  numbered_list_item: "number",
+  to_do: "todo",
+};
+
+/**
+ * 子块缩进步长取父项的标记宽度：无序 2（"- "）、有序 3（"1. "）、待办 4。
+ * 待办的正文列其实是 6（"- [ ] "），但 marked 在缩进 6 时会把嵌套列表降级成文本，
+ * 取 4 才既能嵌套三层、又保留待办方框。
+ */
+const MARKER_WIDTH: Record<ListFamily, number> = { bullet: 2, number: 3, todo: 4 };
+
+function indentLines(text: string, n: number): string {
+  if (!text || n <= 0) return text;
+  const pad = " ".repeat(n);
+  return text.split("\n").map((line) => (line.trim() === "" ? "" : pad + line)).join("\n");
+}
+
+/** 列表项首行落在 indent，续行（Shift+Enter 的换行）落到正文列，否则会被解析成新块。 */
+function indentListItem(text: string, indent: number, width: number): string {
+  if (!text) return text;
+  const [first, ...rest] = text.split("\n");
+  const pad = " ".repeat(indent);
+  const cont = " ".repeat(indent + width);
+  return [pad + first, ...rest.map((line) => (line.trim() === "" ? "" : cont + line))].join("\n");
+}
+
+/**
+ * 块之间的分隔符：同族相邻列表项用单换行（连续列表），其余用空行。
+ * 早先所有块统一用空行拼接，子块因此与父块同级——嵌套在数据层就被拍平了。
+ */
+function joinEmitted(items: Emitted[]): string {
+  let out = "";
+  let prev: ListFamily | null = null;
+  for (const item of items) {
+    const sep = out === "" ? "" : prev !== null && prev === item.family ? "\n" : "\n\n";
+    out += sep + item.text;
+    prev = item.family;
+  }
+  return out;
+}
+
+function toggleMarkdown(title: string, inner: Emitted[]): string {
+  const body = inner.length ? `\n\n${joinEmitted(inner)}` : "";
+  // 与 callout 同构：用引用块承载私有标记，渲染器再把它换成 <details>。
+  // 直接把 HTML 写进正文不可行——highlightHashtagsForRender 会把 "<" 转义。
+  return `[!NOTION-TOGGLE] ${title}${body}`
+    .split("\n")
+    .map((line) => (line ? `> ${line}` : ">"))
+    .join("\n");
+}
+
+/**
+ * 递归遍历 page 下的所有 block，返回「已渲染块」而不是共享数组：
+ * 子块必须带着自己的缩进与族标记回到父层，否则嵌套关系无法表达。
  * Notion API 对每个有 has_children 的 block 都需要再调一次 list；这里限制深度避免循环。
  */
-async function walkBlocks(
+async function renderChildren(
   blockId: string,
+  ctx: BlockCtx,
   depth: number,
-  parts: string[],
   opts: BodyOptions,
-  maxDepth = opts.completeness ? 32 : 3
-): Promise<void> {
+  maxDepth: number
+): Promise<Emitted[]> {
+  const out: Emitted[] = [];
   if (depth > maxDepth) {
     if (opts.completeness) opts.completeness.partial = true;
-    return;
+    return out;
   }
   let cursor: string | undefined;
   do {
@@ -462,34 +565,63 @@ async function walkBlocks(
       const block = b as BlockObjectResponse;
       if (block.type === "table") {
         const table = await tableToMarkdown(block, opts.deadline);
-        if (table) parts.push(table);
+        if (table) out.push({ text: indentLines(table, ctx.indent), family: null });
+        continue;
+      }
+      if (block.type === "toggle") {
+        const inner = block.has_children
+          ? await renderChildren(block.id, { indent: 0, width: 0 }, depth + 1, opts, maxDepth)
+          : [];
+        const md = toggleMarkdown(richTextToMarkdown(block.toggle.rich_text), inner);
+        out.push({ text: indentLines(md, ctx.indent), family: null });
         continue;
       }
       if (block.type === "callout" || block.type === "quote") {
         const content = [richTextToMarkdown(block.type === "callout" ? block.callout.rich_text : block.quote.rich_text)];
         if (block.has_children) {
-          await walkBlocks(block.id, depth + 1, content, opts, maxDepth);
+          const inner = await renderChildren(block.id, { indent: 0, width: 0 }, depth + 1, opts, maxDepth);
+          if (inner.length) content.push(joinEmitted(inner));
         }
         if (block.type === "callout") {
           const icon = block.callout.icon;
           const emoji = icon?.type === "emoji" ? icon.emoji : "💡";
-          content.unshift(`[!NOTION-CALLOUT] ${emoji}\n`);
+          content.unshift(`[!NOTION-CALLOUT] ${emoji}`);
         }
-        parts.push(content.join("\n\n").split("\n").map((line) => `> ${line}`).join("\n"));
+        const quoted = content.join("\n\n").split("\n").map((line) => (line ? `> ${line}` : ">")).join("\n");
+        out.push({ text: indentLines(quoted, ctx.indent), family: null });
         continue;
       }
+      const family = LIST_FAMILY[block.type] ?? null;
       const md = blockToMarkdown(block, opts);
       // 未支持的文字块不能静默认证为全文；图片/视频本身不在文字分析范围。
       if (opts.completeness && block.type === "unsupported") {
         opts.completeness.partial = true;
       }
-      if (md) parts.push(md);
-      if (block.has_children) {
-        await walkBlocks(block.id, depth + 1, parts, opts, maxDepth);
+      if (!md) {
+        // 容器块（column_list / column / synced_block）自身没有文本，但子块必须递归输出。
+        // 早先把递归写在 if (md) 里，两栏与同步块的内容会整段消失且不置 partial。
+        if (block.has_children) {
+          out.push(...(await renderChildren(block.id, { indent: ctx.indent, width: 0 }, depth + 1, opts, maxDepth)));
+        }
+        continue;
       }
+      let text = family ? indentListItem(md, ctx.indent, MARKER_WIDTH[family]) : indentLines(md, ctx.indent);
+      if (block.has_children) {
+        const next: BlockCtx = family
+          ? { indent: ctx.indent + MARKER_WIDTH[family], width: MARKER_WIDTH[family] }
+          : { indent: ctx.indent, width: 0 };
+        const kids = await renderChildren(block.id, next, depth + 1, opts, maxDepth);
+        if (kids.length) {
+          // 子块并进本块的文本里，不能用兄弟级分隔符：列表族不同（有序套无序）时
+          // 若走 "\n\n" 会在父项与子列表之间插空行，反过来把外层有序列表切断。
+          text += (kids[0].family ? "\n" : "\n\n") + joinEmitted(kids);
+        }
+      }
+      out.push({ text, family });
     }
     cursor = r.has_more ? r.next_cursor ?? undefined : undefined;
   } while (cursor);
+  return out;
 }
 
 /** 抓取失败返回 null，让全量刷新能区分「正文确实为空」和「这次没抓到」。 */
@@ -497,14 +629,15 @@ async function tryExtractBodyMarkdown(
   pageId: string,
   opts: BodyOptions
 ): Promise<string | null> {
-  const parts: string[] = [];
   try {
-    await walkBlocks(pageId, 0, parts, opts);
+    // 展示路径也用 32 层：以前列表被拍平，3 层很少被触到；现在嵌套是显式特性，
+    // 4 层以上的文章会在编辑页 / Reference 页静默少内容。32 层只是防环的上限。
+    const parts = await renderChildren(pageId, { indent: 0, width: 0 }, 0, opts, 32);
+    return joinEmitted(parts);
   } catch (e) {
     console.warn(`[notion] extractBodyMarkdown failed for ${pageId}:`, e);
     return null;
   }
-  return parts.join("\n\n");
 }
 
 /**
@@ -741,11 +874,24 @@ async function refreshDiariesFromNotion(deadline: number): Promise<Diary[]> {
   } while (cursor);
 
   const previous = new Map((await getCached())?.data.map((d) => [d.id, d]) ?? []);
-  const reusable = (page: PageObjectResponse) => {
-    const old = previous.get(page.id);
-    return !!page.last_edited_time && old?.bodyStatus === "complete" && old.sourceEditedAt === page.last_edited_time;
-  };
-  const bodies = await extractBodyMarkdownBatch(pages.filter((p) => !reusable(p)).map((p) => p.id), deadline);
+  const reusable = (page: PageObjectResponse) => bodyIsCurrent(previous.get(page.id), page.last_edited_time);
+  const pending = pages.filter((p) => !reusable(p));
+  // 老转换器产出的完整正文要重抓，但 281 篇跑不进 200s 预算：一轮只迁移一批，
+  // 没轮到的保留旧正文并维持 complete（它确实是完整文档，只是旧形状），
+  // 否则会被标成 stale，让文章分析反复 202。新文章与被编辑过的文章永远优先。
+  const legacy = pending.filter((p) => {
+    const old = previous.get(p.id);
+    return !!old && old.bodyStatus === "complete" && old.bodyVersion !== BODY_VERSION;
+  });
+  const legacyIds = new Set(legacy.map((p) => p.id));
+  const edited = pending.filter((p) => !legacyIds.has(p.id));
+  const migrationBudget = Math.max(0, BODY_MIGRATION_BATCH - edited.length);
+  const fetched = legacy.slice(0, migrationBudget);
+  const skippedForMigration = new Set(legacy.slice(migrationBudget).map((p) => p.id));
+  const bodies = await extractBodyMarkdownBatch(
+    [...edited, ...fetched].map((p) => p.id),
+    deadline
+  );
   // 重试用尽或预算用完仍没抓到的正文沿用上一版缓存，不让一次限流把好数据覆盖成只剩标题
   const diaries = pages.map((page) => {
     const body = bodies.get(page.id);
@@ -753,7 +899,14 @@ async function refreshDiariesFromNotion(deadline: number): Promise<Diary[]> {
     return {
       ...mapPageToDiary(page, body?.text ?? old?.summary ?? ""),
       sourceEditedAt: page.last_edited_time,
-      bodyStatus: reusable(page) || body?.complete ? "complete" as const : body ? "partial" as const : "stale" as const,
+      bodyVersion: body ? BODY_VERSION : old?.bodyVersion,
+      bodyStatus: body
+        ? body.complete
+          ? ("complete" as const)
+          : ("partial" as const)
+        : skippedForMigration.has(page.id) || reusable(page)
+          ? ("complete" as const)
+          : ("stale" as const),
     };
   });
 
@@ -854,7 +1007,12 @@ export async function getDiaryById(id: string): Promise<Diary | null> {
     if (parentDb !== getDatabaseId().replace(/-/g, "")) return null;
 
     const body = await extractBodyMarkdown(id, { proxyMedia: true, deadline });
-    return mapPageToDiary(page as PageObjectResponse, body ?? "");
+    const diary = mapPageToDiary(page as PageObjectResponse, body ?? "");
+    // 详情路径是现抓的正文：抓到就标记为当前转换器版本，抓不到（限流/超预算）
+    // 不能声称完整，交给调用方按空正文处理。
+    return body === null
+      ? diary
+      : { ...diary, bodyVersion: BODY_VERSION, bodyStatus: "complete" as const };
   } catch {
     return null;
   }

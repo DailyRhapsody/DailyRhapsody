@@ -24,6 +24,8 @@ const ALLOWED_TAGS: string[] = [
   "strong", "b", "em", "i", "u", "s", "strike", "del", "ins", "mark",
   "small", "sub", "sup",
   "blockquote", "cite", "q",
+  // 折叠块（Notion toggle → <details>）：容器本身不带脚本能力，事件属性仍被剥离
+  "details", "summary",
   // 列表
   "ul", "ol", "li", "dl", "dt", "dd",
   // 链接 / 媒体
@@ -39,6 +41,9 @@ const ALLOWED_TAGS: string[] = [
 const ALLOWED_ATTRS: Record<string, string[]> = {
   "*": ["class", "id", "title", "lang", "dir"],
   a: ["href", "name", "target", "rel"],
+  // open 决定折叠块默认展开：Notion toggle 的折叠状态不进 API，
+  // 默认展开才保证「展开文章」不会被第二次点击藏内容，也不会丢正文。
+  details: ["open"],
   img: ["src", "srcset", "alt", "width", "height", "loading"],
   source: ["src", "srcset", "type", "media", "sizes"],
   th: ["align", "colspan", "rowspan", "scope"],
@@ -52,8 +57,9 @@ function sanitize(html: string): string {
   return sanitizeHtml(html, {
     allowedTags: ALLOWED_TAGS,
     allowedAttributes: ALLOWED_ATTRS,
-    // 默认 schemes 与 DOMPurify 一致：禁止 javascript:
-    allowedSchemes: ["http", "https", "mailto", "tel", "data"],
+    // 默认 schemes 与 DOMPurify 一致：禁止 javascript:。
+    // data: 只留给 img（图片可以内联），链接触发顶层 data: 导航没有正当用途。
+    allowedSchemes: ["http", "https", "mailto", "tel"],
     allowedSchemesByTag: { img: ["http", "https", "data"] },
     allowProtocolRelative: true,
     // sanitize-html 默认会把单标签 input 输出为 <input ... />；保留即可
@@ -171,7 +177,17 @@ marked.use({
   },
   renderer: {
     blockquote({ text }) {
-      const marker = text.match(/^\[!NOTION-CALLOUT\] ([^\n]*)\n/);
+      // 折叠块：Notion toggle 在转换层被写成「私有标记 + 引用块」。
+      // 默认 open：Notion API 不提供折叠状态，收起会让正文凭空消失，也伤 SEO。
+      const toggle = text.match(/^\[!NOTION-TOGGLE\] ?([^\n]*)(?:\n|$)/);
+      if (toggle) {
+        const title = (marked.parseInline(toggle[1]) as string) || "";
+        const body = this.parser.parse(marked.lexer(text.slice(toggle[0].length)));
+        // 只有标题的 toggle 不输出空 body：.dr-toggle-body 有上边距，空容器会多出 8px 空档
+        const bodyHtml = body.trim() ? `<div class="dr-toggle-body">${body}</div>` : "";
+        return `<details class="dr-toggle" open><summary>${title}</summary>${bodyHtml}</details>\n`;
+      }
+      const marker = text.match(/^\[!NOTION-CALLOUT\] ?([^\n]*)(?:\n|$)/);
       if (!marker) return false;
       const icon = escapeAttr(marker[1]).replaceAll(">", "&gt;");
       const body = this.parser.parse(marked.lexer(text.slice(marker[0].length)));
@@ -214,4 +230,27 @@ export function renderMarkdown(markdown: string): string {
  * 与前台 / 编辑器预览区共用的样式：列表层级、表格、代码块、图片、引用等与 GFM 输出对齐。
  */
 export const markdownPreviewProseClass =
-  "prose prose-zinc max-w-none dark:prose-invert break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_ul_ul]:mt-1 [&_ul_ul]:list-[circle] [&_ul_ul_ul]:list-[square] [&_ol_ol]:mt-1 [&_ol_ol]:list-[lower-alpha] [&_ol_ol_ol]:list-[lower-roman] [&_a]:break-words [&_table]:block [&_table]:w-full [&_table]:overflow-x-auto [&_table]:text-left [&_th]:border [&_th]:border-zinc-300 [&_th]:px-2 [&_th]:py-1.5 [&_td]:border [&_td]:border-zinc-300 [&_td]:px-2 [&_td]:py-1.5 dark:[&_th]:border-zinc-600 dark:[&_td]:border-zinc-600 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:p-4 [&_pre]:text-sm [&_pre]:bg-zinc-900 [&_pre]:text-zinc-100 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-inherit [&_p_code]:rounded [&_p_code]:bg-zinc-100 [&_p_code]:px-1 [&_p_code]:py-0.5 dark:[&_p_code]:bg-zinc-800 [&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-lg [&_blockquote]:border-l-4 [&_blockquote]:border-zinc-300 [&_blockquote]:pl-4 [&_blockquote]:not-italic dark:[&_blockquote]:border-zinc-600 [&_hr]:my-8 [&_.dr-mermaid]:my-3 [&_.dr-mermaid]:overflow-x-auto [&_.dr-mermaid_svg]:mx-auto [&_.dr-mermaid_svg]:h-auto [&_.dr-mermaid_svg]:max-w-full [&_input[type=checkbox]]:mr-1.5 [&_input[type=checkbox]]:align-middle [&_.dr-md-editor-tag]:font-medium [&_.dr-md-editor-tag]:text-violet-700 dark:[&_.dr-md-editor-tag]:text-sky-400";
+  "prose prose-zinc max-w-none dark:prose-invert break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_li:has(>input[type=checkbox])]:list-none [&_ul_ul]:mt-1 [&_ul_ul]:list-[circle] [&_ul_ul_ul]:list-[square] [&_ol_ol]:mt-1 [&_ol_ol]:list-[lower-alpha] [&_ol_ol_ol]:list-[lower-roman] [&_a]:break-words [&_table]:block [&_table]:w-full [&_table]:overflow-x-auto [&_table]:text-left [&_th]:border [&_th]:border-zinc-300 [&_th]:px-2 [&_th]:py-1.5 [&_td]:border [&_td]:border-zinc-300 [&_td]:px-2 [&_td]:py-1.5 dark:[&_th]:border-zinc-600 dark:[&_td]:border-zinc-600 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:p-4 [&_pre]:text-sm [&_pre]:bg-zinc-900 [&_pre]:text-zinc-100 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-inherit [&_p_code]:rounded [&_p_code]:bg-zinc-100 [&_p_code]:px-1 [&_p_code]:py-0.5 dark:[&_p_code]:bg-zinc-800 [&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-lg [&_blockquote]:border-l-4 [&_blockquote]:border-zinc-300 [&_blockquote]:pl-4 [&_blockquote]:not-italic dark:[&_blockquote]:border-zinc-600 [&_hr]:my-8 [&_.dr-mermaid]:my-3 [&_.dr-mermaid]:overflow-x-auto [&_.dr-mermaid_svg]:mx-auto [&_.dr-mermaid_svg]:h-auto [&_.dr-mermaid_svg]:max-w-full [&_input[type=checkbox]]:mr-1.5 [&_input[type=checkbox]]:align-middle [&_.dr-md-editor-tag]:font-medium [&_.dr-md-editor-tag]:text-violet-700 dark:[&_.dr-md-editor-tag]:text-sky-400";
+
+/**
+ * 展开态的标题层级。折叠态是「流」，标题与正文同字号、不加粗；展开态是「阅读」，
+ * 才把 h1-h3 的级差与字重放出来。级差刻意小（17/15/14px，正文 13px），靠字重和
+ * 既有块间距立层级，不用文档式的 1.5 倍跳档；不加 margin——外层 space-y-[1.15em]
+ * 已经给了块间距，再加外边距只会发生外边距合并、把节奏弄乱。
+ */
+const ENTRY_EXPANDED_HEADINGS =
+  "[&_h1]:text-[1.0625rem] [&_h1]:font-semibold [&_h2]:text-[0.9375rem] [&_h2]:font-semibold [&_h3]:text-[0.875rem] [&_h3]:font-semibold [&_h4]:font-semibold [&_h5]:font-semibold [&_h6]:font-semibold [&_summary]:cursor-pointer [&_summary]:select-none";
+
+/**
+ * 博客卡片正文的排版类名。折叠与展开共用同一份基础样式，唯一差别：
+ * - 折叠：max-h-36 截断 + 摘要行不可点（避免在截断的卡片里收起 toggle 内容）；
+ * - 展开：放开标题层级与折叠行交互。
+ * Reference 页与后台预览用的是 markdownPreviewProseClass，不经过这里，
+ * 所以这次改动不会波及它们。
+ */
+export function entrySummaryProseClass(expanded: boolean): string {
+  const base = `${markdownPreviewProseClass} text-[0.8125rem] leading-relaxed [&_:is(p,li):not(.dr-mermaid_*)]:text-justify [&_:is(strong,b,th)]:font-normal [&_th]:bg-zinc-100/70 [&_th:not([align])]:text-left dark:[&_th]:bg-zinc-800/60 [&_a]:break-all [&_:is(blockquote,.dr-caption)]:text-zinc-500 dark:[&_:is(blockquote,.dr-caption)]:text-zinc-400 [&_img]:h-24 [&_img]:w-24 [&_img]:bg-zinc-200 [&_img]:object-cover dark:[&_img]:bg-zinc-800 sm:[&_img]:h-20 sm:[&_img]:w-20`;
+  return expanded
+    ? `${base} ${ENTRY_EXPANDED_HEADINGS}`
+    : `${base} max-h-36 overflow-hidden [&_summary]:pointer-events-none [&_summary]:cursor-default [&_summary::before]:hidden`;
+}

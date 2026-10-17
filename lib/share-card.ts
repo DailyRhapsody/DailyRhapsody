@@ -22,18 +22,35 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/**
+ * 只剥转换层私有标记与引用前缀，保留正文 Markdown。
+ * 分析语料、检索索引、标题生成与分享图共用这一份规则；不能用
+ * summaryToPlainForCard（那个连列表、代码、加粗一起剥，会改变原文）。
+ */
+export function stripPrivateMarkers(text: string): string {
+  return text
+    // 多层引用前缀（toggle 套 toggle 会产出 "> >"），循环剥到底
+    .replace(/^(?:[ \t]*>[ \t]?)+/gm, "")
+    // callout 的那一行只有一个图标，整行去掉
+    .replace(/\[!NOTION-CALLOUT\][^\n]*\n?/g, "")
+    // toggle 的标题是正文，只去标记本身
+    .replace(/\[!NOTION-TOGGLE\][ \t]*/g, "");
+}
+
 /** 正文展示用：去掉常见 Markdown，保留换行 */
 export function summaryToPlainForCard(summary: string): string {
   let t = summary.trim();
   if (!t) return " ";
+  t = stripPrivateMarkers(t);
   t = t.replace(/^#{1,6}\s+/gm, "");
   t = t.replace(/\*\*([^*]+)\*\*/g, "$1");
   t = t.replace(/\*([^*]+)\*/g, "$1");
   t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
-  t = t.replace(/^[-*+]\s+\[[ xX]\]\s+/gm, "");
-  t = t.replace(/^[-*+]\s+/gm, "");
-  t = t.replace(/^\d+\.\s+/gm, "");
-  t = t.replace(/^>\s?/gm, "");
+  // 列表标记可能带缩进（嵌套列表），必须容忍前导空白，否则分享图里会留下 "- " 与空格
+  t = t.replace(/^[ \t]*[-*+]\s+\[[ xX]\]\s+/gm, "");
+  t = t.replace(/^[ \t]*[-*+]\s+/gm, "");
+  t = t.replace(/^[ \t]*\d+\.\s+/gm, "");
+  t = t.replace(/<\/?(?:details|summary|div)[^>]*>/gi, "");
   t = t.replace(/`{3}[\s\S]*?`{3}/g, "");
   t = t.replace(/`([^`]+)`/g, "$1");
   t = t.replace(/\n{3,}/g, "\n\n");

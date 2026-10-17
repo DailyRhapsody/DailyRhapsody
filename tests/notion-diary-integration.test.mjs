@@ -4,8 +4,8 @@ import { registerHooks } from "node:module";
 import { Socket } from "node:net";
 import { test } from "node:test";
 
-const CURRENT = "notion:diaries:v6";
-const LEGACY = "notion:diaries:v5";
+const CURRENT = "notion:diaries:v7";
+const LEGACY = "notion:diaries:v6";
 const DATABASE = "00000000000000000000000000000001";
 const richText = (text) => ({
   type: "text", text: { content: text, link: null }, plain_text: text, href: null,
