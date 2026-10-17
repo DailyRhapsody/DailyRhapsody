@@ -27,3 +27,29 @@ export const CHAT_LIMITS = {
   /** 低于 Vercel 函数时长上限，留出收尾时间 */
   upstreamTimeoutMs: 55_000,
 } as const;
+
+/**
+ * agent 模式（工具+自主循环）的开关与预算。默认 off；灰度顺序：owner（只本人）→ on（全体）。
+ * 服务端开关（非 NEXT_PUBLIC），改值需要一次部署才生效；关闭即回到单步直答，随时可回滚。
+ */
+export type AgentMode = "off" | "owner" | "on";
+
+export function getAgentMode(): AgentMode {
+  const v = process.env.PERSONA_AGENT_MODE?.trim().toLowerCase();
+  return v === "owner" || v === "on" ? v : "off";
+}
+
+export const AGENT_LIMITS = {
+  /** 含首调在内的模型调用上限；最后一轮强制收尾作答（tool_choice=none） */
+  maxModelCalls: 5,
+  /** 工具执行次数上限；同参重复的调用不重复执行、也不计入（停滞守卫） */
+  maxToolCalls: 4,
+  /** 单步（一次模型调用）超时，对齐普通路径的上游预算 */
+  perStepTimeoutMs: 55_000,
+  /** 整个循环的总预算；NDJSON 首包即达，不受前端 65s 首包限制 */
+  totalDeadlineMs: 150_000,
+  /** 单条工具结果的字符上限（tool-runners 内截断） */
+  maxToolResultChars: 8_000,
+  /** 全站每日步数预算（费用闸）：一次模型调用记一步 */
+  siteDailySteps: 1_500,
+} as const;

@@ -9,7 +9,8 @@ import sanitizeHtml from "sanitize-html";
  * 另建独立实例，互不影响。
  *
  * 白名单去掉 img：回复一旦被提示注入，外链图片可以把数据拼在 URL 里带出去。
- * 原始 HTML 一律按文本显示，所有链接在净化出口统一重算 target/rel。
+ * 站外链接同样降级为纯文本（回复被注入时，外链是又一条数据外泄通道——
+ * 只有站内链接可点，链接由服务器生成）；原始 HTML 一律按文本显示。
  */
 const md = new Marked({
   gfm: true,
@@ -20,17 +21,20 @@ const md = new Marked({
       return escapeHtml(text);
     },
     link({ href, title, tokens }) {
-      if (!href) return this.parser.parseInline(tokens);
       const inner = this.parser.parseInline(tokens);
+      // 只有站内相对路径（/blog#entry-…、/blog）允许渲染成链接；其余一律纯文本
+      if (!href || !isSiteRelative(href)) return inner;
       const t = title ? ` title="${escapeAttr(title)}"` : "";
       return `<a href="${escapeAttr(href)}"${t}>${inner}</a>`;
     },
   },
 });
 
-/** 以单个 / 开头的是站内路径；// 与 /\ 开头会被浏览器当成站外地址 */
-function isSiteRelative(href: string): boolean {
-  return href.startsWith("/") && href[1] !== "/" && href[1] !== "\\";
+/** 以单个 / 开头、不含任何空白或反斜杠的才是站内路径；// 与 /\ 开头会被浏览器当成站外地址。
+ *  tab/换行/bidi 一类字符会被浏览器在解析 URL 时静默去掉（/\t/evil 变 //evil），
+ *  所以任何空白字符都直接拒绝，不给 URL 走私留缝。 */
+export function isSiteRelative(href: string): boolean {
+  return /^\/[^\s\\]*$/.test(href) && href[1] !== "/";
 }
 
 const OPTIONS: sanitizeHtml.IOptions = {
@@ -49,16 +53,13 @@ const OPTIONS: sanitizeHtml.IOptions = {
   allowedSchemes: ["http", "https", "mailto"],
   allowProtocolRelative: false,
   transformTags: {
-    // 链接的统一出口：站内文章（/blog#entry-…）在当前页跳转，其余一律新标签页打开，
-    // 丢弃模型给出的 target/rel
+    // 链接的统一出口（纵深防御，渲染器已先行拦截）：站内链接在当前页跳转；
+    // 站外/未知一律降级为 <span>——纯文本化，不能再把上下文带出去
     a: (tagName, attribs) => {
       const href = attribs.href ?? "";
+      if (!isSiteRelative(href)) return { tagName: "span", attribs: {} };
       const out: sanitizeHtml.Attributes = { href };
       if (attribs.title) out.title = attribs.title;
-      if (!isSiteRelative(href)) {
-        out.target = "_blank";
-        out.rel = "noopener noreferrer nofollow";
-      }
       return { tagName, attribs: out };
     },
   },

@@ -2,20 +2,23 @@ import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/auth";
 import { getClientIpFromRequest } from "@/lib/client-ip";
 import { getCachedDiaries } from "@/lib/notion";
-import { CHAT_LIMITS, getPetMode } from "@/lib/persona/config";
+import { runAgentChat } from "@/lib/persona/agent-loop";
+import { AGENT_LIMITS, CHAT_LIMITS, getAgentMode, getPetMode } from "@/lib/persona/config";
 import { skillRunner } from "@/lib/persona/skill-runners";
 import { findSkill } from "@/lib/persona/skills";
-import { isLlmConfigured, LlmError, streamChat, type LlmMessage } from "@/lib/persona/llm";
+import { isLlmConfigured, LlmError, streamChat, supportsToolCalls, type LlmMessage } from "@/lib/persona/llm";
 import { buildBlogFacts } from "@/lib/persona/facts";
 import { buildSystemPrompt } from "@/lib/persona/prompt";
 import { retrieveSnippets } from "@/lib/persona/retrieve";
+import { stripInvisible } from "@/lib/persona/tools";
 import { loadPersona } from "@/lib/persona/store";
 import type { PersonaTier } from "@/lib/persona/types";
 import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
 import { rejectCrossSiteWrite } from "@/lib/same-origin";
 import { isUpstashConfigured, limitByIp } from "@/lib/upstash-rate-limit";
 
-// 分析每次只调用一次模型；300s 同时为文章缓存的后台刷新保留原有预算。
+// 分析（Skill）每次只调用一次模型；300s 同时为文章缓存的后台刷新保留原有预算。
+// Agent 模式下普通对话改走工具循环（模型调用 ≤5 次 / 工具执行 ≤4 次，预算见 AGENT_LIMITS），Skill 口径不受影响。
 export const maxDuration = 300;
 
 /** 检索只看最后一句提问的末尾，检索开销与消息长度无关 */
@@ -57,7 +60,8 @@ function normalizeMessages(raw: unknown): LlmMessage[] | null {
     const { role, content } = m as { role?: unknown; content?: unknown };
     if ((role !== "user" && role !== "assistant") || typeof content !== "string") continue;
     const cap = role === "user" ? CHAT_LIMITS.maxUserChars : CHAT_LIMITS.maxAssistantChars;
-    const text = content.trim().slice(0, cap);
+    // 隐形字符（Unicode Tag 区、零宽字符）是注入走私的常见载体，进上下文前先清洗
+    const text = (role === "user" ? stripInvisible(content) : content).trim().slice(0, cap);
     if (!text) continue;
     // 同角色连续出现时合并，保证 user/assistant 交替（Anthropic 协议强制要求）
     const prev = msgs[msgs.length - 1];
@@ -184,6 +188,35 @@ export async function POST(req: Request) {
     tier === "owner" ? { tags: new Set(), ids: new Set() } : { tags: avoidTags, ids: avoidIds },
     tier === "owner" ? diaries.filter((d) => d.isPublic === false).length : 0,
   );
+
+  const agentMode = getAgentMode();
+  const agentOn = (agentMode === "on" || (agentMode === "owner" && access.admin)) && supportsToolCalls();
+  if (agentOn) {
+    // agent 循环：首步过费用闸（从第二步起循环内逐次复查）；之后是 NDJSON 事件流
+    let allowed = false;
+    try {
+      allowed = await limitByIp("chat:agent:steps", "all", AGENT_LIMITS.siteDailySteps, "1 d", { failClosed: true });
+    } catch {
+      allowed = false;
+    }
+    if (!allowed) return json({ error: "今天的对话额度用完了，明天再来吧。" }, 503);
+    const stream = runAgentChat({
+      system: buildSystemPrompt(bundle, snippets, tier, facts, { agent: true }),
+      history: messages,
+      ctx: { diaries: visible, notes: bundle.notes, facts },
+      maxTokens: tier === "owner" ? CHAT_LIMITS.maxOutputTokensOwner : CHAT_LIMITS.maxOutputTokensPublic,
+      signal: req.signal,
+    });
+    const res = new NextResponse(stream, {
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "X-Persona-Tier": tier,
+        // 关掉代理层缓冲，保证事件逐条到达
+        "X-Accel-Buffering": "no",
+      },
+    });
+    return withAntiScrapeHeaders(res);
+  }
 
   try {
     const stream = await streamChat({

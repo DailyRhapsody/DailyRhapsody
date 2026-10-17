@@ -139,6 +139,7 @@ export function usePetChat() {
     abortRef.current = ctrl;
     let acc = "";
     let raf = 0;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     const flush = () => {
       raf = 0;
       const text = acc;
@@ -175,20 +176,68 @@ export function usePetChat() {
         throw new ChatHttpError(j?.error || `请求失败（${res.status}）`, res.status);
       }
       setTier(res.headers.get("X-Persona-Tier"));
-      const reader = res.body.getReader();
+      // agent 模式（工具循环）按 NDJSON 事件流解析；普通路径仍是纯文本流。
+      // 兼容策略：按响应头判断，不认识的事件行丢弃，普通文本一旦到来就走旧路径逻辑。
+      const ndjson = (res.headers.get("Content-Type") ?? "").includes("x-ndjson");
+      reader = res.body.getReader();
       const dec = new TextDecoder();
+      let raw = "";
+      let progressShown = false;
+      const handleEvent = (line: string) => {
+        if (!line.trim()) return;
+        let evt: { t?: unknown; v?: unknown; label?: unknown; msg?: unknown };
+        try {
+          evt = JSON.parse(line) as typeof evt;
+        } catch {
+          return; // NDJSON 应保证整行；解析不了的残片丢弃，不影响正文
+        }
+        if (evt.t === "delta" && typeof evt.v === "string") {
+          acc += evt.v;
+          // 正文一旦开始，进度文案让位；服务端保证 delta 只出现在答案里
+          if (progressShown) {
+            progressShown = false;
+            setProgress(null);
+          }
+          // rAF 合批：逐字到达时不必每个 chunk 都触发一次渲染
+          if (!raf) raf = requestAnimationFrame(flush);
+        } else if (evt.t === "step" && typeof evt.label === "string") {
+          progressShown = true;
+          setProgress(evt.label);
+        } else if (evt.t === "error") {
+          throw new ChatHttpError(typeof evt.msg === "string" ? evt.msg : "模型暂时没有响应，请稍后再试。", 502);
+        }
+        // "done" 与未知事件类型到这里自然结束
+      };
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        acc += dec.decode(value, { stream: true });
-        // rAF 合批：逐字到达时不必每个 chunk 都触发一次渲染
-        if (!raf) raf = requestAnimationFrame(flush);
+        const chunk = dec.decode(value, { stream: true });
+        if (ndjson) {
+          raw += chunk;
+          let nl = raw.indexOf("\n");
+          while (nl >= 0) {
+            handleEvent(raw.slice(0, nl));
+            raw = raw.slice(nl + 1);
+            nl = raw.indexOf("\n");
+          }
+        } else {
+          acc += chunk;
+          if (!raf) raf = requestAnimationFrame(flush);
+        }
       }
-      acc += dec.decode();
+      const tail = dec.decode();
+      if (ndjson) {
+        raw += tail;
+        if (raw.trim()) handleEvent(raw);
+      } else {
+        acc += tail;
+      }
       if (raf) cancelAnimationFrame(raf);
       flush();
       if (!acc.trim()) throw new ChatHttpError("没有收到回复，请重试。", 502);
     } catch (e) {
+      // 出错/中断时显式取消 reader：不让连接半开、服务端继续计费
+      if (reader) void reader.cancel().catch(() => {});
       if (raf) cancelAnimationFrame(raf);
       const stopped = ctrl.signal.aborted;
       setMessages((list) =>

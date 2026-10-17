@@ -10,6 +10,30 @@
 
 export type LlmMessage = { role: "user" | "assistant"; content: string };
 
+/** agent 循环用的工具协议类型（仅 openai 分支实现） */
+export type LlmToolDef = {
+  type: "function";
+  function: { name: string; description: string; parameters: Record<string, unknown> };
+};
+
+export type LlmToolCall = { id: string; name: string; arguments: string };
+
+/**
+ * 工具循环的消息形状：在纯文本消息之外，支持「带 tool_calls 的 assistant 轮」
+ * 与「role=tool 的结果回填轮」。普通聊天的历史消息形状不变。
+ */
+export type LlmStepMessage =
+  | { role: "user" | "assistant"; content: string }
+  | { role: "assistant"; content: string | null; tool_calls: LlmToolCall[] }
+  | { role: "tool"; tool_call_id: string; content: string };
+
+/** 一次模型调用的结构化事件流（agent 循环消费） */
+export type ToolStreamEvent =
+  | { type: "text"; text: string }
+  | { type: "tool_calls"; calls: LlmToolCall[] }
+  | { type: "done" }
+  | { type: "error"; message: string };
+
 type Protocol = "openai" | "anthropic";
 
 export class LlmError extends Error {
@@ -39,6 +63,11 @@ function getConfig() {
 export function isLlmConfigured(): boolean {
   const c = getConfig();
   return !!(c.apiKey && c.model);
+}
+
+/** agent 循环需要 openai 协议（工具协议只实现了这条分支）；配置切协议时调用方据此降级单步直答 */
+export function supportsToolCalls(): boolean {
+  return getConfig().protocol === "openai";
 }
 
 type DeltaPicker = (data: unknown) => { text?: string; error?: string; truncated?: boolean; complete?: boolean };
@@ -218,4 +247,179 @@ export async function streamChat(opts: {
     throw new LlmError(await upstreamError(res), 502);
   }
   return res.body.pipeThrough(sseToText(cfg.protocol === "anthropic" ? pickAnthropic : pickOpenAi, opts.strict));
+}
+
+/**
+ * 工具循环的单步调用（仅 openai 协议）。与 streamChat 的区别：
+ * 事件流里多出 tool_calls（按 index 聚合分片参数），不做 strict 收尾判定——
+ * 循环怎么继续由调用方按事件类型决定。
+ *
+ * DeepSeek V4 默认开 thinking：关闭它才不需要按文档回传 reasoning_content，
+ * 也省掉一半输出 token；其他供应商不认识这个字段，只在 deepseek 域名下发。
+ */
+export async function streamChatTools(opts: {
+  system: string;
+  messages: LlmStepMessage[];
+  tools: LlmToolDef[];
+  maxTokens: number;
+  temperature?: number;
+  signal?: AbortSignal;
+  /** 收尾轮：仍带工具目录（模型据此知道自己查过什么），但 tool_choice=none 禁止再调用 */
+  noMoreTools?: boolean;
+}): Promise<ReadableStream<ToolStreamEvent>> {
+  const cfg = getConfig();
+  if (!cfg.apiKey || !cfg.model) throw new LlmError("对话模型未配置", 503);
+  if (cfg.protocol !== "openai") {
+    // 工具协议只实现了 openai 分支；配置切到 anthropic 时由调用方降级回单步直答
+    throw new LlmError("当前协议不支持工具调用", 503);
+  }
+  // 线上报文形状：OpenAI 系的 tool_calls 每项必须带 type:"function" 与 function 包裹；
+  // 内部扁平形状（id/name/arguments）直接发出去会被 DeepSeek 400 拒绝
+  //（实测 messages[i]: missing field `type`）。历史里的 assistant 轮在这里转换，内部类型不动。
+  const wire = opts.messages.map((m) =>
+    m.role === "assistant" && "tool_calls" in m && m.tool_calls
+      ? {
+          role: "assistant",
+          content: m.content,
+          tool_calls: m.tool_calls.map((c) => ({
+            id: c.id,
+            type: "function",
+            function: { name: c.name, arguments: c.arguments },
+          })),
+        }
+      : m,
+  );
+  const body: Record<string, unknown> = {
+    model: cfg.model,
+    messages: [{ role: "system", content: opts.system }, ...wire],
+    max_tokens: opts.maxTokens,
+    temperature: opts.temperature ?? 0.7,
+    stream: true,
+    tools: opts.tools,
+    tool_choice: opts.noMoreTools ? "none" : "auto",
+  };
+  if (/deepseek/i.test(cfg.base)) body.thinking = { type: "disabled" };
+  const res = await fetch(`${cfg.base}/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${cfg.apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: opts.signal,
+  });
+  if (!res.ok || !res.body) {
+    throw new LlmError(await upstreamError(res), 502);
+  }
+  return res.body.pipeThrough(stepEventStream());
+}
+
+/** SSE → 结构化事件：文本即时转发；tool_calls 按 index 聚合、流末尾一次性发出 */
+function stepEventStream(): TransformStream<Uint8Array, ToolStreamEvent> {
+  const dec = new TextDecoder();
+  let buf = "";
+  let failed = false;
+  let truncated = false;
+  const calls = new Map<number, { id: string; name: string; arguments: string }>();
+  // 缺 index 的方言（部分兼容网关）：按「出现顺序 + id 变化」兜底分槽。
+  // 旧的统一落 0 号槽会把两条独立调用静默并成一条（对抗复核实测）。
+  let autoSlot = -1;
+  let autoId: string | null = null;
+  const resolveIdx = (tc: { index?: number; id?: string }): number => {
+    if (typeof tc.index === "number") return tc.index;
+    if (tc.id) {
+      if (autoId !== tc.id) {
+        autoSlot += 1;
+        autoId = tc.id;
+      }
+      return autoSlot;
+    }
+    if (autoSlot < 0) autoSlot = 0;
+    return autoSlot;
+  };
+  const handle = (line: string, ctrl: TransformStreamDefaultController<ToolStreamEvent>) => {
+    if (failed) return;
+    const t = line.trim();
+    if (!t.startsWith("data:")) return;
+    const payload = t.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+    let parsed: {
+      error?: unknown;
+      choices?: {
+        finish_reason?: string | null;
+        delta?: {
+          content?: string;
+          refusal?: string | null;
+          tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[];
+        };
+      }[];
+    };
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      return;
+    }
+    if (parsed.error !== undefined) {
+      failed = true;
+      ctrl.enqueue({ type: "error", message: describeUpstreamError(parsed.error) });
+      return;
+    }
+    const choice = parsed.choices?.[0];
+    if (!choice) return;
+    const refused = refusalReason(choice);
+    if (refused) {
+      failed = true;
+      ctrl.enqueue({ type: "error", message: refusalError(refused) });
+      return;
+    }
+    if (choice.finish_reason === "length") truncated = true;
+    const delta = choice.delta ?? {};
+    if (typeof delta.content === "string" && delta.content) {
+      ctrl.enqueue({ type: "text", text: delta.content });
+    }
+    if (Array.isArray(delta.tool_calls)) {
+      for (const tc of delta.tool_calls) {
+        const idx = resolveIdx(tc);
+        const acc = calls.get(idx) ?? { id: "", name: "", arguments: "" };
+        if (tc.id) acc.id = tc.id;
+        // 仅当与已累计值不同才追加：分片拼接（search + _blog）正常，
+        // 每片重发完整名字的方言不会拼成 search_blogsearch_blog
+        if (tc.function?.name && tc.function.name !== acc.name) acc.name += tc.function.name;
+        if (typeof tc.function?.arguments === "string") acc.arguments += tc.function.arguments;
+        calls.set(idx, acc);
+      }
+    }
+  };
+  return new TransformStream({
+    transform(chunk, ctrl) {
+      buf += dec.decode(chunk, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() ?? "";
+      for (const l of lines) handle(l, ctrl);
+    },
+    flush(ctrl) {
+      // 多字节字符可能被切在分片中间：与 sseToText 对齐，先补一次尾部解码
+      buf += dec.decode();
+      if (!failed && buf) handle(buf, ctrl);
+      if (failed) return;
+      if (truncated) {
+        // 触到输出上限：聚合中的工具调用参数可能被切半，一律丢弃不执行；
+        // 以与普通路径相同的截断文案收尾（agent-loop 收到文本即按已作答处理）
+        calls.clear();
+        ctrl.enqueue({ type: "text", text: TRUNCATED_NOTE });
+      }
+      if (calls.size > 0) {
+        const seen = new Set<string>();
+        const list = [...calls.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([, v], i) => {
+            let id = v.id || `call_${i}`;
+            // 上游显式给出重复 id 时保证批内唯一（同批 tool 消息回填不容重复 id）
+            if (seen.has(id)) id = `${id}_${i}`;
+            seen.add(id);
+            return { id, name: v.name, arguments: v.arguments || "{}" };
+          });
+        ctrl.enqueue({ type: "tool_calls", calls: list });
+      } else {
+        ctrl.enqueue({ type: "done" });
+      }
+    },
+  });
 }

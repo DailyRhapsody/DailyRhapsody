@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Diary } from "@/lib/notion";
 import type { PersonaNote } from "@/lib/persona/types";
 
@@ -133,8 +134,22 @@ export function retrieveSnippets(
   notes: PersonaNote[],
   limit = 4,
 ): Snippet[] {
-  // 签名覆盖每篇的 id 与正文长度：增删、转私密、改正文都会让索引重建
-  const sig = [...diaries.map((d) => `${d.id}:${d.summary?.length ?? 0}`), `n${notes.length}:${notes[0]?.id ?? ""}`].join("|");
+  // 签名是全部输入内容的内容哈希（不再采样）：缓存是模块级单槽，同一进程里 owner（管理员）
+  // 与 public（访客）会话会交替命中，集合不同的两组输入绝不能撞签名；采样式签名还会漏
+  // 「同 id 同长度、只改正文中段」的改稿（2026-10-17 对抗复核实测），哈希把两类都堵死。
+  const h = createHash("sha1");
+  for (const d of diaries) {
+    h.update(`${d.id}\u0000${d.date ?? ""}\u0000`);
+    h.update(d.summary ?? "");
+    h.update("\u0001");
+  }
+  h.update("\u0002");
+  for (const n of notes) {
+    h.update(`${n.id}\u0000${n.title}\u0000`);
+    h.update(n.text);
+    h.update("\u0001");
+  }
+  const sig = `${diaries.length}.${notes.length}.${h.digest("hex")}`;
   if (!cached || cached.sig !== sig || Date.now() - cached.at > INDEX_TTL_MS) {
     cached = { at: Date.now(), sig, ...buildIndex(diaries, notes) };
   }
@@ -174,4 +189,29 @@ export function retrieveSnippets(
     href: doc.href,
     text: excerpt(doc.full, qSet),
   }));
+}
+
+/**
+ * 按 id 取「传入集合」内某篇的全文——agent 工具的 read_article 用。
+ * 只认调用方给的 diaries/notes（路由层已过滤），不自己读缓存，
+ * 所以「只能读到访客可见的文章」这条边界在这里无路可绕。
+ */
+export function fullTextOf(
+  diaries: Diary[],
+  notes: PersonaNote[],
+  id: string,
+  limit = 6_000,
+): string | null {
+  const diary = diaries.find((d) => d.id === id);
+  if (diary) {
+    const full = cleanBody(diary.summary ?? "");
+    if (!full) return null;
+    const head = `《${firstLine(full)}》（${diary.date ?? "日期未知"}，站内链接 /blog#entry-${diary.id}）\n`;
+    return (head + full).slice(0, limit);
+  }
+  const note = notes.find((n) => n.id === id);
+  if (note) {
+    return `【笔记：${note.title}（${note.date ?? "日期未知"}）】\n${note.text}`.slice(0, limit);
+  }
+  return null;
 }

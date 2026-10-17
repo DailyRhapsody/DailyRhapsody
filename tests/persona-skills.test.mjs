@@ -118,7 +118,9 @@ test('runner 依赖图不得触达人设包、提示词与鉴权', async () => {
   // 本来就在依赖图里，改一个词就能拿到。
   const forbidden = ['@/lib/persona/store', '@/lib/persona/prompt', '@/lib/auth', 'getCachedDiaries'];
   for (const file of ['skill-runners.ts', 'first-principles-route.ts', 'first-principles.ts',
-    'core-values-route.ts', 'core-values.ts']) {
+    'core-values-route.ts', 'core-values.ts',
+    // agent 循环的工具层与编排器同样只吃路由传入的数据；新增文件一律进这份清单
+    'tools.ts', 'tool-runners.ts', 'agent-loop.ts']) {
     const src = await readFile(new URL(`../lib/persona/${file}`, import.meta.url), 'utf8');
     for (const bad of forbidden) {
       assert.ok(!src.includes(bad), `${file} 不得引用 ${bad}`);
