@@ -176,3 +176,7 @@ node --experimental-test-module-mocks --test tests/*.test.mjs
 - 数字人的人设分级、对话流程、Skill 框架与上线顺序：[docs/pet-digital-twin.md](./docs/pet-digital-twin.md)
 - 后台编辑器的 AI 辅助：[docs/ai-assistant.md](./docs/ai-assistant.md)
 - 域名与边缘防护：[docs/custom-domain-cloudflare.md](./docs/custom-domain-cloudflare.md)
+
+## 9 版权
+
+版权所有，未授权使用。
