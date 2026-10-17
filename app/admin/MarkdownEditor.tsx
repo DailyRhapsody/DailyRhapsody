@@ -10,7 +10,7 @@ import {
 } from "react";
 import { highlightHashtagsForEditorHtml } from "@/lib/editor-hashtag-highlight";
 import { wholeLineHashtagName } from "@/lib/hashtags";
-import { renderMarkdown, markdownPreviewProseClass } from "@/lib/markdown";
+import { renderMarkdown, markdownHeadingClass, markdownPreviewProseClass } from "@/lib/markdown";
 
 /** 行首 `/` 命令：优先级别（标题 1/2/3、圆点、数字编号）。 */
 const SLASH_COMMANDS: {
@@ -914,7 +914,7 @@ export default function MarkdownEditor({
           />
         </div>
       ) : (
-        <div className={`${markdownPreviewProseClass} rounded-b-lg px-3 py-3 text-sm`}>
+        <div className={`${markdownPreviewProseClass} ${markdownHeadingClass} rounded-b-lg px-3 py-3 text-sm`}>
           <div
             className="space-y-[1.15em]"
             dangerouslySetInnerHTML={{
