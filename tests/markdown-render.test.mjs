@@ -116,7 +116,14 @@ test("链接不放行 data: 协议（图片仍允许内联 data:）", () => {
   assert.match(img, /src="data:image\/png;base64,/, img);
 });
 
-test("折叠态类名不含任何标题层级 token，展开态才放开 h1-h3", () => {
+test("链接渲染成可点、可辨认的锚点", () => {
+  const html = renderMarkdown("[示例链接](https://example.com/a?b=1)");
+  assert.match(html, /<a href="https:\/\/example\.com\/a\?b=1"[^>]*target="_blank"[^>]*rel="noopener noreferrer">示例链接<\/a>/, html);
+  // Tailwind preflight 会把链接的颜色与下划线都设成继承，不显式加线就与正文无法区分
+  assert.ok(markdownPreviewProseClass.includes("[&_a]:underline"), markdownPreviewProseClass);
+});
+
+test("折叠态类名不含任何标题层级 token，展开态才放开 h1-h3", async () => {
   const folded = entrySummaryProseClass(false);
   const expanded = entrySummaryProseClass(true);
 
@@ -124,15 +131,22 @@ test("折叠态类名不含任何标题层级 token，展开态才放开 h1-h3",
   assert.ok(folded.includes("[&_summary]:pointer-events-none"), folded);
   assert.ok(!/\[&_h[1-6]\]/.test(folded), folded);
 
-  assert.ok(expanded.includes("[&_h1]:text-[1.0625rem]"), expanded);
-  assert.ok(expanded.includes("[&_h2]:text-[0.9375rem]"), expanded);
-  assert.ok(expanded.includes("[&_h3]:text-[0.875rem]"), expanded);
+  assert.ok(expanded.includes("[&_h1]:text-[1.3em]"), expanded);
+  assert.ok(expanded.includes("[&_h2]:text-[1.15em]"), expanded);
+  assert.ok(expanded.includes("[&_h3]:text-[1.08em]"), expanded);
   assert.ok(expanded.includes("[&_h1]:font-semibold"), expanded);
   assert.ok(!expanded.includes("max-h-36"), expanded);
 
   // 展开态不加重直外边距：块间距由 space-y-[1.15em] 负责，叠加会外边距合并
   assert.ok(!/\[&_h[1-3]\]:m[tb]-/.test(expanded), expanded);
 
-  // 共享常量必须保持无层级，否则 Reference / 后台预览会被一起改动
+  // 共享常量必须保持无层级，否则所有调用点会被一起改动
   assert.ok(!/\[&_h[1-6]\]/.test(markdownPreviewProseClass), markdownPreviewProseClass);
+
+  // 阅读态（Reference / 后台编辑预览）必须显式接上同一套标题层级
+  const fs = await import("node:fs/promises");
+  for (const file of ["app/reference/[id]/page.tsx", "app/admin/MarkdownEditor.tsx"]) {
+    const src = await fs.readFile(new URL(`../${file}`, import.meta.url), "utf8");
+    assert.ok(src.includes("markdownHeadingClass"), `${file} 少了标题层级`);
+  }
 });

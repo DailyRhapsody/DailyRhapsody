@@ -1,0 +1,29 @@
+name: CI
+
+# 只跑离线门禁：单测、类型、lint。构建交给 Vercel 的 Preview/生产部署，
+# 这里再跑一次 next build 只是把反馈时间翻倍。
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test
+      - run: npx tsc --noEmit
+      - run: npm run lint

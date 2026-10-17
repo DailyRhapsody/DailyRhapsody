@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getReferenceItem, isReferenceConfigured } from "@/lib/notion-reference";
 import { isAdmin } from "@/lib/auth";
-import { renderMarkdown, markdownPreviewProseClass } from "@/lib/markdown";
+import { renderMarkdown, markdownHeadingClass, markdownPreviewProseClass } from "@/lib/markdown";
 
 export const dynamic = "force-dynamic";
 
@@ -93,8 +93,10 @@ export default async function ReferenceDetailPage({
         </header>
 
         {renderedHtml ? (
-          <article className={`${markdownPreviewProseClass} text-[0.95rem] leading-relaxed`}>
-            <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />
+          // 收藏详情是长文阅读页：与博客展开态同一套标题层级，块间距也要显式给
+          // （这里没有 EntrySummary 的 space-y 包裹）。
+          <article className={`${markdownPreviewProseClass} ${markdownHeadingClass} text-[0.95rem] leading-relaxed`}>
+            <div className="space-y-[1.15em]" dangerouslySetInnerHTML={{ __html: renderedHtml }} />
           </article>
         ) : (
           <p className="text-sm text-zinc-500 dark:text-zinc-400">

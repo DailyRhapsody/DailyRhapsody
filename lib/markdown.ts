@@ -230,27 +230,26 @@ export function renderMarkdown(markdown: string): string {
  * 与前台 / 编辑器预览区共用的样式：列表层级、表格、代码块、图片、引用等与 GFM 输出对齐。
  */
 export const markdownPreviewProseClass =
-  "prose prose-zinc max-w-none dark:prose-invert break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_li:has(>input[type=checkbox])]:list-none [&_ul_ul]:mt-1 [&_ul_ul]:list-[circle] [&_ul_ul_ul]:list-[square] [&_ol_ol]:mt-1 [&_ol_ol]:list-[lower-alpha] [&_ol_ol_ol]:list-[lower-roman] [&_a]:break-words [&_table]:block [&_table]:w-full [&_table]:overflow-x-auto [&_table]:text-left [&_th]:border [&_th]:border-zinc-300 [&_th]:px-2 [&_th]:py-1.5 [&_td]:border [&_td]:border-zinc-300 [&_td]:px-2 [&_td]:py-1.5 dark:[&_th]:border-zinc-600 dark:[&_td]:border-zinc-600 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:p-4 [&_pre]:text-sm [&_pre]:bg-zinc-900 [&_pre]:text-zinc-100 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-inherit [&_p_code]:rounded [&_p_code]:bg-zinc-100 [&_p_code]:px-1 [&_p_code]:py-0.5 dark:[&_p_code]:bg-zinc-800 [&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-lg [&_blockquote]:border-l-4 [&_blockquote]:border-zinc-300 [&_blockquote]:pl-4 [&_blockquote]:not-italic dark:[&_blockquote]:border-zinc-600 [&_hr]:my-8 [&_.dr-mermaid]:my-3 [&_.dr-mermaid]:overflow-x-auto [&_.dr-mermaid_svg]:mx-auto [&_.dr-mermaid_svg]:h-auto [&_.dr-mermaid_svg]:max-w-full [&_input[type=checkbox]]:mr-1.5 [&_input[type=checkbox]]:align-middle [&_.dr-md-editor-tag]:font-medium [&_.dr-md-editor-tag]:text-violet-700 dark:[&_.dr-md-editor-tag]:text-sky-400";
+  "prose prose-zinc max-w-none dark:prose-invert break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_li:has(>input[type=checkbox])]:list-none [&_ul_ul]:mt-1 [&_ul_ul]:list-[circle] [&_ul_ul_ul]:list-[square] [&_ol_ol]:mt-1 [&_ol_ol]:list-[lower-alpha] [&_ol_ol_ol]:list-[lower-roman] [&_a]:break-words [&_a]:underline [&_a]:underline-offset-2 [&_a]:decoration-zinc-400 dark:[&_a]:decoration-zinc-500 [&_a:hover]:decoration-zinc-600 dark:[&_a:hover]:decoration-zinc-300 [&_table]:block [&_table]:w-full [&_table]:overflow-x-auto [&_table]:text-left [&_th]:border [&_th]:border-zinc-300 [&_th]:px-2 [&_th]:py-1.5 [&_td]:border [&_td]:border-zinc-300 [&_td]:px-2 [&_td]:py-1.5 dark:[&_th]:border-zinc-600 dark:[&_td]:border-zinc-600 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:p-4 [&_pre]:text-sm [&_pre]:bg-zinc-900 [&_pre]:text-zinc-100 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-inherit [&_p_code]:rounded [&_p_code]:bg-zinc-100 [&_p_code]:px-1 [&_p_code]:py-0.5 dark:[&_p_code]:bg-zinc-800 [&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-lg [&_blockquote]:border-l-4 [&_blockquote]:border-zinc-300 [&_blockquote]:pl-4 [&_blockquote]:not-italic dark:[&_blockquote]:border-zinc-600 [&_hr]:my-8 [&_.dr-mermaid]:my-3 [&_.dr-mermaid]:overflow-x-auto [&_.dr-mermaid_svg]:mx-auto [&_.dr-mermaid_svg]:h-auto [&_.dr-mermaid_svg]:max-w-full [&_input[type=checkbox]]:mr-1.5 [&_input[type=checkbox]]:align-middle [&_.dr-md-editor-tag]:font-medium [&_.dr-md-editor-tag]:text-violet-700 dark:[&_.dr-md-editor-tag]:text-sky-400";
 
 /**
- * 展开态的标题层级。折叠态是「流」，标题与正文同字号、不加粗；展开态是「阅读」，
- * 才把 h1-h3 的级差与字重放出来。级差刻意小（17/15/14px，正文 13px），靠字重和
- * 既有块间距立层级，不用文档式的 1.5 倍跳档；不加 margin——外层 space-y-[1.15em]
- * 已经给了块间距，再加外边距只会发生外边距合并、把节奏弄乱。
+ * 阅读态的标题层级。用 em 而不是 rem：卡片正文 13px、Reference 15.2px、
+ * 后台预览 14px，同一套相对级差在三处都能保持"一级 > 二级 > 三级"且不过重。
+ * 13px 基数下实得 16.9 / 14.95 / 14.04px；不加 margin，块间距由外层 space-y 负责。
  */
-const ENTRY_EXPANDED_HEADINGS =
-  "[&_h1]:text-[1.0625rem] [&_h1]:font-semibold [&_h2]:text-[0.9375rem] [&_h2]:font-semibold [&_h3]:text-[0.875rem] [&_h3]:font-semibold [&_h4]:font-semibold [&_h5]:font-semibold [&_h6]:font-semibold [&_summary]:cursor-pointer [&_summary]:select-none";
+export const markdownHeadingClass =
+  "[&_h1]:text-[1.3em] [&_h1]:font-semibold [&_h2]:text-[1.15em] [&_h2]:font-semibold [&_h3]:text-[1.08em] [&_h3]:font-semibold [&_h4]:font-semibold [&_h5]:font-semibold [&_h6]:font-semibold";
 
 /**
  * 博客卡片正文的排版类名。折叠与展开共用同一份基础样式，唯一差别：
  * - 折叠：max-h-36 截断 + 摘要行不可点（避免在截断的卡片里收起 toggle 内容）；
  * - 展开：放开标题层级与折叠行交互。
- * Reference 页与后台预览用的是 markdownPreviewProseClass，不经过这里，
- * 所以这次改动不会波及它们。
+ * Reference 页与后台编辑预览用 markdownPreviewProseClass + markdownHeadingClass，
+ * 不经过这里。
  */
 export function entrySummaryProseClass(expanded: boolean): string {
   const base = `${markdownPreviewProseClass} text-[0.8125rem] leading-relaxed [&_:is(p,li):not(.dr-mermaid_*)]:text-justify [&_:is(strong,b,th)]:font-normal [&_th]:bg-zinc-100/70 [&_th:not([align])]:text-left dark:[&_th]:bg-zinc-800/60 [&_a]:break-all [&_:is(blockquote,.dr-caption)]:text-zinc-500 dark:[&_:is(blockquote,.dr-caption)]:text-zinc-400 [&_img]:h-24 [&_img]:w-24 [&_img]:bg-zinc-200 [&_img]:object-cover dark:[&_img]:bg-zinc-800 sm:[&_img]:h-20 sm:[&_img]:w-20`;
   return expanded
-    ? `${base} ${ENTRY_EXPANDED_HEADINGS}`
+    ? `${base} ${markdownHeadingClass} [&_summary]:cursor-pointer [&_summary]:select-none`
     : `${base} max-h-36 overflow-hidden [&_summary]:pointer-events-none [&_summary]:cursor-default [&_summary::before]:hidden`;
 }
