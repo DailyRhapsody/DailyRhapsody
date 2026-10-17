@@ -30,10 +30,15 @@ export function summaryToPlainForCard(summary: string): string {
   t = t.replace(/\*\*([^*]+)\*\*/g, "$1");
   t = t.replace(/\*([^*]+)\*/g, "$1");
   t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
-  t = t.replace(/^[-*+]\s+\[[ xX]\]\s+/gm, "");
-  t = t.replace(/^[-*+]\s+/gm, "");
-  t = t.replace(/^\d+\.\s+/gm, "");
-  t = t.replace(/^>\s?/gm, "");
+  // 列表标记可能带缩进（嵌套列表），必须容忍前导空白，否则分享图里会留下 "- " 与空格
+  t = t.replace(/^[ \t]*[-*+]\s+\[[ xX]\]\s+/gm, "");
+  t = t.replace(/^[ \t]*[-*+]\s+/gm, "");
+  t = t.replace(/^[ \t]*\d+\.\s+/gm, "");
+  t = t.replace(/^[ \t]*>[ \t]?/gm, "");
+  // toggle 的标题是正文，只去掉标记本身；callout 的标记行只有图标，整行去掉
+  t = t.replace(/\[!NOTION-CALLOUT\][^\n]*/g, "");
+  t = t.replace(/\[!NOTION-TOGGLE\][ \t]*/g, "");
+  t = t.replace(/<\/?(?:details|summary|div)[^>]*>/gi, "");
   t = t.replace(/`{3}[\s\S]*?`{3}/g, "");
   t = t.replace(/`([^`]+)`/g, "$1");
   t = t.replace(/\n{3,}/g, "\n\n");

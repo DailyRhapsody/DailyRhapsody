@@ -8,6 +8,7 @@
     "clean:next": "rm -rf .next .turbo",
     "build": "next build",
     "start": "next start",
+    "test": "node --experimental-test-module-mocks --test tests/*.test.mjs",
     "lint": "eslint",
     "vercel:env": "npx vercel env pull .env.local"
   },
