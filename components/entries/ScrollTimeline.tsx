@@ -825,9 +825,9 @@ export const ScrollTimeline = memo(function ScrollTimeline({
             onClick={onOpenTree}
             aria-label="打开思维大树"
             title="思维大树"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300/70 bg-white/70 text-zinc-500 shadow-sm backdrop-blur transition-colors hover:text-zinc-900 dark:border-white/15 dark:bg-zinc-900/60 dark:text-zinc-400 dark:hover:text-white"
+            className="flex h-8 w-8 items-center justify-center text-zinc-500 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
           >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden>
+            <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 21v-7" />
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 14c-2.3 0-4.1-1.7-4.1-3.8 0-1.3.7-2.4 1.9-3.1C9.6 5.8 10.7 5 12 5s2.4.8 2.2 2.1c1.2.7 1.9 1.8 1.9 3.1 0 2.1-1.8 3.8-4.1 3.8Z" />
               <path strokeLinecap="round" strokeLinejoin="round" d="M8 21h8" />
