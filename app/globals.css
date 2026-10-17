@@ -394,7 +394,6 @@ html[data-pet-chat="thinking"] .dr-pet-panel-glow > span {
    Default open: the API does not expose the author's fold state, and hiding body
    text inside an already "expanded" article would lose content. The marker is
    drawn with ::before because the native triangle is too heavy for this layout. */
-.dr-toggle { margin: 0; }
 .dr-toggle > summary { cursor: pointer; list-style: none; }
 .dr-toggle > summary::-webkit-details-marker { display: none; }
 .dr-toggle > summary::before {

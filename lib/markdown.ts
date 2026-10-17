@@ -252,5 +252,5 @@ export function entrySummaryProseClass(expanded: boolean): string {
   const base = `${markdownPreviewProseClass} text-[0.8125rem] leading-relaxed [&_:is(p,li):not(.dr-mermaid_*)]:text-justify [&_:is(strong,b,th)]:font-normal [&_th]:bg-zinc-100/70 [&_th:not([align])]:text-left dark:[&_th]:bg-zinc-800/60 [&_a]:break-all [&_:is(blockquote,.dr-caption)]:text-zinc-500 dark:[&_:is(blockquote,.dr-caption)]:text-zinc-400 [&_img]:h-24 [&_img]:w-24 [&_img]:bg-zinc-200 [&_img]:object-cover dark:[&_img]:bg-zinc-800 sm:[&_img]:h-20 sm:[&_img]:w-20`;
   return expanded
     ? `${base} ${ENTRY_EXPANDED_HEADINGS}`
-    : `${base} max-h-36 overflow-hidden [&_summary]:pointer-events-none`;
+    : `${base} max-h-36 overflow-hidden [&_summary]:pointer-events-none [&_summary]:cursor-default [&_summary::before]:hidden`;
 }

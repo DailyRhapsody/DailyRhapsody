@@ -330,7 +330,8 @@ function blockToMarkdown(b: BlockObjectResponse, opts: BodyOptions): string {
       return `> ${richTextToMarkdown(b.quote.rich_text)}`;
     case "to_do": {
       const text = richTextToMarkdown(b.to_do.rich_text);
-      return text ? `- [${b.to_do.checked ? "x" : " "}] ${text}` : `- [${b.to_do.checked ? "x" : " "}]`;
+      // 空待办没有内容可勾：GFM 要求 "] " 后有正文，输出 "- [ ]" 会渲染成字面 "[ ]"
+      return text ? `- [${b.to_do.checked ? "x" : " "}] ${text}` : "";
     }
     case "code": {
       const lang = b.code.language === "plain text" ? "" : b.code.language;
@@ -365,7 +366,7 @@ function blockToMarkdown(b: BlockObjectResponse, opts: BodyOptions): string {
     case "synced_block":
     case "column_list":
     case "column":
-      // 容器型 block 自身没有内容，子节点会被 walkBlocks 递归输出
+      // 容器型 block 自身没有内容，子节点由 renderChildren 递归输出
       return "";
     default:
       return "";
@@ -596,21 +597,27 @@ async function renderChildren(
       if (opts.completeness && block.type === "unsupported") {
         opts.completeness.partial = true;
       }
-      if (md) {
-        let text = family ? indentListItem(md, ctx.indent, MARKER_WIDTH[family]) : indentLines(md, ctx.indent);
+      if (!md) {
+        // 容器块（column_list / column / synced_block）自身没有文本，但子块必须递归输出。
+        // 早先把递归写在 if (md) 里，两栏与同步块的内容会整段消失且不置 partial。
         if (block.has_children) {
-          const next: BlockCtx = family
-            ? { indent: ctx.indent + MARKER_WIDTH[family], width: MARKER_WIDTH[family] }
-            : { indent: ctx.indent, width: 0 };
-          const kids = await renderChildren(block.id, next, depth + 1, opts, maxDepth);
-          if (kids.length) {
-            // 子块并进本块的文本里，不能用兄弟级分隔符：列表族不同（有序套无序）时
-            // 若走 "\n\n" 会在父项与子列表之间插空行，反过来把外层有序列表切断。
-            text += (kids[0].family ? "\n" : "\n\n") + joinEmitted(kids);
-          }
+          out.push(...(await renderChildren(block.id, { indent: ctx.indent, width: 0 }, depth + 1, opts, maxDepth)));
         }
-        out.push({ text, family });
+        continue;
       }
+      let text = family ? indentListItem(md, ctx.indent, MARKER_WIDTH[family]) : indentLines(md, ctx.indent);
+      if (block.has_children) {
+        const next: BlockCtx = family
+          ? { indent: ctx.indent + MARKER_WIDTH[family], width: MARKER_WIDTH[family] }
+          : { indent: ctx.indent, width: 0 };
+        const kids = await renderChildren(block.id, next, depth + 1, opts, maxDepth);
+        if (kids.length) {
+          // 子块并进本块的文本里，不能用兄弟级分隔符：列表族不同（有序套无序）时
+          // 若走 "\n\n" 会在父项与子列表之间插空行，反过来把外层有序列表切断。
+          text += (kids[0].family ? "\n" : "\n\n") + joinEmitted(kids);
+        }
+      }
+      out.push({ text, family });
     }
     cursor = r.has_more ? r.next_cursor ?? undefined : undefined;
   } while (cursor);

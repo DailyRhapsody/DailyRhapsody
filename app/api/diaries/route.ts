@@ -5,6 +5,7 @@ import type { EntryOutlineItem } from "@/components/entries/types";
 import { getDiaries, isNotionConfigured, type Diary } from "@/lib/notion";
 import { loadLocalDiaries } from "@/lib/dev-snapshot";
 import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
+import { stripPrivateMarkers } from "@/lib/share-card";
 
 // SWR 后台重拉（waitUntil）跑在本次函数调用里，受 maxDuration 约束。
 // 正文抓取按 Retry-After 重试 429 后，全量刷新实测约 80s，与 cron 预热端点一样给足预算。
@@ -90,7 +91,9 @@ export async function GET(req: Request) {
     : visible;
   if (q) {
     filtered = filtered.filter((d) => {
-      const text = [d.summary ?? "", d.location ?? "", (d.tags ?? []).join(" ")].join(" ");
+      // 搜索只匹配读者能看到的文字：转换层的私有标记与引用前缀不参与匹配，
+      // 否则搜 "notion" / "toggle" 会命中所有含折叠块或标注的文章。
+      const text = [stripPrivateMarkers(d.summary ?? ""), d.location ?? "", (d.tags ?? []).join(" ")].join(" ");
       return text.toLowerCase().includes(q);
     });
   }

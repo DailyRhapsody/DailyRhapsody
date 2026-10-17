@@ -150,4 +150,26 @@ test("Notion 块树转换保留嵌套、列表连续性与 toggle 标记", async
     blocks.set(ROOT, [bullet("empty", "")]);
     assert.equal(await body(), "-");
   });
+
+  await t.test("空待办被丢弃：GFM 要求 ] 后有正文，否则渲染成字面 [ ]", async () => {
+    blocks.clear();
+    blocks.set(ROOT, [todo("empty", ""), todo("t", "有字")]);
+    assert.equal(await body(), "- [ ] 有字");
+  });
+
+  await t.test("两栏容器的子内容不会丢", async () => {
+    blocks.clear();
+    blocks.set(ROOT, [node("cl", "column_list", {}, true), paragraph("tail", "后记")]);
+    blocks.set("cl", [node("c1", "column", {}, true), node("c2", "column", {}, true)]);
+    blocks.set("c1", [paragraph("p1", "左栏正文")]);
+    blocks.set("c2", [paragraph("p2", "右栏正文")]);
+    assert.equal(await body(), "左栏正文\n\n右栏正文\n\n后记");
+  });
+
+  await t.test("同步块的子内容不会丢", async () => {
+    blocks.clear();
+    blocks.set(ROOT, [node("sb", "synced_block", { synced_from: null }, true)]);
+    blocks.set("sb", [paragraph("s1", "同步内容")]);
+    assert.equal(await body(), "同步内容");
+  });
 });
