@@ -53,7 +53,7 @@ export function EntrySummary({ text }: { text: string }) {
           引用与图注只用灰色区分，正文两端对齐（链接文字多是整串网址，允许断在任意处，
           否则网址整体挪到下一行、上一行被两端对齐拉散） */}
       <div
-        className={`${entrySummaryProseClass(expanded)} text-[0.8125rem] leading-relaxed`}
+        className={entrySummaryProseClass(expanded)}
       >
         <div ref={contentRef} className="space-y-[1.15em]" />
       </div>
