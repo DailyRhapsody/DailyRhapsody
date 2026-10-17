@@ -14,6 +14,7 @@ import { ReadingStatsCard } from "@/components/entries/ReadingStatsCard";
 import type { ReadingStats } from "@/lib/weread";
 import { EntryCard } from "@/components/entries/EntryCard";
 import { ScrollTimeline } from "@/components/entries/ScrollTimeline";
+import { CognitiveTreeOverlay } from "@/components/entries/CognitiveTreeOverlay";
 import { entryTimelineRows, momentTimelineRows } from "@/components/entries/timelineRows";
 import { MomentsTab } from "@/components/entries/MomentsTab";
 import { getSizeClass } from "@/components/entries/utils";
@@ -92,6 +93,9 @@ export default function EntriesPageClient({
     requestMoment,
   } = useMoments({ active: activeTopTab === 1 });
   const [lightbox, setLightbox] = useState<{ urls: string[]; i: number; lbKey: string } | null>(null);
+  const [treeOpen, setTreeOpen] = useState(false);
+  const treeTargetRef = useRef<string | null>(null);
+  const treeRequestedRef = useRef<string | null>(null);
   const profile = useProfile(initialProfile);
   const { isAdmin: isAdminSession } = useAdminSession();
   const [entriesFlipped, setEntriesFlipped] = useState(false);
@@ -200,12 +204,77 @@ export default function EntriesPageClient({
   }, []);
 
   /* ── 横向滚轮 / 触屏左右滑动切 tab + 屏蔽浏览器自带的左右回退 ── */
-  useTabSwipeNavigation(setActiveTopTab, { min: 0, max: 1, enabled: lightbox == null });
+  useTabSwipeNavigation(setActiveTopTab, { min: 0, max: 1, enabled: lightbox == null && !treeOpen });
 
   const handleTagClick = (tag: string) => {
     requestEntry(null);
     setSelectedTag((prev) => (prev === tag ? null : tag));
   };
+
+  /* 树上的叶子点击：覆盖层收到 iframe 的消息后关闭，再定位到对应文章。
+     目标文章还未加载时，复用时间轴的逐页补载入口。 */
+  const scrollToTreeTarget = useCallback((id: string) => {
+    const el = document.getElementById(`entry-${id}`);
+    if (!el) return false;
+    treeTargetRef.current = id;
+    window.history.replaceState(null, "", `/blog#entry-${id}`);
+    let attempts = 0;
+    let cancelled = false;
+    const cancel = () => { cancelled = true; cleanup(); };
+    const cleanup = () => {
+      window.removeEventListener("wheel", cancel, true);
+      window.removeEventListener("touchstart", cancel, true);
+      window.removeEventListener("keydown", cancel, true);
+      window.removeEventListener("pointerdown", cancel, true);
+    };
+    window.addEventListener("wheel", cancel, { capture: true, passive: true });
+    window.addEventListener("touchstart", cancel, { capture: true, passive: true });
+    window.addEventListener("keydown", cancel, true);
+    window.addEventListener("pointerdown", cancel, true);
+    const align = () => {
+      if (cancelled) return;
+      const rect = el.getBoundingClientRect();
+      if (Math.abs(rect.top - 96) > 6) {
+        window.scrollTo({ top: Math.max(0, window.scrollY + rect.top - 96), behavior: "instant" });
+      }
+      attempts++;
+      if (attempts < 60) window.setTimeout(align, 100);
+      else {
+        cleanup();
+        if (treeTargetRef.current === id) treeTargetRef.current = null;
+      }
+    };
+    align();
+    return true;
+  }, []);
+  const handleTreeEntry = useCallback((id: string) => {
+    setTreeOpen(false);
+    treeTargetRef.current = id;
+    treeRequestedRef.current = null;
+    // 树展示的是全部公开文章；若当前正按标签筛选，先回到全量，避免目标不在大纲里
+    if (selectedTag !== null) {
+      setSelectedTag(null);
+      return;
+    }
+    if (scrollToTreeTarget(id)) return;
+    requestEntry(id);
+  }, [requestEntry, scrollToTreeTarget, selectedTag]);
+
+  useEffect(() => {
+    const id = treeTargetRef.current;
+    if (!id || loadingMore || selectedTag !== null) return;
+    if (!document.getElementById(`entry-${id}`)) {
+      // 一次点击只发起一次补页；失败时不自动重试，避免撞上 diaries:list 限流
+      if (pendingEntryId !== id && treeRequestedRef.current !== id) {
+        treeRequestedRef.current = id;
+        requestEntry(id);
+      }
+      return;
+    }
+    treeRequestedRef.current = null;
+    requestEntry(null);
+    scrollToTreeTarget(id);
+  }, [currentEntries, loadingMore, pendingEntryId, requestEntry, scrollToTreeTarget, selectedTag]);
 
   return (
     // 整页文字不可选中（输入框除外，访客写评论时照常能选）
@@ -227,6 +296,7 @@ export default function EntriesPageClient({
           requestId={requestEntry}
           hrefFor={entryHref}
           messages={ENTRY_MESSAGES}
+          onOpenTree={() => setTreeOpen(true)}
         />
       ) : (
         <ScrollTimeline
@@ -451,6 +521,11 @@ export default function EntriesPageClient({
         urls={lightbox?.urls ?? []}
         index={lightbox?.i ?? 0}
         onClose={() => setLightbox(null)}
+      />
+      <CognitiveTreeOverlay
+        open={treeOpen}
+        onClose={() => setTreeOpen(false)}
+        onOpenEntry={handleTreeEntry}
       />
     </div>
   );

@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>思维大树 · 真实数据预览</title>
+<style>
+  html,body{height:100%;margin:0;background:#070503;overflow:hidden;
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;}
+  #wrap{position:relative;width:100%;height:100vh;height:100dvh;max-width:none;margin:0;}
+  #stage{position:absolute;inset:0;width:100%;height:100%;}
+  canvas{display:block;width:100%;height:100%;cursor:grab;}
+  canvas.drag{cursor:grabbing;}
+  .ctrl{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);
+    display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;
+    width:auto;max-width:calc(100% - 32px);box-sizing:border-box;padding:8px 14px;
+    color:#c9a45c;font-size:11px;letter-spacing:.06em;background:rgba(8,6,4,.62);
+    border:1px solid rgba(201,164,92,.28);border-radius:999px;backdrop-filter:blur(5px);z-index:3;}
+  .ctrl input[type=range]{width:clamp(110px,26vw,260px);accent-color:#c9a45c;}
+  .ctrl button{background:none;border:1px solid #6d5830;color:#c9a45c;border-radius:2px;
+    padding:3px 9px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap;}
+  .ctrl button.on{background:rgba(201,164,92,.18);border-color:#c9a45c;}
+  .ctrl #nv{min-width:34px;display:inline-block;text-align:right;}
+  @media (max-width:700px){
+    .ctrl{gap:6px;font-size:10px;padding:7px 10px;bottom:14px}.ctrl button{font-size:10px;padding:3px 7px}
+  }
+
+  #tip{position:absolute;left:0;top:0;z-index:8;max-width:min(300px,70vw);pointer-events:none;
+    padding:10px 13px 11px;border:1px solid rgba(225,190,122,.42);border-radius:4px;
+    background:linear-gradient(145deg,rgba(32,25,14,.96),rgba(10,8,5,.94));
+    box-shadow:0 10px 30px rgba(0,0,0,.55),inset 0 1px rgba(255,235,185,.12);
+    color:#f0d9a0;opacity:0;transform:translate(-50%,-118%);transition:opacity .12s ease;white-space:normal;}
+  #tip.show{opacity:1;}
+  #tip b{display:block;font-size:13px;font-weight:600;letter-spacing:.06em;}
+  #tip span{display:block;margin-top:4px;color:#bda373;font-size:11px;line-height:1.55;}
+  #reader{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;
+    padding:24px;background:rgba(3,2,1,.72);backdrop-filter:blur(7px);}
+  #reader.open{display:flex;}
+  .reader-card{position:relative;width:min(720px,100%);max-height:min(82vh,760px);overflow:auto;
+    padding:34px 38px 38px;border:1px solid rgba(225,190,122,.28);border-radius:5px;
+    background:linear-gradient(155deg,rgba(30,24,14,.98),rgba(13,10,6,.98));
+    box-shadow:0 30px 90px rgba(0,0,0,.65);color:#e8d3a3;}
+  .reader-card:before{content:"";position:absolute;inset:8px;border:1px solid rgba(225,190,122,.09);pointer-events:none;}
+  .reader-meta{color:#a98c55;font-size:11px;letter-spacing:.12em;text-transform:uppercase;}
+  .reader-title{margin:12px 0 22px;font-size:24px;font-weight:300;color:#f3dfb1;line-height:1.35;}
+  .reader-body{white-space:pre-wrap;font-size:14px;line-height:1.9;color:#d7c18f;}
+  .reader-actions{display:flex;gap:14px;align-items:center;margin-top:26px;padding-top:16px;
+    border-top:1px solid rgba(225,190,122,.16);font-size:11px;}
+  .reader-actions a{color:#d7b86e;text-decoration:none;border-bottom:1px solid rgba(215,184,110,.35);}
+  .reader-close{position:absolute;right:14px;top:12px;width:34px;height:34px;border:0;background:none;
+    color:#bfa064;font-size:24px;line-height:1;cursor:pointer;}
+  .reader-close:hover{color:#fff0c5;}
+  @media (max-width:600px){#reader{padding:10px}.reader-card{padding:28px 20px 26px;max-height:88vh}.reader-title{font-size:20px}}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv" width="1160" height="680"></canvas>
+    <div id="tip" role="status"></div>
+  </div>
+  <div class="ctrl">
+    <span>博客</span><input id="n" type="range" min="1" max="228" step="1" value="228" aria-label="博客数量"><span id="nv">228</span>
+    <button id="play">▶ 生长回放</button>
+  </div>
+</div>
+<div id="reader" aria-hidden="true">
+  <article class="reader-card" role="dialog" aria-modal="true" aria-label="文章内容">
+    <button class="reader-close" type="button" aria-label="关闭文章">×</button>
+    <div class="reader-meta" id="reader-meta"></div>
+    <h2 class="reader-title" id="reader-title"></h2>
+    <div class="reader-body" id="reader-body"></div>
+    <div class="reader-actions"><a id="reader-link" href="/blog">在博客中打开</a><span>按 Esc 关闭</span></div>
+  </article>
+</div>
+<script>
+window.addEventListener('error', e => { document.title = 'ERR: ' + e.message + ' @' + e.lineno + ':' + e.colno; });
+const Q = new URLSearchParams(location.search);
+const STATIC = Q.get('static') === '1';
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const W = 1160, H = 680;
+
+/* ---------------- 基础工具 ---------------- */
+const rad = d => d * Math.PI / 180;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const frac = x => x - Math.floor(x);
+const GA = rad(137.508);                       // 黄金角：新枝自动落进空隙
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function hashStr(s){let h=2166136261>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}return h;}
+const R1 = k => mulberry32(hashStr(k))();      // 以名字为种子：同一根枝永远同一个随机数
+const add=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+const sub3=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const mul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s];
+const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const len3=a=>Math.hypot(a[0],a[1],a[2]);
+const norm=a=>{const l=len3(a)||1;return [a[0]/l,a[1]/l,a[2]/l];};
+
+/* ---------------- 数据：来自 /api/tree 的真实公开博客 ---------------- */
+let TREE_EPOCH = 2021 * 12 + 3;
+
+function notesFromTree(tree){
+  const notes = [];
+  (tree.families || []).forEach(f => (f.topics || []).forEach(tp => (tp.entries || []).forEach(e => {
+    notes.push({
+      fam: f.name,
+      topic: tp.name,
+      sub: e.sub,
+      t: Number(e.t) || 0,
+      date: e.date,
+      entryId: String(e.id),
+      id: 'entry|' + e.id,
+    });
+  })));
+  notes.sort((a, b) => a.t - b.t || a.id.localeCompare(b.id));
+  notes.forEach((nt, i) => nt.idx = i);
+  return notes;
+}
+function monthLabel(t){
+  const m0 = TREE_EPOCH + Math.floor(t);
+  return `${Math.floor(m0 / 12)}-${String(m0 % 12 + 1).padStart(2, '0')}`;
+}
+
+/* ---------------- 几何 ---------------- */
+function growPts(p0, d0, L, bend, key, n, wig, curl){
+  wig = wig == null ? 0.12 : wig;
+  const r = mulberry32(hashStr(key));
+  const phase = R1('ph' + key) * Math.PI * 2;
+  const pts = [p0]; let d = norm(d0), p = p0;
+  const seg = L / n;
+  for (let i = 0; i < n; i++) {
+    const t = i / n;
+    // 自然枝不是折线：越靠近枝梢越向上拱，侧向用低频 S 弯，噪声只做纤维感
+    const lift = (bend || 0) * (0.35 + 0.9 * t) / n;
+    const sway = 0;
+    d = norm(add(d, [(r() - .5) * wig * 0.42 / Math.sqrt(n) + sway, lift,
+                     (r() - .5) * wig * 0.42 / Math.sqrt(n) + sway * 0.35]));
+    p = add(p, mul(d, seg)); pts.push(p);
+  }
+  // 扭曲感：沿枝长做一次收口的 S 弯，端点和枝尖仍在原方向，不改变整体向上
+  if (curl) {
+    const amp = Math.abs(curl) * Math.min(1, L / 2.4);
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      const tan = norm(sub3(pts[Math.min(n, i + 1)], pts[Math.max(0, i - 1)]));
+      const nx = -tan[2], nz = tan[0], nl = Math.hypot(nx, nz) || 1;
+      const off = Math.sin(t * Math.PI * 2.2 + phase) * Math.sin(t * Math.PI) * amp;
+      pts[i] = add(pts[i], [nx / nl * off, 0, nz / nl * off]);
+    }
+  }
+  return pts;
+}
+function ptAt(pts, t){
+  const x = clamp(t, 0, 1) * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(x)), f = x - i;
+  return [pts[i][0]*(1-f)+pts[i+1][0]*f, pts[i][1]*(1-f)+pts[i+1][1]*f, pts[i][2]*(1-f)+pts[i+1][2]*f];
+}
+function tanAt(pts, t){
+  const x = clamp(t, 0, 1) * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(x));
+  return norm(sub3(pts[i + 1], pts[i]));
+}
+/* 从父枝切线 T 偏转出侧枝：phi=绕父枝的方位，alpha=张开角 */
+function lateral(T, phi, alpha){
+  let u = cross(T, [0, 1, 0]); if (len3(u) < 1e-3) u = [1, 0, 0]; u = norm(u);
+  const v = norm(cross(T, u));
+  const p = add(mul(u, Math.cos(phi)), mul(v, Math.sin(phi)));
+  return norm(add(mul(T, Math.cos(alpha)), mul(p, Math.sin(alpha))));
+}
+
+/* ---------------- 成长型生成器 ----------------
+   输入：按时间排序的博客 + 当前进度 nF（第几篇）
+   规则：
+   · 树高 ∝ N^0.33；枝长 ∝ 枝下博客数^(1/3)；枝粗 ∝ √枝下博客数（管道模型）
+   · 每 3 篇博客长 1 根细枝；主枝每 9 篇、中类枝每 7 篇长 1 根短枝
+   · 方位按「创建先后 × 黄金角」+ 名字哈希：老枝不挪位，新枝落进空隙
+   · 每篇博客 1 片叶，挂在自己细类的枝系上，各级都有 */
+const KR = 0.026;
+function generate(notes, nF){
+  const take = Math.max(1, Math.min(notes.length, Math.ceil(nF)));
+  const cur = notes.slice(0, take);
+  const N = cur.length;
+  const S = Math.max(0.2, Math.pow(N / 228, 0.33));
+  const TH = 9.5 * S;
+  const R = mulberry32(hashStr('annual-oak-' + N));
+  const branches = [], leaves = [], roots = [];
+  const mk = (pts, level, m, key, extra) => Object.assign({pts, level, r: KR * Math.pow(Math.max(1, m), 0.58), key, used: 0}, extra || {});
+  const parentMap = new Map();
+
+  const trunk = mk(growPts([0, 0, 0], [.025, 1, .012], TH * .10, .04, 'trunk', 14, .02, .03), 1, N, 'trunk', {});
+  branches.push(trunk);
+  parentMap.set('trunk', null);
+  let active = [{b: trunk, dir: tanAt(trunk.pts, 1), order: 1, az: 0}];
+
+  const appendShoot = (b, dir, len, order, bend, keySeed) => {
+    const p0 = b.pts[b.pts.length - 1];
+    const pts = growPts(p0, dir, len, bend, keySeed, order <= 2 ? 8 : 6, .075, (R() - .5) * .55);
+    b.pts.push(...pts.slice(1));
+    b.dir = tanAt(b.pts, 1);
+    return pts[pts.length - 1];
+  };
+
+  const childShoot = (parent, base, dir, len, order, key, bend) => {
+    const pts = growPts(base, dir, len, bend, key, order <= 2 ? 8 : 6, .07, (R() - .5) * .45);
+    const b = mk(pts, order, 1, key, {parent: parent.key});
+    branches.push(b);
+    parentMap.set(key, parent.key);
+    return b;
+  };
+
+  const totalYears = 28;
+  const years = Math.max(5, Math.round(totalYears * take / notes.length));
+  let scaffoldCount = 0;
+
+  for (let year = 1; year <= years; year++) {
+    const next = [];
+    for (const tip of active) {
+      const b = tip.b;
+      const canGrow = true;
+      if (canGrow) {
+        const baseLen = tip.order === 1 ? TH * .028
+          : tip.order === 2 ? TH * .038
+          : tip.order === 3 ? TH * .030
+          : tip.order === 4 ? TH * .022 : TH * .015;
+        const len = baseLen * (.86 + .28 * R()) * (1 - .012 * year);
+        const tropism = tip.order === 1 ? .018 : tip.order === 2 ? .010 : tip.order === 3 ? .008 : .004;
+        const outward = tip.order === 2 ? .025 : tip.order === 3 ? .014 : .005;
+        const radial = [Math.cos(tip.az || 0) * outward, 0, Math.sin(tip.az || 0) * outward];
+        const drift = (tip.order >= 4 ? -.005 : 0) + (R() - .5) * .08;
+        const dir = norm(add(add(tip.dir, [(R() - .5) * .09, tropism + drift, (R() - .5) * .09]), radial));
+        appendShoot(b, dir, len, tip.order, tip.order <= 2 ? .08 : .03, 'ext-' + b.key + '-' + year);
+        tip.dir = tanAt(b.pts, 1);
+        next.push(tip);
+      }
+
+      let spawn = 0;
+      if (tip.order === 1) {
+        if (year >= 4 && year <= 11 && scaffoldCount < 5) spawn = 1;
+      } else if (tip.order === 2) {
+        if (year >= 3 && R() < .34) spawn = 1;
+      } else if (tip.order === 3) {
+        if (R() < .25) spawn = 1;
+      } else if (R() < .14) spawn = 1;
+
+      for (let k = 0; k < spawn; k++) {
+        const t = .30 + .58 * R();
+        const base = ptAt(b.pts, t);
+        const alpha = rad(tip.order === 1 ? 44 + 18 * R()
+          : tip.order === 2 ? 42 + 22 * R()
+          : tip.order === 3 ? 50 + 24 * R() : 58 + 26 * R());
+        const phi = k * GA + (R() - .5) * 1.6 + year * .37;
+        const dir = lateral(tanAt(b.pts, t), phi, alpha);
+        const len = tip.order === 1 ? TH * .050 : tip.order === 2 ? TH * .035 : TH * .022;
+        const child = childShoot(b, base, dir, len * (.85 + .3 * R()), tip.order + 1,
+                                 'lat-' + b.key + '-' + year + '-' + k, tip.order <= 2 ? .05 : -.02);
+        const cdir = tanAt(child.pts, 1);
+        next.push({b: child, dir: cdir, order: tip.order + 1, az: Math.atan2(cdir[2], cdir[0])});
+        if (tip.order === 1) scaffoldCount++;
+      }
+    }
+    active = next;
+  }
+
+  // 终端枝上挂叶；每篇博客 1 片叶，一篇不丢
+  const carriers = active.length ? active : branches.filter(b => b.level >= 3).slice(-80).map(b => ({b, order: b.level}));
+  for (let i = 0; i < N; i++) {
+    const carrier = carriers[i % carriers.length].b;
+    const t = .28 + .64 * R();
+    const base = ptAt(carrier.pts, t);
+    const T = tanAt(carrier.pts, t);
+    let o = [R() - .5, R() - .5, R() - .5];
+    o = norm(sub3(o, mul(T, dot(o, T))));
+    const p = add(base, mul(o, .035 + .13 * R()));
+    carrier.used++;
+    leaves.push({p, a: 1, lvl: Math.min(5, carrier.level + 1), ang: R() * Math.PI, sz: .72 + .5 * R(), nt: cur[i], ck: carrier.key});
+  }
+
+  // 管道模型：按枝下叶量回算半径
+  const desc = new Map();
+  leaves.forEach(l => {
+    let k = l.ck;
+    while (k) { desc.set(k, (desc.get(k) || 0) + 1); k = parentMap.get(k); }
+  });
+  branches.forEach(b => { b.r = Math.max(.012, KR * Math.pow(Math.max(1, desc.get(b.key) || 0), .58)); });
+  trunk.used = N;
+
+  // 根系：主根 + 不等长水平根 + 侧根
+  const tap = growPts([0, 0, 0], [.035, -1, .02], TH * .34, -.04, 'taproot', 14, .08, .10);
+  roots.push({pts: tap, r: KR * Math.pow(N, .58) * .30, level: 0});
+  const rootAz = [10, 51, 96, 143, 197, 238, 286, 329];
+  const rootLen = [1.12, .52, .92, .38, 1.24, .44, .82, .34];
+  for (let i = 0; i < rootAz.length; i++) {
+    const az = rad(rootAz[i] + (R() - .5) * 22);
+    const p0 = ptAt(tap, .16 + .12 * R());
+    const L = (rootLen[i] + R() * .2) * S;
+    roots.push({
+      pts: growPts(p0, [Math.cos(az) * .96, -.10 - .08 * R(), Math.sin(az) * .96],
+                   L, -.12 - .08 * R(), 'root' + i, 8, .10, (R() - .5) * .6),
+      r: (i === 4 ? .22 : .15) * S, level: 0,
+    });
+    if (i % 2 === 0) {
+      const q = ptAt(roots[roots.length - 1].pts, .45 + .15 * R());
+      roots.push({
+        pts: growPts(q, [Math.cos(az + .6 * (R() - .5)) * .94, -.16, Math.sin(az + .6 * (R() - .5)) * .94],
+                     (.22 + .3 * R()) * S, -.12, 'rootlet' + i, 5, .1, .2),
+        r: .055 * S, level: 0,
+      });
+    }
+  }
+
+  const lv = {2: 0, 3: 0, 4: 0, 5: 0};
+  leaves.forEach(l => lv[Math.min(5, Math.max(2, l.lvl))]++);
+  const stats = {
+    N, S, TH, fams: new Set(cur.map(n => n.fam)).size,
+    limbs: branches.filter(b => b.level === 2).length,
+    topics: new Set(cur.map(n => n.topic)).size,
+    topicBranches: branches.filter(b => b.level === 3).length,
+    subs: branches.filter(b => b.level === 4).length,
+    twigs: branches.filter(b => b.level === 5).length, spurs: 0,
+    twigsWithLeaf: branches.filter(b => b.level === 5 && b.used > 0).length, lv,
+  };
+  let cx = 0, cz = 0; leaves.forEach(l => { cx += l.p[0]; cz += l.p[2]; });
+  const pivot = [leaves.length ? cx / leaves.length * .8 : 0, 0, leaves.length ? cz / leaves.length * .8 : 0];
+  return {branches, roots, leaves, stats, pivot, lastT: cur[cur.length - 1].t, lastDate: cur[cur.length - 1].date};
+}
+
+/* ---------------- 相机与投影 ---------------- */
+const F = 1050;
+let cam = {yaw: rad(-20), pitch: rad(8), dist: 21};
+if (Q.get('yaw')) cam.yaw = rad(+Q.get('yaw'));
+const home = () => ({yaw: rad(-20), pitch: rad(8), dist: 21});
+let view = {v: 1, target: 1};
+function project(p){
+  const D = cam.dist * view.v, ty = (G ? G.stats.TH * 0.50 : 5) ;
+  const pv = G && G.pivot ? G.pivot : [0, 0, 0];
+  const x = p[0] - pv[0], y = p[1] - ty, z = p[2] - pv[2];
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const x1 = x * cy - z * sy, z1 = x * sy + z * cy;
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const y1 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
+  const zc = z2 + D;
+  const f = F / Math.max(2, zc);
+  return {x: W / 2 + x1 * f, y: H * 0.43 - y1 * f, z: zc, f};
+}
+function depthA(z){ const D = cam.dist * view.v; return clamp(1.3 - (z - 0.7 * D) / (1.3 * D), .3, 1); }
+
+/* ---------------- 绘制 ---------------- */
+const halo = document.createElement('canvas'); halo.width = halo.height = 128;
+{ const h = halo.getContext('2d'); const g = h.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255,228,160,.8)'); g.addColorStop(.3, 'rgba(236,196,120,.28)');
+  g.addColorStop(.65, 'rgba(190,148,80,.06)'); g.addColorStop(1, 'rgba(180,140,70,0)');
+  h.fillStyle = g; h.fillRect(0, 0, 128, 128); }
+
+function strokeBranch(P, r, level, aBase, seed){
+  const strands = level <= 1 ? 3 : 1;
+  const n = P.length;
+  const widths = [], normals = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    widths.push(Math.max(.32, r * P[i].f * 1.15 * (1 - (level <= 1 ? .82 : .86) * t)));
+    const j = Math.min(n - 1, i + 1), k = Math.max(0, i - 1);
+    const nx = -(P[j].y - P[k].y), ny = P[j].x - P[k].x, nl = Math.hypot(nx, ny) || 1;
+    normals.push([nx / nl, ny / nl]);
+  }
+  for (let s = 0; s < strands; s++) {
+    for (let i = 1; i < n; i++) {
+      const t = (i - .5) / (n - 1);
+      const w = (widths[i - 1] + widths[i]) / 2;
+      const off = (strands === 1 ? 0 : (s / (strands - 1) - .5)) * w * .55;
+      const jit = Math.sin(t * 7 + s * 1.7 + seed) * w * .025;
+      const x0 = P[i - 1].x + normals[i - 1][0] * (off + jit);
+      const y0 = P[i - 1].y + normals[i - 1][1] * (off + jit);
+      const x1 = P[i].x + normals[i][0] * (off + jit);
+      const y1 = P[i].y + normals[i][1] * (off + jit);
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+      const lineW = level <= 1 ? Math.max(.45, w / 3.2) : Math.max(.32, w * (level === 2 ? .62 : level === 3 ? .72 : .8));
+      const branchAlpha = level >= 5 ? .46 : level === 4 ? .56 : .72;
+      ctx.strokeStyle = level <= 1
+        ? `rgba(201,164,92,${(.55 * aBase).toFixed(3)})`
+        : `rgba(226,190,112,${(branchAlpha * aBase).toFixed(3)})`;
+      ctx.lineWidth = lineW;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+  }
+}
+
+/* 根系用有收分的实体根，不再是三根细线 */
+function strokeRoot(P, r, aBase){
+  const n = P.length, left = [], right = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const w = Math.max(.8, r * P[i].f * .15 * (1 - .72 * t));
+    const j = Math.min(n - 1, i + 1), k = Math.max(0, i - 1);
+    const nx = -(P[j].y - P[k].y), ny = P[j].x - P[k].x, nl = Math.hypot(nx, ny) || 1;
+    left.push([P[i].x + nx / nl * w, P[i].y + ny / nl * w]);
+    right.push([P[i].x - nx / nl * w, P[i].y - ny / nl * w]);
+  }
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(left[0][0], left[0][1]);
+  for (let i = 1; i < n; i++) ctx.lineTo(left[i][0], left[i][1]);
+  for (let i = n - 1; i >= 0; i--) ctx.lineTo(right[i][0], right[i][1]);
+  ctx.closePath();
+  ctx.fillStyle = `rgba(112,85,42,${(.82 * aBase).toFixed(3)})`;
+  ctx.fill();
+  ctx.strokeStyle = `rgba(201,164,92,${(.55 * aBase).toFixed(3)})`;
+  ctx.lineWidth = .8; ctx.stroke();
+  ctx.restore();
+}
+
+/* 树干用一条有收分的实体金线，不再用平行细线拼成一根“杆” */
+function strokeTrunk(P, r, aBase){
+  const n = P.length, left = [], right = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const wobble = 1 + .04 * Math.sin(i * .72 + 1.2) + .025 * Math.sin(i * 1.9) + .012 * Math.sin(i * 3.1);
+    const w = Math.max(.35, r * P[i].f * 0.55 * (1 - .82 * t) * (1 + .24 * Math.exp(-i / 2.1)) * wobble);
+    const j = Math.min(n - 1, i + 1), k = Math.max(0, i - 1);
+    const nx = -(P[j].y - P[k].y), ny = P[j].x - P[k].x, nl = Math.hypot(nx, ny) || 1;
+    left.push([P[i].x + nx / nl * w, P[i].y + ny / nl * w]);
+    right.push([P[i].x - nx / nl * w, P[i].y - ny / nl * w]);
+  }
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(left[0][0], left[0][1]);
+  for (let i = 1; i < n; i++) ctx.lineTo(left[i][0], left[i][1]);
+  for (let i = n - 1; i >= 0; i--) ctx.lineTo(right[i][0], right[i][1]);
+  ctx.closePath();
+  const mid = Math.floor(n * .55);
+  const grad = ctx.createLinearGradient(left[mid][0], left[mid][1], right[mid][0], right[mid][1]);
+  grad.addColorStop(0, `rgba(92,70,32,${(.78 * aBase).toFixed(3)})`);
+  grad.addColorStop(.28, `rgba(201,164,92,${(.78 * aBase).toFixed(3)})`);
+  grad.addColorStop(.52, `rgba(244,216,157,${(.9 * aBase).toFixed(3)})`);
+  grad.addColorStop(.74, `rgba(201,164,92,${(.78 * aBase).toFixed(3)})`);
+  grad.addColorStop(1, `rgba(92,70,32,${(.78 * aBase).toFixed(3)})`);
+  ctx.fillStyle = grad; ctx.fill();
+  ctx.strokeStyle = `rgba(255,232,180,${(.42 * aBase).toFixed(3)})`;
+  ctx.lineWidth = 1; ctx.stroke();
+  // 两道低对比树皮沟壑，避免树干像一根光滑木梁
+  for (let s = 0; s < 2; s++) {
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      const w = Math.max(.35, r * P[i].f * 0.55 * (1 - .82 * t) * (1 + .24 * Math.exp(-i / 2.1)));
+      const f = (s ? .32 : -.36) + .08 * Math.sin(i * .6 + s);
+      const j = Math.min(n - 1, i + 1), k = Math.max(0, i - 1);
+      const nx = -(P[j].y - P[k].y), ny = P[j].x - P[k].x, nl = Math.hypot(nx, ny) || 1;
+      const x = P[i].x + nx / nl * w * f, y = P[i].y + ny / nl * w * f;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.strokeStyle = `rgba(72,52,23,${(.28 * aBase).toFixed(3)})`;
+    ctx.lineWidth = 1; ctx.stroke();
+  }
+  ctx.restore();
+}
+
+let G = null, notes = null, nF = 0, playing = false, needGen = true;
+let labels = [];
+
+function draw(){
+  const bg = ctx.createRadialGradient(W / 2, H * 0.55, 60, W / 2, H * 0.5, 660);
+  bg.addColorStop(0, '#15100a'); bg.addColorStop(1, '#070503');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // 地面
+  const g0 = project([0, 0, 0]);
+  const gr = 2.4 * G.stats.S * g0.f;
+  const gg = ctx.createRadialGradient(g0.x, g0.y, 0, g0.x, g0.y, gr);
+  gg.addColorStop(0, 'rgba(201,164,92,.12)'); gg.addColorStop(1, 'rgba(201,164,92,0)');
+  ctx.fillStyle = gg; ctx.beginPath(); ctx.ellipse(g0.x, g0.y, gr, gr * .3, 0, 0, Math.PI * 2); ctx.fill();
+
+  // 根
+  G.roots.forEach((rt, i) => {
+    const P = rt.pts.map(project);
+    strokeRoot(P, rt.r, .7);
+  });
+
+  // 枝（按深度）
+  const list = G.branches.map(b => {
+    const P = b.pts.map(project);
+    return {b, P, z: P.reduce((s, q) => s + q.z, 0) / P.length};
+  }).sort((a, c) => c.z - a.z);
+  list.forEach(({b, P, z}) => {
+    if (len3(sub3(b.pts[b.pts.length - 1], b.pts[0])) < 1e-3) return;
+    if (b.key === 'trunk') strokeTrunk(P, b.r, depthA(z));
+    else strokeBranch(P, b.r, b.level === 6 ? 5 : b.level, depthA(z), hashStr(b.key) % 97);
+  });
+  // 枝梢不长成切口：末端加一枚收尖的芽，粗枝收细后再结束
+  const hasChild = new Set(G.branches.filter(b => b.parent).map(b => b.parent));
+  list.forEach(({b, P}) => {
+    if (b.key === 'trunk' || hasChild.has(b.key)) return;
+    const end = P[P.length - 1];
+    const r = Math.max(1.2, b.r * end.f * .22);
+    ctx.save();
+    ctx.fillStyle = `rgba(255,230,170,${clamp(depthA(end.z), .3, .9)})`;
+    ctx.beginPath(); ctx.ellipse(end.x, end.y, r, r * .58, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  });
+
+  // 叶簇光晕 + 叶
+  const groups = new Map();
+  G.leaves.forEach(l => {
+    if (l.a <= 0) return;
+    let g = groups.get(l.ck); if (!g) { g = {s: [0, 0, 0], n: 0, a: 0}; groups.set(l.ck, g); }
+    g.s = add(g.s, l.p); g.n++; g.a += l.a;
+  });
+  const items = [];
+  groups.forEach(g => {
+    const c = project(mul(g.s, 1 / g.n));
+    items.push({k: 'h', z: c.z, x: c.x, y: c.y, r: Math.min(0.75, 0.2 + 0.07 * Math.sqrt(g.n)) * c.f * 1.6, a: (g.a / g.n) * depthA(c.z)});
+  });
+  G.leaves.forEach(l => {
+    if (l.a <= 0) return;
+    const pp = project(l.p);
+    items.push({k: 'l', z: pp.z, x: pp.x, y: pp.y, r: Math.max(1.8, 0.082 * l.sz * pp.f), ang: l.ang, a: l.a * depthA(pp.z), l});
+  });
+  items.sort((a, b) => b.z - a.z);
+  const DIM = clamp(1.05 / G.stats.S, 0.38, 1);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  items.forEach(it => {
+    if (it.k === 'h') {
+      ctx.globalAlpha = Math.min(1, it.a * .38 * DIM);
+      ctx.drawImage(halo, it.x - it.r, it.y - it.r, it.r * 2, it.r * 2);
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.save(); ctx.translate(it.x, it.y); ctx.rotate(it.ang);
+      ctx.fillStyle = `rgba(240,212,150,${(.5 * it.a * DIM).toFixed(3)})`;
+      ctx.beginPath(); ctx.ellipse(0, 0, it.r * 1.6, it.r * .68, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `rgba(255,240,200,${(.88 * it.a * Math.sqrt(DIM)).toFixed(3)})`;
+      ctx.beginPath(); ctx.ellipse(0, 0, it.r * .9, it.r * .38, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      it.l._sx = it.x; it.l._sy = it.y;
+    }
+  });
+  ctx.restore();
+
+  // 悬浮到叶片时，给当前叶一个金色呼吸环，让点击目标有实体感
+  if (hoverLeaf && hoverLeaf._sx != null) {
+    const hr = 10 + Math.sin(performance.now() * .004) * 2;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(255,224,158,.9)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(hoverLeaf._sx, hoverLeaf._sy, hr, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(201,164,92,.35)';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(hoverLeaf._sx, hoverLeaf._sy, hr + 2, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawLabels(){
+  const SF = clamp(W / (cv.getBoundingClientRect().width || W), 1, 1.35);
+  const by = new Map();
+  G.leaves.forEach(l => {
+    if (l.a <= 0.5) return;
+    let g = by.get(l.nt.topic); if (!g) { g = {s: [0, 0, 0], n: 0}; by.set(l.nt.topic, g); }
+    g.s = add(g.s, l.p); g.n++;
+  });
+  const CX = W / 2, CY = H * 0.46;
+  const items = [];
+  const minLabel = Math.max(2, Math.ceil(G.stats.N * 0.012));
+  const ranked = [...by.entries()]
+    .filter(([name, g]) => name !== '无正文' && g.n >= minLabel)
+    .sort((a, b) => b[1].n - a[1].n)
+    .slice(0, 12);
+  ranked.forEach(([name, g]) => {
+    const pp = project(mul(g.s, 1 / g.n));
+    const dx = pp.x - CX, dy = pp.y - CY, d = Math.hypot(dx, dy) || 1;
+    const x = pp.x + dx / d * 46 * SF, y = pp.y + dy / d * 30 * SF;
+    items.push({name, n: g.n, ax: pp.x, ay: pp.y, z: pp.z, x, y, bx: x, by: y});
+  });
+  ctx.font = `600 ${11 * SF}px "PingFang SC","Hiragino Sans GB",sans-serif`;
+  items.forEach(it => { it.w = ctx.measureText(it.name).width + 18 * SF; it.x = clamp(it.x, 50 * SF, W - 50 * SF); it.y = clamp(it.y, 70 * SF, H - 70 * SF); });
+  for (let pass = 0; pass < 20; pass++)
+    for (let a = 0; a < items.length; a++) for (let b = a + 1; b < items.length; b++) {
+      const A = items[a], B = items[b];
+      if (Math.abs(A.x - B.x) < (A.w + B.w) / 2 + 6 * SF && Math.abs(A.y - B.y) < 26 * SF) {
+        const dir = A.y <= B.y ? -1 : 1, push = (26 * SF - Math.abs(A.y - B.y)) / 2 + .5;
+        A.y = clamp(A.y + dir * push, 66 * SF, H - 66 * SF); B.y = clamp(B.y - dir * push, 66 * SF, H - 66 * SF);
+      }
+    }
+  items.forEach(it => {
+    const al = clamp(depthA(it.z) * 1.05, .35, 1);
+    ctx.save();
+    if (Math.hypot(it.x - it.bx, it.y - it.by) > 14) {
+      ctx.strokeStyle = `rgba(201,164,92,${(.18 * al).toFixed(3)})`; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(it.ax, it.ay); ctx.lineTo(it.x, it.y); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(7,5,3,.58)';
+    ctx.fillRect(it.x - it.w / 2 + 4 * SF, it.y - 9 * SF, it.w - 8 * SF, 20 * SF);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,.9)'; ctx.shadowBlur = 5;
+    ctx.fillStyle = `rgba(222,196,138,${(.92 * al).toFixed(3)})`;
+    ctx.fillText(it.name, it.x, it.y);
+    ctx.restore();
+  });
+}
+
+function updateText(){
+  const s = G.stats;
+  const nv = document.getElementById('nv');
+  if (nv) nv.textContent = s.N;
+}
+
+function regen(){
+  G = generate(notes, nF);
+  window.__tree = G;
+  view.target = Math.pow(Math.max(1, (G.stats.TH + 2.4) / 12.0), 0.55) * 0.82;
+  updateText();
+  needGen = false;
+}
+
+/* ---------------- 交互 ---------------- */
+const slider = document.getElementById('n');
+function setTree(tree){
+  TREE_EPOCH = Number(tree.epochMonth) || TREE_EPOCH;
+  notes = notesFromTree(tree);
+  if (!notes.length) throw new Error('没有可展示的博客');
+  slider.max = notes.length;
+  nF = notes.length; slider.value = nF;
+  regen();
+}
+slider.addEventListener('input', () => { playing = false; nF = +slider.value; regen(); });
+document.getElementById('play').addEventListener('click', () => { nF = 1; playing = true; last = performance.now(); });
+
+let drag = false, auto = !STATIC, lx = 0, ly = 0, downX = 0, downY = 0, moved = 0;
+cv.addEventListener('pointerdown', e => {
+  drag = true; auto = false; lx = e.clientX; ly = e.clientY;
+  downX = e.clientX; downY = e.clientY; moved = 0;
+  cv.setPointerCapture(e.pointerId); cv.classList.add('drag');
+});
+cv.addEventListener('pointermove', e => {
+  if (drag) {
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 3) moved = 1;
+    if (moved) {
+      const sc = W / (cv.getBoundingClientRect().width || W);
+      cam.yaw += (e.clientX - lx) * 0.006 * sc;
+      cam.pitch = clamp(cam.pitch + (e.clientY - ly) * 0.004 * sc, rad(-15), rad(60));
+    }
+    lx = e.clientX; ly = e.clientY; return;
+  }
+  hover(e);
+});
+cv.addEventListener('pointerup', e => {
+  drag = false; cv.classList.remove('drag');
+  if (!moved) pickLeaf(e);
+  setTimeout(() => { if (!drag) auto = true; }, 2600);
+});
+cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist = clamp(cam.dist + e.deltaY * 0.02, 12, 48); }, {passive: false});
+cv.addEventListener('dblclick', () => { cam = home(); });
+
+const tip = document.getElementById('tip');
+const reader = document.getElementById('reader');
+const readerMeta = document.getElementById('reader-meta');
+const readerTitle = document.getElementById('reader-title');
+const readerBody = document.getElementById('reader-body');
+const readerLink = document.getElementById('reader-link');
+let hoverLeaf = null;
+
+function hideTip(){
+  if (tip) tip.classList.remove('show');
+  hoverLeaf = null;
+  cv.style.cursor = drag ? 'grabbing' : 'grab';
+}
+
+function hover(e){
+  const r = cv.getBoundingClientRect();
+  const mx = (e.clientX - r.left) * (W / (r.width || W));
+  const my = (e.clientY - r.top) * (H / (r.height || H));
+  let best = null, bd = 12;
+  G.leaves.forEach(l => {
+    if (l._sx == null || l.a < .5) return;
+    const d = Math.hypot(l._sx - mx, l._sy - my);
+    if (d < bd) { bd = d; best = l; }
+  });
+  cv.style.cursor = best ? 'pointer' : (drag ? 'grabbing' : 'grab');
+  if (!best) { hideTip(); return; }
+  hoverLeaf = best;
+  if (!tip) return;
+  tip.textContent = '';
+  const title = document.createElement('b');
+  title.textContent = best.nt.topic || '博客';
+  const sub = document.createElement('span');
+  sub.textContent = `${best.nt.sub || ''}${best.nt.sub ? ' · ' : ''}${best.nt.date || ''}`;
+  tip.append(title, sub);
+  tip.style.left = `${e.clientX - r.left}px`;
+  tip.style.top = `${e.clientY - r.top}px`;
+  tip.classList.add('show');
+}
+
+function stripMarkdown(text){
+  return String(text || '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '[图片]')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/[*_`>]/g, '')
+    .trim();
+}
+
+async function openReader(nt){
+  if (!nt || !nt.entryId) return;
+  if (tip) tip.classList.remove('show');
+  hideTip();
+  reader.classList.add('open');
+  reader.setAttribute('aria-hidden', 'false');
+  readerMeta.textContent = `${nt.date || ''} · ${nt.topic || ''}`;
+  readerTitle.textContent = nt.sub || nt.topic || '博客';
+  readerBody.textContent = '正在读取文章…';
+  readerLink.href = `/blog#entry-${nt.entryId}`;
+  try {
+    let data;
+    if (window.PREVIEW_ENTRIES && window.PREVIEW_ENTRIES[nt.entryId]) {
+      data = { summary: window.PREVIEW_ENTRIES[nt.entryId], date: nt.date, tags: [] };
+    } else {
+      const res = await fetch(`/api/diaries/${encodeURIComponent(nt.entryId)}`, { headers: { accept: 'application/json' } });
+      if (!res.ok) throw new Error(String(res.status));
+      data = await res.json();
+    }
+    readerMeta.textContent = `${data.date || nt.date || ''} · ${nt.topic || ''}`;
+    readerBody.textContent = stripMarkdown(data.summary || data.content || '这篇文章没有正文。');
+  } catch (err) {
+    readerBody.textContent = '文章内容读取失败，请从博客页面打开。';
+  }
+}
+
+function closeReader(){
+  reader.classList.remove('open');
+  reader.setAttribute('aria-hidden', 'true');
+}
+
+function pickLeaf(e){
+  if (!G || !G.leaves || !G.leaves.length) return;
+  const r = cv.getBoundingClientRect();
+  const mx = (e.clientX - r.left) * (W / (r.width || W));
+  const my = (e.clientY - r.top) * (H / (r.height || H));
+  let best = null, bd = 12;
+  G.leaves.forEach(l => {
+    if (l._sx == null || l.a < .5) return;
+    const d = Math.hypot(l._sx - mx, l._sy - my);
+    if (d < bd) { bd = d; best = l; }
+  });
+  if (best) openReader(best.nt);
+}
+
+reader.addEventListener('click', e => { if (e.target === reader) closeReader(); });
+reader.querySelector('.reader-close').addEventListener('click', closeReader);
+window.addEventListener('keydown', e => { if (e.key === 'Escape' && reader.classList.contains('open')) closeReader(); });
+cv.addEventListener('mouseleave', hideTip);
+
+let last = performance.now();
+function tick(now){
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (auto && !drag) cam.yaw += dt * rad(3);
+  if (playing) {
+    nF = Math.min(notes.length, nF + dt * notes.length / 10);     // 10 秒长完
+    slider.value = Math.floor(nF);
+    if (nF >= notes.length) playing = false;
+    needGen = true;
+  }
+  if (needGen) regen();
+  view.v += (view.target - view.v) * Math.min(1, dt * 3);
+  draw();
+  requestAnimationFrame(tick);
+}
+
+/* ---------------- 启动 ---------------- */
+const EMBEDDED_TREE = {"schema":"dr.tree/1","generatedAt":"2026-10-17T22:28:13.800Z","epochMonth":24243,"lastDate":"2026-10-13","source":{"entries":269,"public":269},"families":[{"id":"技术与人","name":"技术与人","topics":[{"id":"技术与人-平台生态","name":"平台生态","subs":[{"name":"推荐侵入","count":5},{"name":"工具化使用","count":3},{"name":"内容迁移","count":1}],"entries":[{"id":"34e9f71b-9bc2-8158-9425-ea65b783acd3","date":"2021-04-11","t":12.32258064516129,"sub":"工具化使用"},{"id":"3409f71b-9bc2-815f-85f7-e78ff430d650","date":"2021-04-20","t":12.612903225806452,"sub":"推荐侵入"},{"id":"34e9f71b-9bc2-81d6-a1a9-fe044e08feb6","date":"2021-07-18","t":15.548387096774194,"sub":"推荐侵入"},{"id":"34e9f71b-9bc2-81ed-a402-e5071a21ea34","date":"2021-12-17","t":20.516129032258064,"sub":"内容迁移"},{"id":"3409f71b-9bc2-810d-9b82-fe48e92f24dd","date":"2022-03-21","t":23.64516129032258,"sub":"推荐侵入"},{"id":"3409f71b-9bc2-8176-b32e-f0a9e3f85410","date":"2022-04-23","t":24.70967741935484,"sub":"工具化使用"},{"id":"34e9f71b-9bc2-8193-98dd-ed4f4762be95","date":"2022-04-28","t":24.870967741935484,"sub":"推荐侵入"},{"id":"3409f71b-9bc2-8135-ae18-c3402b975d16","date":"2022-12-05","t":32.12903225806452,"sub":"推荐侵入"},{"id":"3c89f71b-9bc2-8183-8c3d-ca8642459744","date":"2026-07-26","t":75.80645161290323,"sub":"工具化使用"}]},{"id":"技术与人-人工智能","name":"人工智能","subs":[{"name":"人机共生","count":3},{"name":"算法垄断","count":3},{"name":"强弱之争","count":2}],"entries":[{"id":"34e9f71b-9bc2-812d-b2b8-de0f90523b70","date":"2021-04-11","t":12.32258064516129,"sub":"人机共生"},{"id":"34e9f71b-9bc2-81b5-8bb0-d3c0f611dfd8","date":"2022-04-22","t":24.677419354838708,"sub":"强弱之争"},{"id":"3409f71b-9bc2-81c7-8d88-eb11a74a75e6","date":"2022-04-29","t":24.903225806451612,"sub":"算法垄断"},{"id":"34e9f71b-9bc2-819a-9469-d90fab21e901","date":"2022-04-29","t":24.903225806451612,"sub":"人机共生"},{"id":"34e9f71b-9bc2-81aa-9174-e78765367405","date":"2022-06-28","t":26.870967741935484,"sub":"算法垄断"},{"id":"34e9f71b-9bc2-815a-988d-cc0fb7614e66","date":"2023-02-19","t":34.58064516129032,"sub":"强弱之争"},{"id":"3fa9f71b-9bc2-80fa-970b-f677c4f38f24","date":"2025-04-03","t":60.064516129032256,"sub":"人机共生"},{"id":"3859f71b-9bc2-805f-8fc7-ef5b64f7a292","date":"2026-06-20","t":74.61290322580645,"sub":"算法垄断"}]},{"id":"技术与人-数字身份","name":"数字身份","subs":[{"name":"公开人设","count":2},{"name":"自持站点","count":2}],"entries":[{"id":"3409f71b-9bc2-813f-93bc-dfac31b190aa","date":"2025-03-28","t":59.87096774193548,"sub":"公开人设"},{"id":"3c89f71b-9bc2-818d-844c-efd053efbbef","date":"2026-07-26","t":75.80645161290323,"sub":"自持站点"},{"id":"3f29f71b-9bc2-80d9-aae0-f86ca9877b74","date":"2026-10-07","t":78.19354838709677,"sub":"公开人设"},{"id":"3f89f71b-9bc2-80b0-8552-f0e4ac677a16","date":"2026-10-13","t":78.38709677419355,"sub":"自持站点"}]}]},{"id":"自我与内心","name":"自我与内心","topics":[{"id":"自我与内心-内省觉察","name":"内省觉察","subs":[{"name":"认识自己","count":13},{"name":"斯多葛式","count":7},{"name":"情绪调节","count":4}],"entries":[{"id":"34e9f71b-9bc2-8130-8798-e18450ee8a97","date":"2021-07-01","t":15,"sub":"认识自己"},{"id":"34e9f71b-9bc2-81a9-9a7b-cae7250ea71a","date":"2021-09-11","t":17.322580645161292,"sub":"认识自己"},{"id":"34e9f71b-9bc2-8196-96ed-c99738c33497","date":"2021-09-26","t":17.806451612903224,"sub":"认识自己"},{"id":"34e9f71b-9bc2-8134-bad9-d07741c493d2","date":"2021-11-12","t":19.35483870967742,"sub":"斯多葛式"},{"id":"34e9f71b-9bc2-8137-8a51-c54e59657405","date":"2021-11-12","t":19.35483870967742,"sub":"斯多葛式"},{"id":"34e9f71b-9bc2-8105-9608-e5529b18582d","date":"2021-12-09","t":20.258064516129032,"sub":"认识自己"},{"id":"3409f71b-9bc2-8050-907d-f0ec0fb2e249","date":"2022-02-10","t":22.29032258064516,"sub":"认识自己"},{"id":"34e9f71b-9bc2-8120-b9ad-fd897682241c","date":"2022-07-01","t":27,"sub":"斯多葛式"},{"id":"34e9f71b-9bc2-81f6-8b44-d04bee6acbbf","date":"2022-07-10","t":27.29032258064516,"sub":"认识自己"},{"id":"3409f71b-9bc2-817c-b5ca-c5fc45318fa2","date":"2022-07-29","t":27.903225806451612,"sub":"斯多葛式"},{"id":"34e9f71b-9bc2-817e-8110-f453175af361","date":"2022-08-24","t":28.741935483870968,"sub":"斯多葛式"},{"id":"3409f71b-9bc2-812a-a664-f879564b1fde","date":"2023-10-06","t":42.16129032258065,"sub":"情绪调节"},{"id":"34e9f71b-9bc2-813f-89d6-f2eece1bd372","date":"2023-11-14","t":43.41935483870968,"sub":"斯多葛式"},{"id":"3409f71b-9bc2-81e4-8026-c6edbe87e337","date":"2023-12-31","t":44.96774193548387,"sub":"情绪调节"},{"id":"3409f71b-9bc2-81cc-87bb-f2a875cc09b8","date":"2024-01-18","t":45.54838709677419,"sub":"情绪调节"},{"id":"3409f71b-9bc2-81a9-812b-e38ca6ab4dd4","date":"2024-10-21","t":54.645161290322584,"sub":"情绪调节"},{"id":"3409f71b-9bc2-8147-a042-f78e3232bec8","date":"2024-12-19","t":56.58064516129032,"sub":"认识自己"},{"id":"34e9f71b-9bc2-81d2-baa6-c89d1a6b9b64","date":"2025-04-05","t":60.12903225806452,"sub":"认识自己"},{"id":"3409f71b-9bc2-817e-a52c-c4df721fd885","date":"2025-07-05","t":63.12903225806452,"sub":"认识自己"},{"id":"3f39f71b-9bc2-8020-ab5a-d7a5da91d234","date":"2025-07-08","t":63.225806451612904,"sub":"认识自己"},{"id":"3f39f71b-9bc2-8025-8f67-dbbc50bb8f65","date":"2025-07-08","t":63.225806451612904,"sub":"认识自己"},{"id":"3409f71b-9bc2-81d3-a1d4-e121dd2fde4b","date":"2025-11-26","t":67.80645161290323,"sub":"认识自己"},{"id":"3f69f71b-9bc2-8045-b909-cda230a42f4c","date":"2026-02-11","t":70.3225806451613,"sub":"斯多葛式"},{"id":"3709f71b-9bc2-8037-ab31-ebe527ab9a63","date":"2026-05-30","t":73.93548387096774,"sub":"认识自己"}]},{"id":"自我与内心-生命追问","name":"生命追问","subs":[{"name":"向死而生","count":7},{"name":"内心直觉","count":5},{"name":"打破框框","count":1}],"entries":[{"id":"3409f71b-9bc2-81e2-b30b-dbaf65db99ba","date":"2021-04-11","t":12.32258064516129,"sub":"内心直觉"},{"id":"34e9f71b-9bc2-811f-b443-ee541024c1d4","date":"2021-07-15","t":15.451612903225806,"sub":"打破框框"},{"id":"3409f71b-9bc2-81a1-99ca-e4db7523e8c1","date":"2021-08-10","t":16.29032258064516,"sub":"向死而生"},{"id":"3409f71b-9bc2-81d1-b4b4-ca4a9600d45b","date":"2021-09-05","t":17.129032258064516,"sub":"内心直觉"},{"id":"34e9f71b-9bc2-81b3-a63a-d978faa47f53","date":"2021-11-11","t":19.322580645161292,"sub":"向死而生"},{"id":"34e9f71b-9bc2-8154-985b-cae400acc5f3","date":"2022-06-01","t":26,"sub":"内心直觉"},{"id":"34e9f71b-9bc2-8135-aaa7-e2cdab4b5374","date":"2023-09-24","t":41.74193548387097,"sub":"向死而生"},{"id":"3409f71b-9bc2-8131-b597-c724ab094745","date":"2024-07-27","t":51.83870967741935,"sub":"向死而生"},{"id":"3409f71b-9bc2-81f4-9093-f92ca2b672b6","date":"2024-09-14","t":53.41935483870968,"sub":"向死而生"},{"id":"3409f71b-9bc2-81ff-9b27-c4682b78c53a","date":"2024-09-28","t":53.87096774193548,"sub":"内心直觉"},{"id":"3409f71b-9bc2-8154-841d-f762b26ce106","date":"2025-03-30","t":59.935483870967744,"sub":"向死而生"},{"id":"3409f71b-9bc2-81e4-9cc0-f473d8187573","date":"2025-06-13","t":62.38709677419355,"sub":"内心直觉"},{"id":"36a9f71b-9bc2-80da-be43-f31b7494c503","date":"2026-05-22","t":73.6774193548387,"sub":"向死而生"}]},{"id":"自我与内心-理想现实","name":"理想现实","subs":[{"name":"度之把握","count":7},{"name":"本分情分","count":1}],"entries":[{"id":"34e9f71b-9bc2-81d3-937f-d36be91b51b4","date":"2021-10-17","t":18.516129032258064,"sub":"度之把握"},{"id":"34e9f71b-9bc2-8178-bb55-ef222f07ee73","date":"2021-11-15","t":19.451612903225808,"sub":"度之把握"},{"id":"3409f71b-9bc2-8130-af35-eec894786cb1","date":"2021-12-08","t":20.225806451612904,"sub":"度之把握"},{"id":"3409f71b-9bc2-81f7-a413-dff70489900d","date":"2022-06-04","t":26.096774193548388,"sub":"度之把握"},{"id":"34e9f71b-9bc2-8175-b5fa-c02a9005c748","date":"2022-06-23","t":26.70967741935484,"sub":"度之把握"},{"id":"3409f71b-9bc2-8159-94b5-c787708ad652","date":"2024-04-13","t":48.38709677419355,"sub":"度之把握"},{"id":"3409f71b-9bc2-81bb-b92a-dc7c67a71b50","date":"2025-06-18","t":62.54838709677419,"sub":"本分情分"},{"id":"3f69f71b-9bc2-80f6-9323-ce5271a100f5","date":"2026-07-28","t":75.87096774193549,"sub":"度之把握"}]}]},{"id":"亲密与失落","name":"亲密与失落","topics":[{"id":"亲密与失落-思念逝者","name":"思念逝者","subs":[{"name":"梦境重逢","count":29},{"name":"照片触痛","count":12},{"name":"周年追忆","count":4}],"entries":[{"id":"34e9f71b-9bc2-8108-9149-c5536d89a33b","date":"2023-01-16","t":33.483870967741936,"sub":"周年追忆"},{"id":"3409f71b-9bc2-8103-934e-f89778f6c3d1","date":"2024-03-23","t":47.70967741935484,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-816d-8e0f-d898596af4d7","date":"2024-03-27","t":47.83870967741935,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-810b-9694-f68d6ec20242","date":"2024-04-10","t":48.29032258064516,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-8180-8de0-fbd595d527cb","date":"2024-05-11","t":49.32258064516129,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-81ff-80fb-f65151ea0321","date":"2024-06-16","t":50.483870967741936,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-81c1-9993-d253ce2ebec5","date":"2024-09-06","t":53.16129032258065,"sub":"照片触痛"},{"id":"3409f71b-9bc2-819d-9b51-e4a0c34532f4","date":"2024-09-27","t":53.83870967741935,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-81ae-b5c3-f45388d02ab1","date":"2024-10-08","t":54.225806451612904,"sub":"照片触痛"},{"id":"3409f71b-9bc2-81f3-a9d2-e18acae333fb","date":"2024-10-09","t":54.25806451612903,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-8180-b553-d7b8d80381ab","date":"2024-12-19","t":56.58064516129032,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-8176-b27b-ca548ac39a03","date":"2025-01-09","t":57.25806451612903,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-81fd-82ea-fedbafbc0b43","date":"2025-02-01","t":58,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-8189-83aa-f71b4e791255","date":"2025-02-03","t":58.064516129032256,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-81ff-87d3-f996267fb20d","date":"2025-03-28","t":59.87096774193548,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-810a-91b0-d9418aa2169b","date":"2025-03-30","t":59.935483870967744,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-81cb-8936-d07a2170a671","date":"2025-04-01","t":60,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-81b1-b579-c057ca4cfebe","date":"2025-04-16","t":60.483870967741936,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-813e-af68-e7157377388c","date":"2025-04-23","t":60.70967741935484,"sub":"照片触痛"},{"id":"3409f71b-9bc2-819b-af4e-c6eec0b234d2","date":"2025-05-01","t":61,"sub":"照片触痛"},{"id":"3409f71b-9bc2-81af-8fc2-cb6ec628e3d0","date":"2025-05-02","t":61.03225806451613,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-8134-8e07-ec30cf71d066","date":"2025-05-03","t":61.064516129032256,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-8167-8c8b-ea1290e8bc36","date":"2025-05-03","t":61.064516129032256,"sub":"照片触痛"},{"id":"3409f71b-9bc2-8179-b67d-e46dfbe6b18f","date":"2025-06-19","t":62.58064516129032,"sub":"照片触痛"},{"id":"3409f71b-9bc2-81b3-a167-fbd9aaf843a2","date":"2025-07-01","t":63,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-8138-a260-dec402dededf","date":"2025-07-13","t":63.38709677419355,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-8139-bf25-cffbdea8b7e8","date":"2025-07-14","t":63.41935483870968,"sub":"照片触痛"},{"id":"3409f71b-9bc2-8146-a795-e684ec4db9df","date":"2025-08-07","t":64.19354838709677,"sub":"照片触痛"},{"id":"3409f71b-9bc2-811d-8abf-cb1fb1f06003","date":"2025-08-11","t":64.3225806451613,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-810e-ab52-cbcc6924f28b","date":"2025-08-30","t":64.93548387096774,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-8187-8a3a-c3d8d78cfdef","date":"2025-09-13","t":65.38709677419355,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-81ee-b0b3-f1885fd041be","date":"2025-09-21","t":65.64516129032258,"sub":"照片触痛"},{"id":"3409f71b-9bc2-8169-9bbc-f36bfed2ecf8","date":"2025-10-07","t":66.19354838709677,"sub":"照片触痛"},{"id":"3409f71b-9bc2-81a2-aad5-e93de4835482","date":"2025-10-08","t":66.2258064516129,"sub":"照片触痛"},{"id":"3409f71b-9bc2-819a-8562-d9d26cda64ea","date":"2025-10-10","t":66.29032258064517,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-814b-9bb5-eb1cde1f1848","date":"2025-10-12","t":66.35483870967742,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-812a-bf0b-cc9201792a49","date":"2025-10-21","t":66.64516129032258,"sub":"周年追忆"},{"id":"3409f71b-9bc2-8145-8d26-d6e08d3ac32b","date":"2025-10-21","t":66.64516129032258,"sub":"周年追忆"},{"id":"3409f71b-9bc2-8195-a767-cd71288d1ecd","date":"2026-01-25","t":69.7741935483871,"sub":"梦境重逢"},{"id":"3409f71b-9bc2-81ef-86ba-e0097e7572a8","date":"2026-03-30","t":71.93548387096774,"sub":"梦境重逢"},{"id":"3499f71b-9bc2-80b1-a13b-f8d3999ccc38","date":"2026-04-22","t":72.6774193548387,"sub":"梦境重逢"},{"id":"34d9f71b-9bc2-8003-bf41-d19321e92c62","date":"2026-04-25","t":72.7741935483871,"sub":"周年追忆"},{"id":"37e9f71b-9bc2-8046-b2cf-c31173d9954a","date":"2026-06-11","t":74.3225806451613,"sub":"梦境重逢"},{"id":"37e9f71b-9bc2-8059-8ee3-e1ee38f76c86","date":"2026-06-13","t":74.38709677419355,"sub":"照片触痛"},{"id":"3f69f71b-9bc2-80c6-addd-d4ba1bec42d5","date":"2026-10-07","t":78.19354838709677,"sub":"梦境重逢"}]},{"id":"亲密与失落-关系反思","name":"关系反思","subs":[{"name":"合适之辨","count":11},{"name":"开放式关系","count":1}],"entries":[{"id":"3409f71b-9bc2-815b-961f-ff30f0590939","date":"2020-04-28","t":0.8709677419354839,"sub":"合适之辨"},{"id":"34e9f71b-9bc2-81b4-a85f-c277468d7f0e","date":"2022-06-01","t":26,"sub":"开放式关系"},{"id":"34e9f71b-9bc2-81bb-8513-d0c7702fd4f6","date":"2024-02-02","t":46.03225806451613,"sub":"合适之辨"},{"id":"3409f71b-9bc2-8133-a723-fe7e4f4f19f2","date":"2024-09-16","t":53.483870967741936,"sub":"合适之辨"},{"id":"3409f71b-9bc2-8193-ad43-d748f9dc344d","date":"2024-10-31","t":54.96774193548387,"sub":"合适之辨"},{"id":"3409f71b-9bc2-8100-ae2e-ec806827f434","date":"2025-03-27","t":59.83870967741935,"sub":"合适之辨"},{"id":"3409f71b-9bc2-8180-9a44-eeb2acb841f5","date":"2025-04-16","t":60.483870967741936,"sub":"合适之辨"},{"id":"3409f71b-9bc2-81cb-baf5-f889abdfa458","date":"2025-07-11","t":63.32258064516129,"sub":"合适之辨"},{"id":"3409f71b-9bc2-81bc-8576-fc057e0a6768","date":"2025-07-30","t":63.935483870967744,"sub":"合适之辨"},{"id":"3409f71b-9bc2-81ba-8212-ef8bfda9c9e1","date":"2025-09-13","t":65.38709677419355,"sub":"合适之辨"},{"id":"3409f71b-9bc2-818f-915e-f0326da2a163","date":"2025-11-29","t":67.90322580645162,"sub":"合适之辨"},{"id":"3b39f71b-9bc2-80e6-8948-d2258931b775","date":"2026-08-02","t":76.03225806451613,"sub":"合适之辨"}]},{"id":"亲密与失落-家庭牵绊","name":"家庭牵绊","subs":[{"name":"原生责任","count":4},{"name":"母亲懂我","count":2}],"entries":[{"id":"34e9f71b-9bc2-8139-94bd-d80ec18f2d71","date":"2021-08-16","t":16.483870967741936,"sub":"母亲懂我"},{"id":"3409f71b-9bc2-81e6-8aee-f0b332567111","date":"2021-11-05","t":19.129032258064516,"sub":"原生责任"},{"id":"34e9f71b-9bc2-81ee-a8ab-e7af703ff6b8","date":"2022-06-01","t":26,"sub":"原生责任"},{"id":"3409f71b-9bc2-817e-8413-f17a7df0e6a5","date":"2024-01-14","t":45.41935483870968,"sub":"原生责任"},{"id":"34e9f71b-9bc2-81e0-a2fb-ed814ec260a1","date":"2025-03-29","t":59.903225806451616,"sub":"原生责任"},{"id":"3409f71b-9bc2-819e-9e06-f39b073d21a7","date":"2025-08-26","t":64.80645161290323,"sub":"母亲懂我"}]}]},{"id":"职场与规则","name":"职场与规则","topics":[{"id":"职场与规则-组织生态","name":"组织生态","subs":[{"name":"利益蛋糕","count":6},{"name":"草台班子","count":6},{"name":"外来者困境","count":2}],"entries":[{"id":"3409f71b-9bc2-8134-b657-d41304e3bfcb","date":"2021-04-11","t":12.32258064516129,"sub":"利益蛋糕"},{"id":"34e9f71b-9bc2-8143-a20b-dfc94063641d","date":"2021-10-19","t":18.580645161290324,"sub":"外来者困境"},{"id":"3409f71b-9bc2-8198-a357-d7cca42581e9","date":"2021-12-08","t":20.225806451612904,"sub":"草台班子"},{"id":"3409f71b-9bc2-8166-b15f-c8fc7a0d4446","date":"2022-06-08","t":26.225806451612904,"sub":"利益蛋糕"},{"id":"3409f71b-9bc2-81b1-9157-daaebf3ceb70","date":"2023-11-19","t":43.58064516129032,"sub":"利益蛋糕"},{"id":"34e9f71b-9bc2-8170-854b-cf46a583d4dc","date":"2023-11-30","t":43.935483870967744,"sub":"草台班子"},{"id":"3409f71b-9bc2-816d-b6e2-cb3ddf23b49a","date":"2025-03-29","t":59.903225806451616,"sub":"草台班子"},{"id":"3409f71b-9bc2-81e9-99db-e117ec9162eb","date":"2025-03-29","t":59.903225806451616,"sub":"草台班子"},{"id":"34e9f71b-9bc2-81ee-8bcd-cbb8784fbb53","date":"2025-04-03","t":60.064516129032256,"sub":"利益蛋糕"},{"id":"34e9f71b-9bc2-8176-ae62-ff1aa92d2849","date":"2025-05-07","t":61.193548387096776,"sub":"利益蛋糕"},{"id":"3eb9f71b-9bc2-8028-840e-f2bc8680c04a","date":"2025-06-09","t":62.25806451612903,"sub":"草台班子"},{"id":"3409f71b-9bc2-8110-a59c-c827f3bcea93","date":"2025-06-26","t":62.806451612903224,"sub":"利益蛋糕"},{"id":"3409f71b-9bc2-81b4-a99d-d450cdd7bec8","date":"2025-07-10","t":63.29032258064516,"sub":"草台班子"},{"id":"3409f71b-9bc2-8148-a422-d0eeae658a9a","date":"2026-03-23","t":71.70967741935483,"sub":"外来者困境"}]},{"id":"职场与规则-责任边界","name":"责任边界","subs":[{"name":"兜底难题","count":5},{"name":"权责利分","count":3}],"entries":[{"id":"3409f71b-9bc2-8140-97a8-fe8046b1e086","date":"2024-03-19","t":47.58064516129032,"sub":"权责利分"},{"id":"3409f71b-9bc2-8157-b628-fe8b80150b29","date":"2024-04-18","t":48.54838709677419,"sub":"兜底难题"},{"id":"3409f71b-9bc2-81da-8625-c66237e3ceef","date":"2025-04-24","t":60.74193548387097,"sub":"兜底难题"},{"id":"3409f71b-9bc2-8155-98e8-fde097159c16","date":"2025-04-25","t":60.774193548387096,"sub":"兜底难题"},{"id":"3409f71b-9bc2-810b-9882-c3ac83be1e1e","date":"2025-08-01","t":64,"sub":"兜底难题"},{"id":"3409f71b-9bc2-8171-9169-fbccf9659966","date":"2025-09-15","t":65.45161290322581,"sub":"权责利分"},{"id":"3fb9f71b-9bc2-804a-b83f-e8a4f0ba0424","date":"2026-07-10","t":75.29032258064517,"sub":"兜底难题"},{"id":"3eb9f71b-9bc2-8045-b302-fde07f9f38cb","date":"2026-09-30","t":77.93548387096774,"sub":"权责利分"}]},{"id":"职场与规则-任务管理","name":"任务管理","subs":[{"name":"颗粒分解","count":5},{"name":"周期归类","count":2}],"entries":[{"id":"3409f71b-9bc2-81e1-90f8-c8aa014eec90","date":"2021-09-10","t":17.29032258064516,"sub":"颗粒分解"},{"id":"3409f71b-9bc2-8160-bf9b-f9afb0e7ed7d","date":"2021-12-06","t":20.161290322580644,"sub":"颗粒分解"},{"id":"3409f71b-9bc2-81cd-a053-d04c859af3e9","date":"2022-10-20","t":30.612903225806452,"sub":"颗粒分解"},{"id":"3409f71b-9bc2-81df-818a-d495b8013095","date":"2025-06-18","t":62.54838709677419,"sub":"周期归类"},{"id":"3f89f71b-9bc2-80f8-a619-f57a4f3d005e","date":"2026-04-23","t":72.70967741935483,"sub":"周期归类"},{"id":"3f39f71b-9bc2-80a1-aa4c-f38d3cd7cc2e","date":"2026-08-10","t":76.29032258064517,"sub":"颗粒分解"},{"id":"3f29f71b-9bc2-8072-9271-d9e16163b88c","date":"2026-09-07","t":77.19354838709677,"sub":"颗粒分解"}]}]},{"id":"社会与文化","name":"社会与文化","topics":[{"id":"社会与文化-群体规训","name":"群体规训","subs":[{"name":"工具表达","count":12},{"name":"习俗固化","count":8},{"name":"审美塑造","count":5},{"name":"通俗艺术","count":2}],"entries":[{"id":"34e9f71b-9bc2-8101-bfa6-f69c4edcac13","date":"2020-04-26","t":0.8064516129032258,"sub":"工具表达"},{"id":"34e9f71b-9bc2-81c9-8660-f90e1ee150a4","date":"2021-07-30","t":15.935483870967742,"sub":"习俗固化"},{"id":"34e9f71b-9bc2-81f6-91b8-e5d34468caaf","date":"2021-08-03","t":16.06451612903226,"sub":"习俗固化"},{"id":"3409f71b-9bc2-81dd-bd07-ca34dc7c2f31","date":"2021-08-29","t":16.903225806451612,"sub":"审美塑造"},{"id":"34e9f71b-9bc2-81d8-a0d7-dbb4b8223a7e","date":"2021-09-27","t":17.838709677419356,"sub":"工具表达"},{"id":"34e9f71b-9bc2-813c-a890-cdc6382d412e","date":"2021-10-24","t":18.741935483870968,"sub":"审美塑造"},{"id":"34e9f71b-9bc2-8187-aa1f-cc8f169ca1ce","date":"2021-11-06","t":19.161290322580644,"sub":"通俗艺术"},{"id":"34e9f71b-9bc2-811f-9bd2-fccb41105a48","date":"2021-11-07","t":19.193548387096776,"sub":"审美塑造"},{"id":"3409f71b-9bc2-81a7-848f-e77befdb3db0","date":"2021-12-05","t":20.129032258064516,"sub":"工具表达"},{"id":"3409f71b-9bc2-817c-8ed8-f0a38c6fd4cb","date":"2021-12-08","t":20.225806451612904,"sub":"工具表达"},{"id":"3409f71b-9bc2-8185-a6e9-e3937934c81a","date":"2021-12-08","t":20.225806451612904,"sub":"习俗固化"},{"id":"34e9f71b-9bc2-8166-ad77-f6a2cd73c9ad","date":"2021-12-12","t":20.35483870967742,"sub":"习俗固化"},{"id":"34e9f71b-9bc2-81bb-93f8-efdca166a800","date":"2022-01-29","t":21.903225806451612,"sub":"习俗固化"},{"id":"3409f71b-9bc2-8116-98d3-c3a0bcd9569f","date":"2022-06-01","t":26,"sub":"工具表达"},{"id":"3409f71b-9bc2-8136-a2f1-d8c4e3bb2f17","date":"2022-07-02","t":27.032258064516128,"sub":"审美塑造"},{"id":"3409f71b-9bc2-8119-b866-e72fe449be9b","date":"2022-12-05","t":32.12903225806452,"sub":"工具表达"},{"id":"34e9f71b-9bc2-81a7-915d-c7717ff9b084","date":"2022-12-15","t":32.45161290322581,"sub":"工具表达"},{"id":"3409f71b-9bc2-81bc-856a-ffa0c78eef11","date":"2023-03-10","t":35.29032258064516,"sub":"工具表达"},{"id":"3409f71b-9bc2-8139-8547-f4477bc5e8a8","date":"2023-09-04","t":41.096774193548384,"sub":"审美塑造"},{"id":"34e9f71b-9bc2-81e0-a114-c57077abb32d","date":"2024-11-26","t":55.806451612903224,"sub":"习俗固化"},{"id":"3409f71b-9bc2-81e7-bd45-f430ec03c002","date":"2025-04-05","t":60.12903225806452,"sub":"习俗固化"},{"id":"3409f71b-9bc2-8130-85fe-e78451a2ba47","date":"2025-07-28","t":63.87096774193548,"sub":"工具表达"},{"id":"3409f71b-9bc2-81c8-a5bd-ccb8767661f5","date":"2025-07-31","t":63.96774193548387,"sub":"工具表达"},{"id":"3409f71b-9bc2-8195-9b83-f16f3ba6500f","date":"2025-08-04","t":64.09677419354838,"sub":"工具表达"},{"id":"3409f71b-9bc2-81c2-9a34-d3dbe1448fcc","date":"2026-04-10","t":72.29032258064517,"sub":"习俗固化"},{"id":"36a9f71b-9bc2-80bb-8077-ffdb4ea63d05","date":"2026-05-24","t":73.74193548387096,"sub":"通俗艺术"},{"id":"3f69f71b-9bc2-8079-b9f5-e4dd7bc7e0b2","date":"2026-09-04","t":77.09677419354838,"sub":"工具表达"}]},{"id":"社会与文化-性别观念","name":"性别观念","subs":[{"name":"刻板印象","count":2},{"name":"工具表达","count":1}],"entries":[{"id":"34e9f71b-9bc2-81cb-aebb-e8b8a3ff31f7","date":"2021-04-11","t":12.32258064516129,"sub":"工具表达"},{"id":"3409f71b-9bc2-819e-9693-daf4e914f1e6","date":"2021-08-22","t":16.677419354838708,"sub":"刻板印象"},{"id":"3b39f71b-9bc2-8099-8102-e2741dec7c5a","date":"2026-07-16","t":75.48387096774194,"sub":"刻板印象"}]},{"id":"社会与文化-沟通之道","name":"沟通之道","subs":[{"name":"面子情绪","count":3}],"entries":[{"id":"34e9f71b-9bc2-8112-a97b-ef2ef2d0f62a","date":"2021-07-15","t":15.451612903225806,"sub":"面子情绪"},{"id":"34e9f71b-9bc2-817b-a970-ead8e48c44db","date":"2021-09-12","t":17.35483870967742,"sub":"面子情绪"},{"id":"3409f71b-9bc2-8177-95b5-fedffb028798","date":"2023-05-24","t":37.74193548387097,"sub":"面子情绪"}]}]},{"id":"学习与成长","name":"学习与成长","topics":[{"id":"学习与成长-自我定位","name":"自我定位","subs":[{"name":"适配分析","count":5},{"name":"深入认识","count":3},{"name":"萝卜找坑","count":1}],"entries":[{"id":"34e9f71b-9bc2-819e-973b-dce58bf57bd2","date":"2021-06-06","t":14.161290322580646,"sub":"深入认识"},{"id":"34e9f71b-9bc2-813e-a5b4-f947f4204a5f","date":"2021-11-12","t":19.35483870967742,"sub":"萝卜找坑"},{"id":"34e9f71b-9bc2-8167-bf2e-cf49a815c6a1","date":"2021-11-19","t":19.580645161290324,"sub":"适配分析"},{"id":"34e9f71b-9bc2-8134-8a16-feb109276f3c","date":"2022-08-01","t":28,"sub":"适配分析"},{"id":"3409f71b-9bc2-8188-8945-c0e48f4d260d","date":"2023-02-24","t":34.74193548387097,"sub":"适配分析"},{"id":"3409f71b-9bc2-81e6-9196-ffde46cf83e8","date":"2024-07-24","t":51.74193548387097,"sub":"深入认识"},{"id":"3409f71b-9bc2-817a-90f9-d9cd9e8ab075","date":"2025-02-24","t":58.74193548387097,"sub":"适配分析"},{"id":"3409f71b-9bc2-81a8-a4bf-f3319bf054fc","date":"2025-07-03","t":63.064516129032256,"sub":"深入认识"},{"id":"39f9f71b-9bc2-8087-ad75-f7793a74c7da","date":"2026-08-04","t":76.09677419354838,"sub":"适配分析"}]},{"id":"学习与成长-阅读启发","name":"阅读启发","subs":[{"name":"使命好奇","count":6},{"name":"马斯克传","count":1}],"entries":[{"id":"34e9f71b-9bc2-8197-892c-d59700414ea4","date":"2020-04-22","t":0.6774193548387096,"sub":"使命好奇"},{"id":"34e9f71b-9bc2-81fb-822f-cbd1e598cf78","date":"2021-04-11","t":12.32258064516129,"sub":"使命好奇"},{"id":"34e9f71b-9bc2-8147-a0ed-d4f1353ddfc8","date":"2021-07-01","t":15,"sub":"使命好奇"},{"id":"34e9f71b-9bc2-81f1-bc07-f63fb498eb69","date":"2022-06-28","t":26.870967741935484,"sub":"使命好奇"},{"id":"34e9f71b-9bc2-81c8-9970-ddd20fb811a3","date":"2024-12-18","t":56.54838709677419,"sub":"使命好奇"},{"id":"34e9f71b-9bc2-81f4-a869-e82b4635aa1e","date":"2025-01-08","t":57.225806451612904,"sub":"马斯克传"},{"id":"3409f71b-9bc2-817f-8a75-e43fac172d74","date":"2025-05-28","t":61.87096774193548,"sub":"使命好奇"}]},{"id":"学习与成长-求学方向","name":"求学方向","subs":[{"name":"人文学科","count":4},{"name":"应对冲击","count":1},{"name":"美学兴趣","count":1}],"entries":[{"id":"34e9f71b-9bc2-81a9-882d-eb3677fada81","date":"2022-05-26","t":25.806451612903224,"sub":"应对冲击"},{"id":"3409f71b-9bc2-814f-b847-e33b6c8c5b6b","date":"2023-03-25","t":35.774193548387096,"sub":"人文学科"},{"id":"3409f71b-9bc2-81e8-a5e6-c3b3654f35f1","date":"2025-04-26","t":60.806451612903224,"sub":"人文学科"},{"id":"3409f71b-9bc2-817a-a98e-cf53eed35d05","date":"2025-07-12","t":63.354838709677416,"sub":"人文学科"},{"id":"37e9f71b-9bc2-80f1-ab05-c8883379512e","date":"2026-06-13","t":74.38709677419355,"sub":"人文学科"},{"id":"3f69f71b-9bc2-8074-87cc-e8f5b11978b0","date":"2026-07-28","t":75.87096774193549,"sub":"美学兴趣"}]}]},{"id":"价值与选择","name":"价值与选择","topics":[{"id":"价值与选择-人生取舍","name":"人生取舍","subs":[{"name":"想要与能承","count":6},{"name":"妥协忠诚","count":2}],"entries":[{"id":"3f89f71b-9bc2-8000-b3e3-de29192e5d67","date":"2020-09-28","t":5.870967741935484,"sub":"想要与能承"},{"id":"3409f71b-9bc2-81bc-82d9-e42b31cb0f6c","date":"2021-09-05","t":17.129032258064516,"sub":"想要与能承"},{"id":"34e9f71b-9bc2-8189-aba6-edbe8f1c94c0","date":"2022-04-29","t":24.903225806451612,"sub":"想要与能承"},{"id":"34e9f71b-9bc2-8192-bcca-df8d167de86a","date":"2023-12-21","t":44.645161290322584,"sub":"想要与能承"},{"id":"34e9f71b-9bc2-81e4-9e77-dfb65201e415","date":"2024-09-21","t":53.645161290322584,"sub":"妥协忠诚"},{"id":"3409f71b-9bc2-81b7-9632-e722d8cb91e8","date":"2025-07-28","t":63.87096774193548,"sub":"妥协忠诚"},{"id":"3409f71b-9bc2-8151-80cd-d39278f61b28","date":"2026-04-06","t":72.16129032258064,"sub":"想要与能承"},{"id":"3f79f71b-9bc2-8047-93d9-c389e0ca56b8","date":"2026-10-12","t":78.35483870967742,"sub":"想要与能承"}]},{"id":"价值与选择-当下行动","name":"当下行动","subs":[{"name":"想去就去","count":2},{"name":"莫待以后","count":2},{"name":"想见就见","count":1}],"entries":[{"id":"3409f71b-9bc2-8122-bdfc-fbe59b156c31","date":"2024-07-29","t":51.903225806451616,"sub":"莫待以后"},{"id":"3409f71b-9bc2-8198-b795-dfa8751cf516","date":"2024-11-10","t":55.29032258064516,"sub":"想见就见"},{"id":"3409f71b-9bc2-815a-9327-d2c5a731696c","date":"2024-11-11","t":55.32258064516129,"sub":"想去就去"},{"id":"3409f71b-9bc2-811d-9fb5-d2fd4849d9b1","date":"2025-04-29","t":60.903225806451616,"sub":"想去就去"},{"id":"3409f71b-9bc2-812f-bd80-d54554165f6d","date":"2025-11-24","t":67.74193548387096,"sub":"莫待以后"}]},{"id":"价值与选择-意义建构","name":"意义建构","subs":[{"name":"抗争命运","count":1},{"name":"证明自己","count":1},{"name":"较劲生趣","count":1}],"entries":[{"id":"34e9f71b-9bc2-811a-87db-c311ec348143","date":"2025-04-16","t":60.483870967741936,"sub":"证明自己"},{"id":"34e9f71b-9bc2-8196-8d8c-c4cfb34f904d","date":"2025-04-16","t":60.483870967741936,"sub":"抗争命运"},{"id":"3eb9f71b-9bc2-805d-82e3-c7de6dd31346","date":"2026-09-30","t":77.93548387096774,"sub":"较劲生趣"}]}]},{"id":"审美与艺术","name":"审美与艺术","topics":[{"id":"审美与艺术-影视品评","name":"影视品评","subs":[{"name":"患难爱情","count":3},{"name":"群像鲜活","count":3},{"name":"才子佳人","count":1}],"entries":[{"id":"3409f71b-9bc2-811d-a425-ca61062e47bc","date":"2020-04-26","t":0.8064516129032258,"sub":"群像鲜活"},{"id":"34e9f71b-9bc2-816a-b041-c5d24cb73847","date":"2023-11-27","t":43.83870967741935,"sub":"患难爱情"},{"id":"34e9f71b-9bc2-81be-96fc-e877fef5c174","date":"2023-11-27","t":43.83870967741935,"sub":"患难爱情"},{"id":"34e9f71b-9bc2-8103-9fc8-dcdb2b2fb11c","date":"2023-12-01","t":44,"sub":"患难爱情"},{"id":"3409f71b-9bc2-816e-b755-f7a5d8bf8c5d","date":"2023-12-03","t":44.064516129032256,"sub":"才子佳人"},{"id":"34e9f71b-9bc2-810c-a9f7-d934a9c75335","date":"2023-12-15","t":44.45161290322581,"sub":"群像鲜活"},{"id":"3409f71b-9bc2-81c6-8311-ebbbd122b654","date":"2025-09-01","t":65,"sub":"群像鲜活"}]},{"id":"审美与艺术-怀旧与美","name":"怀旧与美","subs":[{"name":"信噪之辨","count":2}],"entries":[{"id":"34e9f71b-9bc2-814e-87ea-d7bacb39379c","date":"2021-04-11","t":12.32258064516129,"sub":"信噪之辨"},{"id":"3409f71b-9bc2-81f2-ad34-d3e50c2ec56a","date":"2021-12-05","t":20.129032258064516,"sub":"信噪之辨"}]},{"id":"审美与艺术-艺术立场","name":"艺术立场","subs":[{"name":"技术之善","count":1}],"entries":[{"id":"3409f71b-9bc2-814e-a94d-d83323b12628","date":"2021-04-11","t":12.32258064516129,"sub":"技术之善"}]}]},{"id":"产品与商业","name":"产品与商业","topics":[{"id":"产品与商业-产品逻辑","name":"产品逻辑","subs":[{"name":"工业消费品","count":7},{"name":"实用资本","count":4},{"name":"互联网造车","count":2}],"entries":[{"id":"34e9f71b-9bc2-81ec-bdfc-e016add5d5c4","date":"2020-04-29","t":0.9032258064516129,"sub":"工业消费品"},{"id":"3409f71b-9bc2-812a-8bda-ce0f4e4c9a0b","date":"2021-04-11","t":12.32258064516129,"sub":"工业消费品"},{"id":"3409f71b-9bc2-8177-9644-f0a887b361f4","date":"2021-05-19","t":13.580645161290322,"sub":"实用资本"},{"id":"3409f71b-9bc2-8104-96ee-d6ea5fe9f91a","date":"2022-03-14","t":23.419354838709676,"sub":"工业消费品"},{"id":"3409f71b-9bc2-8189-87fb-c6e90594fa4e","date":"2022-04-11","t":24.322580645161292,"sub":"工业消费品"},{"id":"3409f71b-9bc2-819b-ad43-ddffc392fc14","date":"2022-04-15","t":24.451612903225808,"sub":"实用资本"},{"id":"3409f71b-9bc2-8132-8bf6-cdcc0327612d","date":"2023-04-11","t":36.32258064516129,"sub":"工业消费品"},{"id":"3409f71b-9bc2-816e-8b6d-e3e99608e505","date":"2025-04-25","t":60.774193548387096,"sub":"互联网造车"},{"id":"3409f71b-9bc2-813c-91b0-d85177b10599","date":"2025-08-01","t":64,"sub":"互联网造车"},{"id":"3409f71b-9bc2-8121-a0d8-f81ab770843d","date":"2025-08-21","t":64.64516129032258,"sub":"工业消费品"},{"id":"3629f71b-9bc2-8013-96ce-e29e908f6066","date":"2026-05-16","t":73.48387096774194,"sub":"实用资本"},{"id":"3c89f71b-9bc2-8133-ba9c-fc6df8b85914","date":"2026-07-26","t":75.80645161290323,"sub":"实用资本"},{"id":"3f29f71b-9bc2-80fb-9b75-c1112d4f2f39","date":"2026-08-03","t":76.06451612903226,"sub":"工业消费品"}]},{"id":"产品与商业-用户心理","name":"用户心理","subs":[{"name":"成瘾塑造","count":2},{"name":"波动刺激","count":1}],"entries":[{"id":"3409f71b-9bc2-81fe-983a-d589543d71d8","date":"2021-04-28","t":12.870967741935484,"sub":"波动刺激"},{"id":"3409f71b-9bc2-81d3-bf3b-d3e75442dd63","date":"2021-12-02","t":20.032258064516128,"sub":"成瘾塑造"},{"id":"3409f71b-9bc2-817f-85f2-ce8128375293","date":"2022-02-14","t":22.419354838709676,"sub":"成瘾塑造"}]},{"id":"产品与商业-博客自研","name":"博客自研","subs":[{"name":"数字助手","count":2}],"entries":[{"id":"3c89f71b-9bc2-819e-a03e-fdabd88ef57f","date":"2026-07-26","t":75.80645161290323,"sub":"数字助手"},{"id":"3c89f71b-9bc2-81ae-a5c1-c9aeb2c61bc9","date":"2026-07-26","t":75.80645161290323,"sub":"数字助手"}]}]},{"id":"短记","name":"短记","topics":[{"id":"短记-无正文","name":"无正文","subs":[{"name":"短记","count":12}],"entries":[{"id":"3409f71b-9bc2-81c4-aa7b-d36fed88af3c","date":"2022-04-30","t":24.93548387096774,"sub":"短记"},{"id":"3409f71b-9bc2-8159-a31e-f50cc95198c5","date":"2023-04-30","t":36.935483870967744,"sub":"短记"},{"id":"3409f71b-9bc2-8169-8238-dfb147c99a32","date":"2023-08-03","t":40.064516129032256,"sub":"短记"},{"id":"3409f71b-9bc2-814b-96ef-fe4deac4b9a9","date":"2024-04-30","t":48.935483870967744,"sub":"短记"},{"id":"3409f71b-9bc2-819c-83ea-ffbb85aecdc9","date":"2024-08-03","t":52.064516129032256,"sub":"短记"},{"id":"3409f71b-9bc2-8113-8490-dd6b5004e074","date":"2025-04-30","t":60.935483870967744,"sub":"短记"},{"id":"3409f71b-9bc2-818d-b1b3-cb4d0af8de67","date":"2025-07-11","t":63.32258064516129,"sub":"短记"},{"id":"3409f71b-9bc2-813f-8533-e10189f8ce9e","date":"2025-08-03","t":64.06451612903226,"sub":"短记"},{"id":"3409f71b-9bc2-81bd-ae18-c3c345003c70","date":"2025-11-16","t":67.48387096774194,"sub":"短记"},{"id":"3409f71b-9bc2-818d-97c0-fb1e7b32695e","date":"2026-02-18","t":70.54838709677419,"sub":"短记"},{"id":"3529f71b-9bc2-8029-938b-c54a2f3187e7","date":"2026-04-30","t":72.93548387096774,"sub":"短记"},{"id":"3b39f71b-9bc2-806a-856a-c03cb1dcaf6f","date":"2026-08-04","t":76.09677419354838,"sub":"短记"}]}]}]};
+
+async function boot(){
+  const tree = EMBEDDED_TREE;
+  setTree(tree);
+  draw();
+  if (Q.get('n')) { nF = clamp(+Q.get('n'), 1, notes.length); slider.value = nF; regen(); }
+  if (STATIC) view.v = view.target;
+  document.title = '思维大树';
+  requestAnimationFrame(tick);
+}
+boot().catch(err => {
+  document.title = '思维大树 · 加载失败';
+  console.error(err);
+});
+</script>
+</body>
+</html>
