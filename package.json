@@ -10,6 +10,9 @@
     "start": "next start",
     "test": "node --experimental-test-module-mocks --test tests/*.test.mjs",
     "lint": "eslint",
+    "tree:fetch": "node scripts/tree/fetch-entries.mjs",
+    "tree:build": "node scripts/tree/analyze.mjs",
+    "tree:rebuild": "npm run tree:fetch && npm run tree:build",
     "vercel:env": "npx vercel env pull .env.local"
   },
   "dependencies": {

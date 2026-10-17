@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>思维大树</title>
+<style>
+  html,body{height:100%;margin:0;background:#070503;overflow:hidden;
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;}
+  #wrap{position:relative;width:100%;height:100vh;height:100dvh;max-width:none;margin:0;}
+  #stage{position:absolute;inset:0;width:100%;height:100%;}
+  canvas{display:block;width:100%;height:100%;cursor:grab;}
+  canvas.drag{cursor:grabbing;}
+  .ctrl{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);
+    display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;
+    width:auto;max-width:calc(100% - 32px);box-sizing:border-box;padding:8px 14px;
+    color:#c9a45c;font-size:11px;letter-spacing:.06em;background:rgba(8,6,4,.62);
+    border:1px solid rgba(201,164,92,.28);border-radius:999px;backdrop-filter:blur(5px);z-index:3;}
+  .ctrl input[type=range]{width:clamp(110px,26vw,260px);accent-color:#c9a45c;}
+  .ctrl button{background:none;border:1px solid #6d5830;color:#c9a45c;border-radius:2px;
+    padding:3px 9px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap;}
+  .ctrl button.on{background:rgba(201,164,92,.18);border-color:#c9a45c;}
+  .ctrl #nv{min-width:34px;display:inline-block;text-align:right;}
+  @media (max-width:700px){
+    .ctrl{gap:6px;font-size:10px;padding:7px 10px;bottom:14px}.ctrl button{font-size:10px;padding:3px 7px}
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv" width="1160" height="680"></canvas>
+  </div>
+  <div class="ctrl">
+    <span>博客</span><input id="n" type="range" min="1" max="228" step="1" value="228" aria-label="博客数量"><span id="nv">228</span>
+    <button id="play">▶ 生长回放</button>
+  </div>
+</div>
+<script>
+window.addEventListener('error', e => { document.title = 'ERR: ' + e.message + ' @' + e.lineno + ':' + e.colno; });
+const Q = new URLSearchParams(location.search);
+const STATIC = Q.get('static') === '1';
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const W = 1160, H = 680;
+
+/* ---------------- 基础工具 ---------------- */
+const rad = d => d * Math.PI / 180;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const frac = x => x - Math.floor(x);
+const GA = rad(137.508);                       // 黄金角：新枝自动落进空隙
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function hashStr(s){let h=2166136261>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}return h;}
+const R1 = k => mulberry32(hashStr(k))();      // 以名字为种子：同一根枝永远同一个随机数
+const add=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+const sub3=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const mul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s];
+const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const len3=a=>Math.hypot(a[0],a[1],a[2]);
+const norm=a=>{const l=len3(a)||1;return [a[0]/l,a[1]/l,a[2]/l];};
+
+/* ---------------- 数据：来自 /api/tree 的真实公开博客 ---------------- */
+let TREE_EPOCH = 2021 * 12 + 3;
+
+function notesFromTree(tree){
+  const notes = [];
+  (tree.families || []).forEach(f => (f.topics || []).forEach(tp => (tp.entries || []).forEach(e => {
+    notes.push({
+      fam: f.name,
+      topic: tp.name,
+      sub: e.sub,
+      t: Number(e.t) || 0,
+      date: e.date,
+      entryId: String(e.id),
+      id: 'entry|' + e.id,
+    });
+  })));
+  notes.sort((a, b) => a.t - b.t || a.id.localeCompare(b.id));
+  notes.forEach((nt, i) => nt.idx = i);
+  return notes;
+}
+function monthLabel(t){
+  const m0 = TREE_EPOCH + Math.floor(t);
+  return `${Math.floor(m0 / 12)}-${String(m0 % 12 + 1).padStart(2, '0')}`;
+}
+
+/* ---------------- 几何 ---------------- */
+function growPts(p0, d0, L, bend, key, n, wig, curl){
+  wig = wig == null ? 0.12 : wig;
+  const r = mulberry32(hashStr(key));
+  const phase = R1('ph' + key) * Math.PI * 2;
+  const pts = [p0]; let d = norm(d0), p = p0;
+  const seg = L / n;
+  for (let i = 0; i < n; i++) {
+    const t = i / n;
+    // 自然枝不是折线：越靠近枝梢越向上拱，侧向用低频 S 弯，噪声只做纤维感
+    const lift = (bend || 0) * (0.35 + 0.9 * t) / n;
+    const sway = 0;
+    d = norm(add(d, [(r() - .5) * wig * 0.42 / Math.sqrt(n) + sway, lift,
+                     (r() - .5) * wig * 0.42 / Math.sqrt(n) + sway * 0.35]));
+    p = add(p, mul(d, seg)); pts.push(p);
+  }
+  // 扭曲感：沿枝长做一次收口的 S 弯，端点和枝尖仍在原方向，不改变整体向上
+  if (curl) {
+    const amp = Math.abs(curl) * Math.min(1, L / 2.4);
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      const tan = norm(sub3(pts[Math.min(n, i + 1)], pts[Math.max(0, i - 1)]));
+      const nx = -tan[2], nz = tan[0], nl = Math.hypot(nx, nz) || 1;
+      const off = Math.sin(t * Math.PI * 2.2 + phase) * Math.sin(t * Math.PI) * amp;
+      pts[i] = add(pts[i], [nx / nl * off, 0, nz / nl * off]);
+    }
+  }
+  return pts;
+}
+function ptAt(pts, t){
+  const x = clamp(t, 0, 1) * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(x)), f = x - i;
+  return [pts[i][0]*(1-f)+pts[i+1][0]*f, pts[i][1]*(1-f)+pts[i+1][1]*f, pts[i][2]*(1-f)+pts[i+1][2]*f];
+}
+function tanAt(pts, t){
+  const x = clamp(t, 0, 1) * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(x));
+  return norm(sub3(pts[i + 1], pts[i]));
+}
+/* 从父枝切线 T 偏转出侧枝：phi=绕父枝的方位，alpha=张开角 */
+function lateral(T, phi, alpha){
+  let u = cross(T, [0, 1, 0]); if (len3(u) < 1e-3) u = [1, 0, 0]; u = norm(u);
+  const v = norm(cross(T, u));
+  const p = add(mul(u, Math.cos(phi)), mul(v, Math.sin(phi)));
+  return norm(add(mul(T, Math.cos(alpha)), mul(p, Math.sin(alpha))));
+}
+
+/* ---------------- 成长型生成器 ----------------
+   输入：按时间排序的博客 + 当前进度 nF（第几篇）
+   规则：
+   · 树高 ∝ N^0.33；枝长 ∝ 枝下博客数^(1/3)；枝粗 ∝ √枝下博客数（管道模型）
+   · 每 3 篇博客长 1 根细枝；主枝每 9 篇、中类枝每 7 篇长 1 根短枝
+   · 方位按「创建先后 × 黄金角」+ 名字哈希：老枝不挪位，新枝落进空隙
+   · 每篇博客 1 片叶，挂在自己细类的枝系上，各级都有 */
+const KR = 0.026;
+function generate(notes, nF){
+  const take = Math.max(1, Math.min(notes.length, Math.ceil(nF)));
+  const cur = notes.slice(0, take);
+  const famMap = new Map();
+  cur.forEach(nt => {
+    if (!famMap.has(nt.fam)) famMap.set(nt.fam, {name: nt.fam, born: nt.idx, notes: [], topics: new Map()});
+    const F = famMap.get(nt.fam); nt._fi = F.notes.length; F.notes.push(nt);
+    if (!F.topics.has(nt.topic)) F.topics.set(nt.topic, {name: nt.topic, born: nt.idx, notes: [], subs: new Map()});
+    const T = F.topics.get(nt.topic); nt._ti = T.notes.length; T.notes.push(nt);
+    if (!T.subs.has(nt.sub)) T.subs.set(nt.sub, {name: nt.sub, born: nt.idx, notes: []});
+    const S = T.subs.get(nt.sub); nt._si = S.notes.length; S.notes.push(nt);
+  });
+
+  const N = cur.length;
+  const S = Math.max(0.2, Math.pow(N / 228, 0.33));
+  const TH = 9.5 * S;
+  const age = born => { const a = clamp((nF - born) / 2.5, 0, 1); return 1 - Math.pow(1 - a, 3); };
+  const branches = [], leaves = [];
+  const mk = (pts, level, m, key, extra) => Object.assign({pts, level, r: KR * Math.pow(Math.max(1, m), 0.58), key, used: 0}, extra || {});
+
+  const nF0 = famMap.size;
+  const topY = TH * Math.min(0.90, 0.24 + 0.065 * Math.max(0, nF0 - 1) + 0.045);
+  // 树干有一点点偏冠和弯曲，不是一根笔直的木头
+  const trunk = mk(growPts([0, 0, 0], [0.025, 1, 0.015], TH, 0.10, 'trunk', 30, 0.03, 0.17), 1, N, 'trunk');
+  const trunkDraw = mk(growPts([0, 0, 0], [0.025, 1, 0.015], topY, 0.10, 'trunk', 30, 0.03, 0.17), 1, N, 'trunk');
+  branches.push(trunkDraw);
+
+  const fams = [...famMap.values()].sort((a, b) => a.born - b.born);
+  fams.forEach((F, i) => {
+    const m = F.notes.length;
+    const azBase = i * GA + (R1('az' + F.name) - .5) * rad(16);
+    const tps = [...F.topics.values()].sort((a, b) => a.born - b.born);
+
+    /* 博客单元 = 细类；按博客量分配给多条二级主枝 */
+    const units = [];
+    tps.forEach(Tp => [...Tp.subs.values()].sort((a, b) => a.born - b.born)
+      .forEach(Sb => units.push({Tp, Sb, m: Sb.notes.length})));
+    const kB = clamp(Math.ceil(m / 24), 1, 6);              // 每 24 篇博客长一条二级枝
+    const groups = Array.from({length: Math.min(kB, units.length)}, () => ({units: [], m: 0}));
+    [...units].sort((a, b) => b.m - a.m).forEach(u => {
+      let g = groups[0];
+      for (const x of groups) if (x.m < g.m) g = x;
+      g.units.push(u); g.m += u.m;
+    });
+
+    groups.forEach((G, gi) => {
+      const mG = Math.max(1, G.m);
+      const yA = TH * Math.min(0.82, 0.24 + 0.065 * i + 0.012 * gi);
+      const p0 = ptAt(trunk.pts, Math.min(1, yA / TH));
+      const az = azBase + (gi - (groups.length - 1) / 2) * rad(19);
+      const el = rad(20 + 2.2 * i + 2.4 * gi + (R1('el' + F.name + gi) - .5) * 7);
+      const outward = [Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)];
+      // 主枝从树干切向里分出来，先贴着树干抬头，再逐渐向外拱，避免像衣架挂钩
+      const trunkT = tanAt(trunk.pts, Math.min(1, yA / TH));
+      const dir = norm(add(mul(trunkT, .34), mul(outward, .66)));
+      const heightFactor = 0.82 + 0.30 * (1 - yA / TH);
+      const L = (1.85 + 1.18 * Math.cbrt(mG)) * heightFactor * age(F.born) * (0.92 + 0.18 * R1('ln' + F.name + gi));
+      const sag = 0.85 + 0.65 * R1('sg' + F.name + gi);
+      const bkey = 'b2' + F.name + '#' + gi;
+      const B2 = mk(growPts(p0, dir, L, sag, bkey, 22, 0.16, (R1('cv' + bkey) - .5) * 0.85), 2, mG, bkey, {fam: F.name});
+      branches.push(B2);
+
+      const gNotes = G.units.flatMap(u => u.Sb.notes);
+      const fSpurs = [];
+      for (let k = 0; k < Math.ceil(mG / 5); k++) {
+        const born = gNotes[Math.min(5 * k, gNotes.length - 1)].idx;
+        const t = 0.15 + 0.80 * frac(k * 0.618 + R1('fsp' + bkey));
+        const d = lateral(tanAt(B2.pts, t), k * GA + R1('fspφ' + bkey + k) * 6, rad(58));
+        const sp = mk(growPts(ptAt(B2.pts, t), d, (0.22 + 0.12 * R1('fspl' + bkey + k)) * age(born), 0.12, 'fsp' + bkey + k, 4, 0.2),
+                      6, 4, 'fsp' + bkey + k, {fam: F.name, spurOf: 2});
+        branches.push(sp); fSpurs.push(sp);
+      }
+
+      /* 同一根二级枝上按中类建三级枝（拆分后同名枝的叶子仍合并到一个标签） */
+      const byTopic = new Map();
+      G.units.forEach(u => {
+        if (!byTopic.has(u.Tp.name)) byTopic.set(u.Tp.name, {Tp: u.Tp, units: []});
+        byTopic.get(u.Tp.name).units.push(u);
+      });
+      [...byTopic.values()].forEach((TG, j) => {
+        const Tp = TG.Tp;
+        const mT = TG.units.reduce((x, u) => x + u.m, 0);
+        const t2 = Math.min(0.9, 0.30 + 0.28 * j);
+        const b3key = 'b3' + bkey + '/' + Tp.name;
+        const d2 = lateral(tanAt(B2.pts, t2), j * GA + R1('tφ' + b3key) * rad(40), rad(40));
+        const L2 = (0.55 + 0.6 * Math.cbrt(mT)) * age(Tp.born);
+        const B3 = mk(growPts(ptAt(B2.pts, t2), d2, L2, (R1('dr' + b3key) < 0.38 ? -0.32 * Math.min(1, L2 / 2.2) : 0.18), b3key, 16, 0.12, (R1('cv3' + b3key) - .5) * 0.48),
+                      3, mT, b3key, {fam: F.name, topic: Tp.name});
+        branches.push(B3);
+
+        const tNotes = TG.units.flatMap(u => u.Sb.notes);
+        const tSpurs = [];
+        for (let k = 0; k < Math.ceil(mT / 4); k++) {
+          const born = tNotes[Math.min(4 * k, tNotes.length - 1)].idx;
+          const t = 0.15 + 0.80 * frac(k * 0.618 + R1('tsp' + b3key));
+          const d = lateral(tanAt(B3.pts, t), k * GA + R1('tspφ' + b3key + k) * 6, rad(58));
+          const sp = mk(growPts(ptAt(B3.pts, t), d, (0.20 + 0.10 * R1('tspl' + b3key + k)) * age(born), 0.12, 'tsp' + b3key + k, 4, 0.2),
+                        6, 4, 'tsp' + b3key + k, {fam: F.name, topic: Tp.name, spurOf: 3});
+          branches.push(sp); tSpurs.push(sp);
+        }
+
+        TG.units.forEach(({Sb}, q) => {
+          const mS = Sb.notes.length;
+          const kk = b3key + '/' + Sb.name;
+          const t3 = Math.min(0.95, 0.28 + 0.15 * q);
+          const d3 = lateral(tanAt(B3.pts, t3), q * GA + R1('sφ' + kk) * rad(40), rad(42));
+          const L3 = (0.35 + 0.38 * Math.cbrt(mS)) * age(Sb.born);
+          const B4 = mk(growPts(ptAt(B3.pts, t3), d3, L3, (R1('dr4' + kk) < 0.35 ? -0.24 * Math.min(1, L3 / 1.4) : 0.16), 'b4' + kk, 13, 0.10, (R1('cv4' + kk) - .5) * 0.32),
+                        4, mS, 'b4' + kk, {fam: F.name, topic: Tp.name, sub: Sb.name});
+          branches.push(B4);
+
+          const twigs = [];
+          for (let w = 0; w < Math.ceil(mS / 3); w++) {
+            const born = Sb.notes[Math.min(3 * w, mS - 1)].idx;
+            const t4 = 0.30 + 0.62 * frac(w * 0.618 + R1('tw' + kk));
+            const d4 = lateral(tanAt(B4.pts, t4), w * GA + R1('twφ' + kk + w) * 1.5, rad(48));
+            const L4 = (0.26 + 0.14 * R1('twl' + kk + w)) * age(born);
+            const B5 = mk(growPts(ptAt(B4.pts, t4), d4, L4, 0.12, 'b5' + kk + w, 8, 0.16, (R1('cv5' + kk + w) - .5) * 0.22), 5,
+                          Math.min(3, mS - 3 * w), 'b5' + kk + w, {fam: F.name, topic: Tp.name, sub: Sb.name, tAttach: t4});
+            branches.push(B5); twigs.push(B5);
+          }
+
+          Sb.notes.forEach(nt => {
+            const tw = twigs[Math.min(twigs.length - 1, Math.floor(nt._si / 3))];
+            let carrier, t, lvl;
+            const forceTwig = nt._si % 3 === 0;
+            const forceT = !forceTwig && nt._ti % 4 === 1 && tSpurs.length;
+            const forceF = !forceTwig && !forceT && nt._fi % 5 === 2 && fSpurs.length;
+            const r = R1('bk' + nt.id);
+            if (forceTwig || (!forceT && !forceF && r < 0.40)) {
+              carrier = tw; t = 0.35 + 0.65 * R1('lt' + nt.id); lvl = 5;
+            } else if (!forceT && !forceF && r < 0.62) {
+              carrier = B4; t = clamp(tw.tAttach + (R1('lt' + nt.id) - .5) * 0.25, 0.2, 1); lvl = 4;
+            } else if (forceT || (!forceF && r < 0.82 && tSpurs.length)) {
+              carrier = tSpurs[nt._ti % tSpurs.length]; t = 0.3 + 0.7 * R1('lt' + nt.id); lvl = 3;
+            } else if (fSpurs.length) {
+              carrier = fSpurs[nt._fi % fSpurs.length]; t = 0.3 + 0.7 * R1('lt' + nt.id); lvl = 2;
+            } else {
+              carrier = tw; t = 0.5; lvl = 5;
+            }
+            carrier.used++;
+            const base = ptAt(carrier.pts, t);
+            const T = tanAt(carrier.pts, t);
+            let o = [R1('ox' + nt.id) - .5, R1('oy' + nt.id) - .5, R1('oz' + nt.id) - .5];
+            o = norm(sub3(o, mul(T, dot(o, T))));
+            const dist = (0.05 + 0.14 * R1('od' + nt.id)) * Math.min(1, 0.55 + 0.45 * S);
+            leaves.push({p: add(base, mul(o, dist)), a: clamp(nF - nt.idx, 0, 1), lvl,
+                         ang: R1('la' + nt.id) * Math.PI, sz: 0.8 + 0.45 * R1('ls' + nt.id),
+                         nt, ck: carrier.key});
+          });
+        });
+      });
+    });
+  });
+
+  const drawn = branches.filter(b => b.level !== 6 || b.used > 0);   // 没叶的短枝不画
+  const roots = [];
+  const rootAz = [8, 48, 92, 146, 200, 246, 300, 340];
+  const rootLen = [1.95, .66, 1.30, .48, 1.72, .72, 1.08, .58];
+  const rootR = [.30, .09, .19, .06, .25, .08, .15, .05];
+  for (let i = 0; i < rootAz.length; i++) {
+    const az = rad(rootAz[i] + (R1('root' + i) - .5) * 24);
+    const L = (rootLen[i] + R1('rl' + i) * .22) * Math.pow(S, 0.8);
+    const rt = {
+      pts: growPts([0, 0.04, 0], [Math.cos(az) * .96, -.07 - .07 * R1('rz' + i), Math.sin(az) * .96],
+                   L, -.15 - .08 * R1('rb' + i), 'root' + i, 10, .12, (R1('rc' + i) - .5) * .75),
+      r: rootR[i] * S,
+      level: 0,
+    };
+    roots.push(rt);
+    // 侧根：让根系不是一圈等长的放射线
+    if (i % 2 === 0 || rootR[i] > .16) {
+      const p0 = ptAt(rt.pts, .42 + .12 * R1('ra' + i));
+      const az2 = az + (R1('r2a' + i) - .5) * 1.2;
+      roots.push({
+        pts: growPts(p0, [Math.cos(az2) * .95, -.18, Math.sin(az2) * .95],
+                     (.28 + .28 * R1('r2l' + i)) * Math.pow(S, .8), -.15,
+                     'rootlet' + i, 5, .14, (R1('r2c' + i) - .5) * .3),
+        r: rootR[i] * S * .42,
+        level: 0,
+      });
+    }
+  }
+  const lv = {2: 0, 3: 0, 4: 0, 5: 0};
+  leaves.forEach(l => lv[l.lvl]++);
+  const twigsAll = branches.filter(b => b.level === 5);
+  const stats = {
+    N, S, TH, fams: fams.length,
+    limbs: branches.filter(b => b.level === 2).length,
+    topics: new Set(branches.filter(b => b.level === 3).map(b => b.topic)).size,
+    topicBranches: branches.filter(b => b.level === 3).length,
+    subs: branches.filter(b => b.level === 4).length,
+    twigs: twigsAll.length,
+    spurs: drawn.filter(b => b.level === 6).length,
+    twigsWithLeaf: twigsAll.filter(b => b.used > 0).length,
+    lv,
+  };
+  let cx = 0, cz = 0; leaves.forEach(l => { cx += l.p[0]; cz += l.p[2]; });
+  const pivot = [leaves.length ? cx / leaves.length * 0.8 : 0, 0, leaves.length ? cz / leaves.length * 0.8 : 0];
+  return {branches: drawn, roots, leaves, stats, pivot, lastT: cur[cur.length - 1].t, lastDate: cur[cur.length - 1].date};
+}
+
+/* ---------------- 相机与投影 ---------------- */
+const F = 1050;
+let cam = {yaw: rad(-20), pitch: rad(8), dist: 21};
+if (Q.get('yaw')) cam.yaw = rad(+Q.get('yaw'));
+const home = () => ({yaw: rad(-20), pitch: rad(8), dist: 21});
+let view = {v: 1, target: 1};
+function project(p){
+  const D = cam.dist * view.v, ty = (G ? G.stats.TH * 0.50 : 5) ;
+  const pv = G && G.pivot ? G.pivot : [0, 0, 0];
+  const x = p[0] - pv[0], y = p[1] - ty, z = p[2] - pv[2];
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const x1 = x * cy - z * sy, z1 = x * sy + z * cy;
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const y1 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
+  const zc = z2 + D;
+  const f = F / Math.max(2, zc);
+  return {x: W / 2 + x1 * f, y: H * 0.47 - y1 * f, z: zc, f};
+}
+function depthA(z){ const D = cam.dist * view.v; return clamp(1.3 - (z - 0.7 * D) / (1.3 * D), .3, 1); }
+
+/* ---------------- 绘制 ---------------- */
+const halo = document.createElement('canvas'); halo.width = halo.height = 128;
+{ const h = halo.getContext('2d'); const g = h.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255,228,160,.8)'); g.addColorStop(.3, 'rgba(236,196,120,.28)');
+  g.addColorStop(.65, 'rgba(190,148,80,.06)'); g.addColorStop(1, 'rgba(180,140,70,0)');
+  h.fillStyle = g; h.fillRect(0, 0, 128, 128); }
+
+function strokeBranch(P, r, level, aBase, seed){
+  const strands = level <= 1 ? 3 : 1;
+  const n = P.length;
+  const widths = [], normals = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    widths.push(Math.max(.45, r * P[i].f * 1.15 * (1 - (level <= 1 ? .72 : .55) * t)));
+    const j = Math.min(n - 1, i + 1), k = Math.max(0, i - 1);
+    const nx = -(P[j].y - P[k].y), ny = P[j].x - P[k].x, nl = Math.hypot(nx, ny) || 1;
+    normals.push([nx / nl, ny / nl]);
+  }
+  for (let s = 0; s < strands; s++) {
+    for (let i = 1; i < n; i++) {
+      const t = (i - .5) / (n - 1);
+      const w = (widths[i - 1] + widths[i]) / 2;
+      const off = (strands === 1 ? 0 : (s / (strands - 1) - .5)) * w * .55;
+      const jit = Math.sin(t * 7 + s * 1.7 + seed) * w * .025;
+      const x0 = P[i - 1].x + normals[i - 1][0] * (off + jit);
+      const y0 = P[i - 1].y + normals[i - 1][1] * (off + jit);
+      const x1 = P[i].x + normals[i][0] * (off + jit);
+      const y1 = P[i].y + normals[i][1] * (off + jit);
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+      const lineW = level <= 1 ? Math.max(.5, w / 3.2) : Math.max(.55, w * (level === 2 ? .68 : level === 3 ? .82 : .95));
+      const branchAlpha = level >= 5 ? .46 : level === 4 ? .56 : .72;
+      ctx.strokeStyle = level <= 1
+        ? `rgba(201,164,92,${(.55 * aBase).toFixed(3)})`
+        : `rgba(226,190,112,${(branchAlpha * aBase).toFixed(3)})`;
+      ctx.lineWidth = lineW;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+  }
+}
+
+/* 根系用有收分的实体根，不再是三根细线 */
+function strokeRoot(P, r, aBase){
+  const n = P.length, left = [], right = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const w = Math.max(.8, r * P[i].f * .70 * (1 - .72 * t));
+    const j = Math.min(n - 1, i + 1), k = Math.max(0, i - 1);
+    const nx = -(P[j].y - P[k].y), ny = P[j].x - P[k].x, nl = Math.hypot(nx, ny) || 1;
+    left.push([P[i].x + nx / nl * w, P[i].y + ny / nl * w]);
+    right.push([P[i].x - nx / nl * w, P[i].y - ny / nl * w]);
+  }
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(left[0][0], left[0][1]);
+  for (let i = 1; i < n; i++) ctx.lineTo(left[i][0], left[i][1]);
+  for (let i = n - 1; i >= 0; i--) ctx.lineTo(right[i][0], right[i][1]);
+  ctx.closePath();
+  ctx.fillStyle = `rgba(112,85,42,${(.82 * aBase).toFixed(3)})`;
+  ctx.fill();
+  ctx.strokeStyle = `rgba(201,164,92,${(.55 * aBase).toFixed(3)})`;
+  ctx.lineWidth = .8; ctx.stroke();
+  ctx.restore();
+}
+
+/* 树干用一条有收分的实体金线，不再用平行细线拼成一根“杆” */
+function strokeTrunk(P, r, aBase){
+  const n = P.length, left = [], right = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const wobble = 1 + .09 * Math.sin(i * .72 + 1.2) + .055 * Math.sin(i * 1.9) + .025 * Math.sin(i * 3.1);
+    const w = Math.max(.35, r * P[i].f * 0.38 * (1 - .92 * t) * (1 + .68 * Math.exp(-i / 2.1)) * wobble);
+    const j = Math.min(n - 1, i + 1), k = Math.max(0, i - 1);
+    const nx = -(P[j].y - P[k].y), ny = P[j].x - P[k].x, nl = Math.hypot(nx, ny) || 1;
+    left.push([P[i].x + nx / nl * w, P[i].y + ny / nl * w]);
+    right.push([P[i].x - nx / nl * w, P[i].y - ny / nl * w]);
+  }
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(left[0][0], left[0][1]);
+  for (let i = 1; i < n; i++) ctx.lineTo(left[i][0], left[i][1]);
+  for (let i = n - 1; i >= 0; i--) ctx.lineTo(right[i][0], right[i][1]);
+  ctx.closePath();
+  const mid = Math.floor(n * .55);
+  const grad = ctx.createLinearGradient(left[mid][0], left[mid][1], right[mid][0], right[mid][1]);
+  grad.addColorStop(0, `rgba(92,70,32,${(.78 * aBase).toFixed(3)})`);
+  grad.addColorStop(.28, `rgba(201,164,92,${(.78 * aBase).toFixed(3)})`);
+  grad.addColorStop(.52, `rgba(244,216,157,${(.9 * aBase).toFixed(3)})`);
+  grad.addColorStop(.74, `rgba(201,164,92,${(.78 * aBase).toFixed(3)})`);
+  grad.addColorStop(1, `rgba(92,70,32,${(.78 * aBase).toFixed(3)})`);
+  ctx.fillStyle = grad; ctx.fill();
+  ctx.strokeStyle = `rgba(255,232,180,${(.42 * aBase).toFixed(3)})`;
+  ctx.lineWidth = 1; ctx.stroke();
+  // 两道低对比树皮沟壑，避免树干像一根光滑木梁
+  for (let s = 0; s < 2; s++) {
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      const w = Math.max(.35, r * P[i].f * 0.38 * (1 - .92 * t) * (1 + .68 * Math.exp(-i / 2.1)));
+      const f = (s ? .32 : -.36) + .08 * Math.sin(i * .6 + s);
+      const j = Math.min(n - 1, i + 1), k = Math.max(0, i - 1);
+      const nx = -(P[j].y - P[k].y), ny = P[j].x - P[k].x, nl = Math.hypot(nx, ny) || 1;
+      const x = P[i].x + nx / nl * w * f, y = P[i].y + ny / nl * w * f;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.strokeStyle = `rgba(72,52,23,${(.28 * aBase).toFixed(3)})`;
+    ctx.lineWidth = 1; ctx.stroke();
+  }
+  ctx.restore();
+}
+
+let G = null, notes = null, nF = 0, playing = false, needGen = true;
+let labels = [];
+
+function draw(){
+  const bg = ctx.createRadialGradient(W / 2, H * 0.55, 60, W / 2, H * 0.5, 660);
+  bg.addColorStop(0, '#15100a'); bg.addColorStop(1, '#070503');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // 地面
+  const g0 = project([0, 0, 0]);
+  const gr = 2.4 * G.stats.S * g0.f;
+  const gg = ctx.createRadialGradient(g0.x, g0.y, 0, g0.x, g0.y, gr);
+  gg.addColorStop(0, 'rgba(201,164,92,.12)'); gg.addColorStop(1, 'rgba(201,164,92,0)');
+  ctx.fillStyle = gg; ctx.beginPath(); ctx.ellipse(g0.x, g0.y, gr, gr * .3, 0, 0, Math.PI * 2); ctx.fill();
+
+  // 根
+  G.roots.forEach((rt, i) => {
+    const P = rt.pts.map(project);
+    strokeRoot(P, rt.r, .7);
+  });
+
+  // 枝（按深度）
+  const list = G.branches.map(b => {
+    const P = b.pts.map(project);
+    return {b, P, z: P.reduce((s, q) => s + q.z, 0) / P.length};
+  }).sort((a, c) => c.z - a.z);
+  list.forEach(({b, P, z}) => {
+    if (len3(sub3(b.pts[b.pts.length - 1], b.pts[0])) < 1e-3) return;
+    if (b.key === 'trunk') strokeTrunk(P, b.r, depthA(z));
+    else strokeBranch(P, b.r, b.level === 6 ? 5 : b.level, depthA(z), hashStr(b.key) % 97);
+  });
+
+  // 叶簇光晕 + 叶
+  const groups = new Map();
+  G.leaves.forEach(l => {
+    if (l.a <= 0) return;
+    let g = groups.get(l.ck); if (!g) { g = {s: [0, 0, 0], n: 0, a: 0}; groups.set(l.ck, g); }
+    g.s = add(g.s, l.p); g.n++; g.a += l.a;
+  });
+  const items = [];
+  groups.forEach(g => {
+    const c = project(mul(g.s, 1 / g.n));
+    items.push({k: 'h', z: c.z, x: c.x, y: c.y, r: Math.min(0.75, 0.2 + 0.07 * Math.sqrt(g.n)) * c.f * 1.6, a: (g.a / g.n) * depthA(c.z)});
+  });
+  G.leaves.forEach(l => {
+    if (l.a <= 0) return;
+    const pp = project(l.p);
+    items.push({k: 'l', z: pp.z, x: pp.x, y: pp.y, r: Math.max(1.8, 0.082 * l.sz * pp.f), ang: l.ang, a: l.a * depthA(pp.z), l});
+  });
+  items.sort((a, b) => b.z - a.z);
+  const DIM = clamp(1.05 / G.stats.S, 0.38, 1);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  items.forEach(it => {
+    if (it.k === 'h') {
+      ctx.globalAlpha = Math.min(1, it.a * .38 * DIM);
+      ctx.drawImage(halo, it.x - it.r, it.y - it.r, it.r * 2, it.r * 2);
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.save(); ctx.translate(it.x, it.y); ctx.rotate(it.ang);
+      ctx.fillStyle = `rgba(240,212,150,${(.5 * it.a * DIM).toFixed(3)})`;
+      ctx.beginPath(); ctx.ellipse(0, 0, it.r * 1.6, it.r * .68, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `rgba(255,240,200,${(.88 * it.a * Math.sqrt(DIM)).toFixed(3)})`;
+      ctx.beginPath(); ctx.ellipse(0, 0, it.r * .9, it.r * .38, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      it.l._sx = it.x; it.l._sy = it.y;
+    }
+  });
+  ctx.restore();
+
+  // 标签是额外的语义备注，当前只保留树本身
+}
+
+function drawLabels(){
+  const SF = clamp(W / (cv.getBoundingClientRect().width || W), 1, 1.35);
+  const by = new Map();
+  G.leaves.forEach(l => {
+    if (l.a <= 0.5) return;
+    let g = by.get(l.nt.topic); if (!g) { g = {s: [0, 0, 0], n: 0}; by.set(l.nt.topic, g); }
+    g.s = add(g.s, l.p); g.n++;
+  });
+  const CX = W / 2, CY = H * 0.46;
+  const items = [];
+  const minLabel = Math.max(2, Math.ceil(G.stats.N * 0.012));
+  const ranked = [...by.entries()]
+    .filter(([name, g]) => name !== '无正文' && g.n >= minLabel)
+    .sort((a, b) => b[1].n - a[1].n)
+    .slice(0, 12);
+  ranked.forEach(([name, g]) => {
+    const pp = project(mul(g.s, 1 / g.n));
+    const dx = pp.x - CX, dy = pp.y - CY, d = Math.hypot(dx, dy) || 1;
+    const x = pp.x + dx / d * 46 * SF, y = pp.y + dy / d * 30 * SF;
+    items.push({name, n: g.n, ax: pp.x, ay: pp.y, z: pp.z, x, y, bx: x, by: y});
+  });
+  ctx.font = `600 ${11 * SF}px "PingFang SC","Hiragino Sans GB",sans-serif`;
+  items.forEach(it => { it.w = ctx.measureText(it.name).width + 18 * SF; it.x = clamp(it.x, 50 * SF, W - 50 * SF); it.y = clamp(it.y, 70 * SF, H - 70 * SF); });
+  for (let pass = 0; pass < 20; pass++)
+    for (let a = 0; a < items.length; a++) for (let b = a + 1; b < items.length; b++) {
+      const A = items[a], B = items[b];
+      if (Math.abs(A.x - B.x) < (A.w + B.w) / 2 + 6 * SF && Math.abs(A.y - B.y) < 26 * SF) {
+        const dir = A.y <= B.y ? -1 : 1, push = (26 * SF - Math.abs(A.y - B.y)) / 2 + .5;
+        A.y = clamp(A.y + dir * push, 66 * SF, H - 66 * SF); B.y = clamp(B.y - dir * push, 66 * SF, H - 66 * SF);
+      }
+    }
+  items.forEach(it => {
+    const al = clamp(depthA(it.z) * 1.05, .35, 1);
+    ctx.save();
+    if (Math.hypot(it.x - it.bx, it.y - it.by) > 14) {
+      ctx.strokeStyle = `rgba(201,164,92,${(.18 * al).toFixed(3)})`; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(it.ax, it.ay); ctx.lineTo(it.x, it.y); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(7,5,3,.58)';
+    ctx.fillRect(it.x - it.w / 2 + 4 * SF, it.y - 9 * SF, it.w - 8 * SF, 20 * SF);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,.9)'; ctx.shadowBlur = 5;
+    ctx.fillStyle = `rgba(222,196,138,${(.92 * al).toFixed(3)})`;
+    ctx.fillText(it.name, it.x, it.y);
+    ctx.restore();
+  });
+}
+
+function updateText(){
+  const s = G.stats;
+  const nv = document.getElementById('nv');
+  if (nv) nv.textContent = s.N;
+}
+
+function regen(){
+  G = generate(notes, nF);
+  window.__tree = G;
+  view.target = Math.pow(Math.max(1, (G.stats.TH + 2.4) / 12.0), 0.55);
+  updateText();
+  needGen = false;
+}
+
+/* ---------------- 交互 ---------------- */
+const slider = document.getElementById('n');
+function setTree(tree){
+  TREE_EPOCH = Number(tree.epochMonth) || TREE_EPOCH;
+  notes = notesFromTree(tree);
+  if (!notes.length) throw new Error('没有可展示的博客');
+  slider.max = notes.length;
+  nF = notes.length; slider.value = nF;
+  regen();
+}
+slider.addEventListener('input', () => { playing = false; nF = +slider.value; regen(); });
+document.getElementById('play').addEventListener('click', () => { nF = 1; playing = true; last = performance.now(); });
+
+let drag = false, auto = !STATIC, lx = 0, ly = 0, downX = 0, downY = 0, moved = 0;
+cv.addEventListener('pointerdown', e => {
+  drag = true; auto = false; lx = e.clientX; ly = e.clientY;
+  downX = e.clientX; downY = e.clientY; moved = 0;
+  cv.setPointerCapture(e.pointerId); cv.classList.add('drag');
+});
+cv.addEventListener('pointermove', e => {
+  if (drag) {
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 3) moved = 1;
+    if (moved) {
+      const sc = W / (cv.getBoundingClientRect().width || W);
+      cam.yaw += (e.clientX - lx) * 0.006 * sc;
+      cam.pitch = clamp(cam.pitch + (e.clientY - ly) * 0.004 * sc, rad(-15), rad(60));
+    }
+    lx = e.clientX; ly = e.clientY; return;
+  }
+  hover(e);
+});
+cv.addEventListener('pointerup', e => {
+  drag = false; cv.classList.remove('drag');
+  if (!moved) pickLeaf(e);
+  setTimeout(() => { if (!drag) auto = true; }, 2600);
+});
+cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist = clamp(cam.dist + e.deltaY * 0.02, 12, 48); }, {passive: false});
+cv.addEventListener('dblclick', () => { cam = home(); });
+
+function hover(e){
+  const r = cv.getBoundingClientRect();
+  const mx = (e.clientX - r.left) * (W / (r.width || W));
+  const my = (e.clientY - r.top) * (H / (r.height || H));
+  let best = null;
+  G.leaves.forEach(l => {
+    if (l._sx == null || l.a < .5) return;
+    if (Math.hypot(l._sx - mx, l._sy - my) < 9) best = l;
+  });
+  cv.style.cursor = best ? 'pointer' : (drag ? 'grabbing' : 'grab');
+}
+
+function pickLeaf(e){
+  if (!G || !G.leaves || !G.leaves.length) return;
+  const r = cv.getBoundingClientRect();
+  const mx = (e.clientX - r.left) * (W / (r.width || W));
+  const my = (e.clientY - r.top) * (H / (r.height || H));
+  let best = null, bd = 12;
+  G.leaves.forEach(l => {
+    if (l._sx == null || l.a < .5) return;
+    const d = Math.hypot(l._sx - mx, l._sy - my);
+    if (d < bd) { bd = d; best = l; }
+  });
+  if (best && best.nt.entryId && window.parent !== window) {
+    window.parent.postMessage({ type: 'dr:open-entry', entryId: best.nt.entryId }, '*');
+  }
+}
+cv.addEventListener('mouseleave', () => { cv.style.cursor = 'grab'; });
+
+let last = performance.now();
+function tick(now){
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (auto && !drag) cam.yaw += dt * rad(3);
+  if (playing) {
+    nF = Math.min(notes.length, nF + dt * notes.length / 10);     // 10 秒长完
+    slider.value = Math.floor(nF);
+    if (nF >= notes.length) playing = false;
+    needGen = true;
+  }
+  if (needGen) regen();
+  view.v += (view.target - view.v) * Math.min(1, dt * 3);
+  draw();
+  requestAnimationFrame(tick);
+}
+
+/* ---------------- 启动 ---------------- */
+async function boot(){
+  let res = await fetch('/tree/tree.json', { headers: { accept: 'application/json' }, cache: 'no-store' });
+  if (!res.ok) res = await fetch('/api/tree', { headers: { accept: 'application/json' } });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const tree = await res.json();
+  setTree(tree);
+  draw();
+  if (Q.get('n')) { nF = clamp(+Q.get('n'), 1, notes.length); slider.value = nF; regen(); }
+  if (STATIC) view.v = view.target;
+  document.title = '思维大树';
+  requestAnimationFrame(tick);
+}
+boot().catch(err => {
+  document.title = '思维大树 · 加载失败';
+  console.error(err);
+});
+</script>
+</body>
+</html>

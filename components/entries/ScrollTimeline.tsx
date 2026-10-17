@@ -169,6 +169,7 @@ export const ScrollTimeline = memo(function ScrollTimeline({
   requestId,
   hrefFor,
   messages,
+  onOpenTree,
 }: {
   ariaLabel: string;
   /** 当前筛选下的全部条目（含未加载的），顺序与列表一致 */
@@ -187,6 +188,8 @@ export const ScrollTimeline = memo(function ScrollTimeline({
   hrefFor: (id: string) => string;
   /** 读屏播报：补载中、补载失败 */
   messages: { loading: string; failed: string };
+  /** 打开思维大树入口；只在博客时间轴传入，动态页不显示 */
+  onOpenTree?: () => void;
 }) {
   const wide = useSyncExternalStore(
     subscribeWidePointer,
@@ -815,6 +818,23 @@ export const ScrollTimeline = memo(function ScrollTimeline({
           })}
         </ol>
       </div>
+      {onOpenTree && (
+        <div className="mt-3 flex justify-center">
+          <button
+            type="button"
+            onClick={onOpenTree}
+            aria-label="打开思维大树"
+            title="思维大树"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300/70 bg-white/70 text-zinc-500 shadow-sm backdrop-blur transition-colors hover:text-zinc-900 dark:border-white/15 dark:bg-zinc-900/60 dark:text-zinc-400 dark:hover:text-white"
+          >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 21v-7" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 14c-2.3 0-4.1-1.7-4.1-3.8 0-1.3.7-2.4 1.9-3.1C9.6 5.8 10.7 5 12 5s2.4.8 2.2 2.1c1.2.7 1.9 1.8 1.9 3.1 0 2.1-1.8 3.8-4.1 3.8Z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 21h8" />
+            </svg>
+          </button>
+        </div>
+      )}
       <div
         aria-hidden
         className={`pointer-events-none absolute left-[60px] -translate-y-1/2 whitespace-nowrap rounded-lg bg-white/80 px-2 py-1 text-[0.72rem] tabular-nums text-zinc-600 shadow-sm ring-1 ring-black/5 backdrop-blur-md transition-opacity duration-150 dark:bg-zinc-900/80 dark:text-zinc-300 dark:ring-white/10 ${
