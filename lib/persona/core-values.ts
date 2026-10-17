@@ -20,6 +20,7 @@
 import type { Diary } from "@/lib/notion";
 import { postTitle } from "@/lib/persona/retrieve";
 import { digest, isProviderRefusal, parseJson } from "@/lib/persona/first-principles";
+import { stripPrivateMarkers } from "@/lib/share-card";
 
 export const VALUES_VERSION = "v3";
 const CHUNK_CHARS = 6_000;
@@ -55,7 +56,9 @@ export function makeValuesCorpus(diaries: Diary[]): ValuesCorpus {
   const chunks: ValuesChunk[] = [];
   let empty = 0;
   for (const d of articles) {
-    const text = (d.summary ?? "").replace(/!\[[^\]]*\]\([^)]*\)/g, "").trim();
+    // 与 first-principles 同一口径：私有标记、引用前缀与嵌缩进不进语料，
+    // 保证引文核验的「逐字子串」对应的是读者看到的文字。
+    const text = stripPrivateMarkers((d.summary ?? "").replace(/!\[[^\]]*\]\([^)]*\)/g, "")).trim();
     if (!text) { empty++; continue; }
     const chars = Array.from(text);
     const sourceHash = digest([VALUES_VERSION, d.id, d.date, d.tags ?? [], text]);

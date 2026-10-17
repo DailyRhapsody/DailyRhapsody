@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Diary } from "@/lib/notion";
 import type { PersonaNote } from "@/lib/persona/types";
+import { stripPrivateMarkers } from "@/lib/share-card";
 
 /**
  * 轻量检索：给本轮问题挑几段最相关的原文塞进上下文。
@@ -46,15 +47,9 @@ function countGrams(text: string): Map<string, number> {
 
 /** 正文里的图片是 /api/media 代理路径，对模型没有意义，检索前剥掉 */
 function cleanBody(md: string): string {
-  return md
+  return stripPrivateMarkers(md)
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
     .replace(/<[^>]+>/g, "")
-    // 引用前缀对模型没有意义，先去；否则剥掉 callout 标记行后会留下一个裸 "> "
-    .replace(/^[ \t]*>[ \t]?/gm, "")
-    // 转换层给 callout / toggle 的私有标记：callout 那行只有图标，整行去掉；
-    // toggle 的标题是正文，只去标记本身。否则它们会进检索索引和 postTitle。
-    .replace(/\[!NOTION-CALLOUT\][^\n]*\n?/g, "")
-    .replace(/\[!NOTION-TOGGLE\][ \t]*/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }

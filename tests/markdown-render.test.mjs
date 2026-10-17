@@ -103,6 +103,19 @@ test("标题仍输出 h1..h6 标签（字号由 CSS 决定，不在 HTML 里）"
   }
 });
 
+test("只有标题的 toggle 不输出空 body 容器", () => {
+  const html = renderMarkdown("> [!NOTION-TOGGLE] 只有标题");
+  assert.match(html, /<details[^>]*><summary>只有标题<\/summary><\/details>/, html);
+  assert.ok(!html.includes("dr-toggle-body"), html);
+});
+
+test("链接不放行 data: 协议（图片仍允许内联 data:）", () => {
+  const link = renderMarkdown("[x](data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==)");
+  assert.ok(!/href="data:/.test(link), link);
+  const img = renderMarkdown("![](data:image/png;base64,iVBORw0KGgo=)");
+  assert.match(img, /src="data:image\/png;base64,/, img);
+});
+
 test("折叠态类名不含任何标题层级 token，展开态才放开 h1-h3", () => {
   const folded = entrySummaryProseClass(false);
   const expanded = entrySummaryProseClass(true);

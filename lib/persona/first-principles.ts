@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Diary } from "@/lib/notion";
 import { postTitle } from "@/lib/persona/retrieve";
+import { stripPrivateMarkers } from "@/lib/share-card";
 
 // 协议/提示词变化必须换版本，Preview 与生产也使用不同存储前缀。
 export const ANALYSIS_VERSION = "v1";
@@ -33,7 +34,9 @@ export function makeCorpus(diaries: Diary[]): Corpus {
   const chunks: Chunk[] = [];
   let empty = 0;
   for (const d of articles) {
-    const text = (d.summary ?? "").replace(/!\[[^\]]*\]\([^)]*\)/g, "").trim();
+    // 私有标记不进分析语料：引文核验是逐字 includes，标记混进去要么核验失败、
+    // 要么被原样印到报告里。缩进与引用前缀也一并剥掉，模型看到的就是读者看到的文字。
+    const text = stripPrivateMarkers((d.summary ?? "").replace(/!\[[^\]]*\]\([^)]*\)/g, "")).trim();
     if (!text) { empty++; continue; }
     const chars = Array.from(text);
     const sourceHash = digest([ANALYSIS_VERSION, d.id, d.date, d.tags ?? [], text]);

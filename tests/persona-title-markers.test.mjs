@@ -19,6 +19,8 @@ const hooks = registerHooks({
 after(() => hooks.deregister());
 
 const { postTitle } = await import("../lib/persona/retrieve.ts");
+const { makeCorpus } = await import("../lib/persona/first-principles.ts");
+const { makeValuesCorpus } = await import("../lib/persona/core-values.ts");
 
 const entry = (summary) => ({ id: "x", date: "2026-01-01", summary });
 
@@ -38,4 +40,21 @@ test("callout 打头的正文，标题取标注内容", () => {
 
 test("普通正文的标题规则不变", () => {
   assert.equal(postTitle(entry("今天读完了这本书。\n\n后面还有一段")), "今天读完了这本书");
+});
+
+test("两份分析语料都不含私有标记与引用前缀，但保留列表结构", () => {
+  const article = {
+    id: "a1",
+    date: "2026-01-01",
+    isPublic: true,
+    bodyStatus: "complete",
+    summary: "> [!NOTION-TOGGLE] 开关\n>\n> - 条目\n>   - 子条目\n\n正文",
+  };
+  for (const corpus of [makeCorpus([article]), makeValuesCorpus([article])]) {
+    const text = corpus.chunks.map((c) => c.text).join("\n");
+    assert.ok(!text.includes("NOTION"), text);
+    assert.ok(!/^[ \t]*>/m.test(text), text);
+    assert.ok(text.includes("- 条目"), text);
+    assert.ok(text.includes("  - 子条目"), text);
+  }
 });

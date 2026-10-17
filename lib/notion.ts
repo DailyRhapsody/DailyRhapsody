@@ -37,6 +37,11 @@ export type Diary = {
   summary: string; // rich text → plain text
   /** 仅 complete 的文字正文可参与全量分析；旧缓存没有此字段。 */
   bodyStatus?: "complete" | "partial" | "stale";
+  /**
+   * 生成 summary 的正文转换器版本。换缩进/块渲染规则时 +1：
+   * 只看 sourceEditedAt 会把旧形状的正文当成可复用，导致新规则对存量文章不生效。
+   */
+  bodyVersion?: number;
   sourceEditedAt?: string;
   location?: string;
   tags?: string[];
@@ -91,6 +96,29 @@ async function getRedis() {
 // 访客继续看到旧正文，后台重拉完成后自动切换，不会出现空白页。
 const CACHE_KEY = "notion:diaries:v7";
 const LEGACY_CACHE_KEY = "notion:diaries:v6";
+
+/**
+ * 正文转换器版本。改 blockToMarkdown / 缩进 / toggle 规则时 +1。
+ * 换缓存键只隔离新旧实例，不会让存量文章重新转换——必须靠这个版本号判断
+ * 「旧正文是不是当前转换器产出的」，否则 v6 的正文会被当成可复用写进 v7。
+ */
+export const BODY_VERSION = 7;
+
+/** 每轮刷新最多重转换多少篇老正文。全量 281 篇跑不进 200s 预算，分批迁移。 */
+const BODY_MIGRATION_BATCH = 40;
+
+/** 旧缓存是否就是当前转换器的产物（供 refresh 复用判断，也便于单测）。 */
+export function bodyIsCurrent(
+  old: Pick<Diary, "bodyStatus" | "bodyVersion" | "sourceEditedAt"> | undefined,
+  lastEditedAt: string
+): boolean {
+  return (
+    !!lastEditedAt &&
+    old?.bodyVersion === BODY_VERSION &&
+    old.bodyStatus === "complete" &&
+    old.sourceEditedAt === lastEditedAt
+  );
+}
 // Notion 自动化调用 /api/revalidate 时写入的时间戳：晚于快照开始时刻即视为过期。
 // 单独一个小键，不回写大缓存，避免与正在进行的全量刷新互相覆盖。
 // 失效信号和刷新锁继续与 v2 共享，让迁移期间的 webhook 和 Notion 限流保护仍然有效。
@@ -595,7 +623,9 @@ async function tryExtractBodyMarkdown(
   opts: BodyOptions
 ): Promise<string | null> {
   try {
-    const parts = await renderChildren(pageId, { indent: 0, width: 0 }, 0, opts, opts.completeness ? 32 : 3);
+    // 展示路径也用 32 层：以前列表被拍平，3 层很少被触到；现在嵌套是显式特性，
+    // 4 层以上的文章会在编辑页 / Reference 页静默少内容。32 层只是防环的上限。
+    const parts = await renderChildren(pageId, { indent: 0, width: 0 }, 0, opts, 32);
     return joinEmitted(parts);
   } catch (e) {
     console.warn(`[notion] extractBodyMarkdown failed for ${pageId}:`, e);
@@ -837,11 +867,24 @@ async function refreshDiariesFromNotion(deadline: number): Promise<Diary[]> {
   } while (cursor);
 
   const previous = new Map((await getCached())?.data.map((d) => [d.id, d]) ?? []);
-  const reusable = (page: PageObjectResponse) => {
-    const old = previous.get(page.id);
-    return !!page.last_edited_time && old?.bodyStatus === "complete" && old.sourceEditedAt === page.last_edited_time;
-  };
-  const bodies = await extractBodyMarkdownBatch(pages.filter((p) => !reusable(p)).map((p) => p.id), deadline);
+  const reusable = (page: PageObjectResponse) => bodyIsCurrent(previous.get(page.id), page.last_edited_time);
+  const pending = pages.filter((p) => !reusable(p));
+  // 老转换器产出的完整正文要重抓，但 281 篇跑不进 200s 预算：一轮只迁移一批，
+  // 没轮到的保留旧正文并维持 complete（它确实是完整文档，只是旧形状），
+  // 否则会被标成 stale，让文章分析反复 202。新文章与被编辑过的文章永远优先。
+  const legacy = pending.filter((p) => {
+    const old = previous.get(p.id);
+    return !!old && old.bodyStatus === "complete" && old.bodyVersion !== BODY_VERSION;
+  });
+  const legacyIds = new Set(legacy.map((p) => p.id));
+  const edited = pending.filter((p) => !legacyIds.has(p.id));
+  const migrationBudget = Math.max(0, BODY_MIGRATION_BATCH - edited.length);
+  const fetched = legacy.slice(0, migrationBudget);
+  const skippedForMigration = new Set(legacy.slice(migrationBudget).map((p) => p.id));
+  const bodies = await extractBodyMarkdownBatch(
+    [...edited, ...fetched].map((p) => p.id),
+    deadline
+  );
   // 重试用尽或预算用完仍没抓到的正文沿用上一版缓存，不让一次限流把好数据覆盖成只剩标题
   const diaries = pages.map((page) => {
     const body = bodies.get(page.id);
@@ -849,7 +892,14 @@ async function refreshDiariesFromNotion(deadline: number): Promise<Diary[]> {
     return {
       ...mapPageToDiary(page, body?.text ?? old?.summary ?? ""),
       sourceEditedAt: page.last_edited_time,
-      bodyStatus: reusable(page) || body?.complete ? "complete" as const : body ? "partial" as const : "stale" as const,
+      bodyVersion: body ? BODY_VERSION : old?.bodyVersion,
+      bodyStatus: body
+        ? body.complete
+          ? ("complete" as const)
+          : ("partial" as const)
+        : skippedForMigration.has(page.id) || reusable(page)
+          ? ("complete" as const)
+          : ("stale" as const),
     };
   });
 
@@ -950,7 +1000,12 @@ export async function getDiaryById(id: string): Promise<Diary | null> {
     if (parentDb !== getDatabaseId().replace(/-/g, "")) return null;
 
     const body = await extractBodyMarkdown(id, { proxyMedia: true, deadline });
-    return mapPageToDiary(page as PageObjectResponse, body ?? "");
+    const diary = mapPageToDiary(page as PageObjectResponse, body ?? "");
+    // 详情路径是现抓的正文：抓到就标记为当前转换器版本，抓不到（限流/超预算）
+    // 不能声称完整，交给调用方按空正文处理。
+    return body === null
+      ? diary
+      : { ...diary, bodyVersion: BODY_VERSION, bodyStatus: "complete" as const };
   } catch {
     return null;
   }

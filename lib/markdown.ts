@@ -57,8 +57,9 @@ function sanitize(html: string): string {
   return sanitizeHtml(html, {
     allowedTags: ALLOWED_TAGS,
     allowedAttributes: ALLOWED_ATTRS,
-    // 默认 schemes 与 DOMPurify 一致：禁止 javascript:
-    allowedSchemes: ["http", "https", "mailto", "tel", "data"],
+    // 默认 schemes 与 DOMPurify 一致：禁止 javascript:。
+    // data: 只留给 img（图片可以内联），链接触发顶层 data: 导航没有正当用途。
+    allowedSchemes: ["http", "https", "mailto", "tel"],
     allowedSchemesByTag: { img: ["http", "https", "data"] },
     allowProtocolRelative: true,
     // sanitize-html 默认会把单标签 input 输出为 <input ... />；保留即可
@@ -182,7 +183,9 @@ marked.use({
       if (toggle) {
         const title = (marked.parseInline(toggle[1]) as string) || "";
         const body = this.parser.parse(marked.lexer(text.slice(toggle[0].length)));
-        return `<details class="dr-toggle" open><summary>${title}</summary><div class="dr-toggle-body">${body}</div></details>\n`;
+        // 只有标题的 toggle 不输出空 body：.dr-toggle-body 有上边距，空容器会多出 8px 空档
+        const bodyHtml = body.trim() ? `<div class="dr-toggle-body">${body}</div>` : "";
+        return `<details class="dr-toggle" open><summary>${title}</summary>${bodyHtml}</details>\n`;
       }
       const marker = text.match(/^\[!NOTION-CALLOUT\] ?([^\n]*)(?:\n|$)/);
       if (!marker) return false;

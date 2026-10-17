@@ -31,6 +31,12 @@ test("toggle 只去标记、保留标题与内容", () => {
   assert.ok(!plain.includes("NOTION"), plain);
 });
 
+test("多层引用前缀（toggle 套 toggle）全部剥掉", () => {
+  const plain = summaryToPlainForCard("> > [!NOTION-TOGGLE] 内层\n> >\n> > 内层正文");
+  assert.equal(plain, "内层\n\n内层正文");
+  assert.ok(!plain.includes(">"), plain);
+});
+
 test("details 标签被剥掉", () => {
   const plain = summaryToPlainForCard(
     '<details class="dr-toggle" open><summary>开关</summary><div class="dr-toggle-body">内容</div></details>'
