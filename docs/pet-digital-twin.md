@@ -36,10 +36,11 @@ flowchart LR
 
 - 入口：`components/pet/PetLauncher.tsx` 挂在根 layout，只在会签发握手的页面显示（封面除外）；面板首次打开时才加载。
 - 对话：仿 Apple Intelligence 新版 Siri，没有面板和白框，文字直接浮在页面上。宽屏放进正文列右侧的空白栏（从顶部到宠物上方）；空白栏不足 200px 时浮在页面底部，背后加一层向上渐隐的柔化。对话期间左上角头像的呼吸灯变成彩色光环，生成回复时呼吸加快。
-- 接口：`app/api/chat/route.ts`。`GET` 返回是否可用与开场问题，`POST` 流式返回纯文本。
+- 接口：`app/api/chat/route.ts`。`GET` 返回是否可用与开场问题；`POST` 流式返回——普通模式纯文本、Agent 模式为 NDJSON 事件流（见下）。
 - 守卫：在 `proxy.ts` 受保护列表内，访客必须先过 PoW 握手；路由内再做同源校验与每分钟限流。访客另有每 IP 每日 30 轮、全站每日 600 轮的额度，超额不记违规、不封 IP。生产环境没有 Redis 时拒绝服务。
 - 检索：每轮用最近两句提问，在日记缓存与人设包 `notes` 里做字二元组打分，取最相关的 4 段放进上下文，带站内链接便于引用。只读缓存，不触发 Notion 冷拉。
-- 渲染：`lib/chat-markdown.ts` 独立 marked 实例，白名单去掉图片，防止回复被注入后用外链图片带出数据。
+- Agent 模式（`PERSONA_AGENT_MODE`）：开启后普通对话从「一次问答」升级为只读工具循环——模型可先调用 `search_blog` / `read_article` / `blog_stats` 再作答。工具执行 ≤4 次、模型调用 ≤5 次（最后一轮强制收尾作答）、总时限 150 秒，每次模型调用过一道全站 1500 步/日的费用闸。工具结果一律按不可信输入包装（`<untrusted_tool_result>`，伪造闭合标签中和），工具参数出入口清洗隐形字符，未登记的工具名一律拒绝——注册表里永远没有写工具。流式协议为 NDJSON（`step` 进度、`delta` 正文、`done`/`error`），进度只显示「正在翻我的文章…」一行小字。协议不支持工具调用或闸门拒绝时自动降级为单步直答。
+- 渲染：`lib/chat-markdown.ts` 独立 marked 实例，白名单去掉图片；外链一律降级为纯文本、仅站内链接可点——回复被注入时，图片与外链都带不走数据。
 - 对话只存在当前标签页的 sessionStorage，服务端不留存。
 
 ## 4 配置
@@ -52,6 +53,7 @@ flowchart LR
 | `PERSONA_LLM_BASE_URL` | 供应商地址；openai 协议下缺省时沿用 `OPENAI_BASE_URL` |
 | `PERSONA_LLM_MODEL` | 模型名；openai 协议下缺省时沿用 `AI_MODEL` |
 | `PERSONA_BUNDLE_DIR` | 仅本机开发环境：从目录读 `public.json` / `owner.json`，不碰线上 Redis；生产环境忽略 |
+| `PERSONA_AGENT_MODE` | `off`（默认）/ `owner`（仅管理员会话走工具循环）/ `on`（全部会话）。只影响普通对话；Skill 与检索管线不受影响 |
 
 ## 5 上线顺序
 
