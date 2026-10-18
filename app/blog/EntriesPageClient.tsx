@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback, type SetStateAction } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import RainbowBrushTrail from "@/components/RainbowBrushTrail";
@@ -66,8 +66,10 @@ export default function EntriesPageClient({
        切 tab 只用 replaceState 改地址栏（不重载、不新增历史记录），Next 会同步 usePathname，
        浏览器前进后退时也按该条历史的真实地址落回对应 tab ── */
   const pathname = usePathname();
+  const router = useRouter();
   const activeTopTab = pathname === "/moments" ? 1 : 0; // 0=博客, 1=动态
   const activeTabRef = useRef(activeTopTab);
+  const routingToReferenceRef = useRef(false);
   useEffect(() => {
     activeTabRef.current = activeTopTab;
   }, [activeTopTab]);
@@ -75,6 +77,15 @@ export default function EntriesPageClient({
     const current = activeTabRef.current;
     const value = typeof next === "function" ? next(current) : next;
     if (value === current) return;
+    // 第三张卡是独立路由：博客右滑 / 动态左滑都落到 /reference。
+    // 这里不写进页内 state，否则会出现「地址还是 /blog、内容已经空」的中间态。
+    if (value < 0 || value > 1) {
+      if (!routingToReferenceRef.current) {
+        routingToReferenceRef.current = true;
+        router.push("/reference");
+      }
+      return;
+    }
     activeTabRef.current = value;
     const params = new URLSearchParams(window.location.search);
     params.delete("tab");
@@ -82,7 +93,7 @@ export default function EntriesPageClient({
     // 博客的 #entry- 深链只在博客 tab 保留；切到动态时去掉，免得回到博客后被拉回旧锚点
     const hash = value === 0 ? window.location.hash : "";
     window.history.replaceState(null, "", `${TAB_PATHS[value === 1 ? 1 : 0]}${query ? `?${query}` : ""}${hash}`);
-  }, []);
+  }, [router]);
   const {
     moments,
     hasMore: momentsHasMore,
@@ -205,7 +216,7 @@ export default function EntriesPageClient({
   }, []);
 
   /* ── 横向滚轮 / 触屏左右滑动切 tab + 屏蔽浏览器自带的左右回退 ── */
-  useTabSwipeNavigation(setActiveTopTab, { min: 0, max: 1, enabled: lightbox == null && !treeOpen });
+  useTabSwipeNavigation(setActiveTopTab, { min: -1, max: 2, enabled: lightbox == null && !treeOpen });
 
   const handleTagClick = (tag: string) => {
     requestEntry(null);
