@@ -306,7 +306,7 @@ export default function EntriesPageClient({
           anchorPrefix="entry-"
           itemIds={entryIds}
           hasMore={hasMore}
-          visible={entriesFlipped && !loading}
+          visible={(entriesFlipped || activeTopTab === 2) && !loading}
           pendingId={pendingEntryId}
           requestId={requestEntry}
           hrefFor={entryHref}
