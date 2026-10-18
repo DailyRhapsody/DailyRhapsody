@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import AvatarLifeRing from "@/components/AvatarLifeRing";
@@ -28,6 +29,7 @@ export default function StickyProfileHeader({
   const [scrollY, setScrollY] = useState(0);
   const [isReturnToTopAnimating, setIsReturnToTopAnimating] = useState(false);
   const [bgmPlaying, setBgmPlaying] = useState(false);
+  const pathname = usePathname();
   const headerRef = useRef<HTMLElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const returnToTopPhaseRef = useRef<0 | 1 | 2>(0);
@@ -313,6 +315,37 @@ export default function StickyProfileHeader({
       }
     };
   }, []);
+
+  // Header 现在常驻在 (feed) layout 上，路由切换时不再走 unmount 清理。
+  // 回顶动画会往 documentElement 写 data-return-to-top / overflow-anchor，
+  // EntriesTimeline 会等这个标记；动画中途点「参考」必须在这里立刻收尾，
+  // 否则标记会跟着新页面一直挂着。
+  useEffect(() => {
+    if (returnToTopPhaseRef.current === 0) return;
+    if (returnToTopRafRef.current) cancelAnimationFrame(returnToTopRafRef.current);
+    returnToTopPhaseRef.current = 0;
+    delete document.documentElement.dataset.returnToTop;
+    document.documentElement.style.overflowAnchor = "";
+    const header = headerRef.current;
+    if (header) {
+      header.style.transition = "";
+      header.style.height = "";
+    }
+    const collapsedEl = collapsedBarRef.current;
+    if (collapsedEl) {
+      collapsedEl.style.opacity = "";
+      collapsedEl.style.pointerEvents = "";
+      collapsedEl.style.transition = "";
+    }
+    const expandedEl = expandedContentRef.current;
+    if (expandedEl) {
+      expandedEl.style.opacity = "";
+      expandedEl.style.transform = "";
+      expandedEl.style.transition = "";
+    }
+    setIsReturnToTopAnimating(false);
+    setScrollY(window.scrollY);
+  }, [pathname]);
 
   const HEADER_EXPANDED = 260;
   const HEADER_COLLAPSED = 56;

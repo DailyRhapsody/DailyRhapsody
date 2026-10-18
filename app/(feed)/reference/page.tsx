@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { getProfile } from "@/lib/profile-store";
 import { getCachedReferenceItems, getReferenceItems, isReferenceConfigured, type ReferenceItem } from "@/lib/notion-reference";
 import ReferencePageClient from "./ReferencePageClient";
 
@@ -18,11 +17,20 @@ export const metadata: Metadata = {
     type: "website",
     locale: "zh_CN",
     siteName: "DailyRhapsody",
+    images: [
+      {
+        url: "/reference/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "Reference · 机器人行业资料库",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Reference · 机器人行业资料库",
     description: "机器人领域的行业资料、竞品调研、实测报告与访谈。",
+    images: ["/reference/opengraph-image"],
   },
 };
 
@@ -43,13 +51,6 @@ function tagCountsOf(items: ReferenceItem[]): { name: string; value: number }[] 
  * 只读缓存、不触发 Notion；缓存冷时交给客户端兜底拉取。
  */
 export default async function ReferencePage() {
-  let initialProfile = null;
-  try {
-    initialProfile = await getProfile();
-  } catch {
-    initialProfile = null;
-  }
-
   let initialItems: ReferenceItem[] | undefined;
   let initialTotal: number | undefined;
   let initialTagCounts: { name: string; value: number }[] | undefined;
@@ -70,7 +71,6 @@ export default async function ReferencePage() {
 
   return (
     <ReferencePageClient
-      initialProfile={initialProfile}
       initialItems={initialItems}
       initialTotal={initialTotal}
       initialTagCounts={initialTagCounts}

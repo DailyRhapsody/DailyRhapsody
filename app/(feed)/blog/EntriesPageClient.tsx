@@ -8,7 +8,6 @@ import RainbowBrushTrail from "@/components/RainbowBrushTrail";
 import { VisitorWorldMap } from "@/components/entries/VisitorWorldMap";
 import type { VisitorMapPoint } from "@/lib/visitor-map";
 import ConfettiBurst from "@/components/ConfettiBurst";
-import StickyProfileHeader from "@/components/StickyProfileHeader";
 import { MomentLightbox } from "@/components/entries/MomentLightbox";
 import { CalendarHeatmap } from "@/components/entries/CalendarHeatmap";
 import { ReadingStatsCard } from "@/components/entries/ReadingStatsCard";
@@ -331,13 +330,6 @@ export default function EntriesPageClient({
           className="entries-flip-panel mx-auto flex max-w-4xl flex-col pb-8"
           data-flip-visible={entriesFlipped ? "true" : "false"}
         >
-          <StickyProfileHeader
-            profile={profile}
-            entriesBgmSrc={
-              process.env.NEXT_PUBLIC_ENTRIES_BGM_SRC?.trim() || undefined
-            }
-          />
-
           <div
             ref={contentWrapperRef}
             style={{
