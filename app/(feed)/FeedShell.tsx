@@ -123,7 +123,7 @@ export default function FeedShell({
         <div className="mx-auto w-full max-w-4xl px-4 pt-5">
           <div
             data-hscroll
-            className="entries-top-cards mb-5 -mx-4 flex items-start gap-4 overflow-x-auto px-4 py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            className="entries-top-cards mb-5 -mx-4 flex items-start gap-3 overflow-x-auto px-4 py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           >
             <div className="shrink-0">
               <CalendarHeatmap datesWithPosts={datesWithPosts} />
