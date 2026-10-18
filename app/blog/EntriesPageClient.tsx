@@ -443,13 +443,8 @@ export default function EntriesPageClient({
                     title="思维大树"
                     className="absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center text-zinc-500 transition-colors hover:text-zinc-800 focus:outline-none focus-visible:text-zinc-900 dark:text-zinc-500 dark:hover:text-zinc-300 dark:focus-visible:text-zinc-100"
                   >
-                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 21V7.6" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 14.2 8.2 10.4V7.2" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.2 15.8 12.4V9.2" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9.6 9.2 6.8V4.6" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 10.9 14.8 8.1V5.9" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21h9" />
+                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                      <path d="M12 2C9.8 2 8 3.7 7.6 5.8 5.5 6.2 4 8 4 10.2c0 1.3.6 2.5 1.5 3.3-.3.5-.5 1.1-.5 1.7 0 2.3 1.9 4.2 4.2 4.2H11V22h2v-2.6h1.8c2.3 0 4.2-1.9 4.2-4.2 0-.6-.2-1.2-.5-1.7.9-.8 1.5-2 1.5-3.3 0-2.2-1.5-4-3.6-4.4C16 3.7 14.2 2 12 2Z" />
                     </svg>
                   </button>
                 </section>
