@@ -17,6 +17,7 @@
  *    队列，绝不影响评论提交的响应。
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { waitUntil } from "@vercel/functions";
 import type { Comment } from "./comments-store";
 import {
   addComment,
@@ -71,17 +72,16 @@ export function isCommentSyncConfigured(): boolean {
 }
 
 /**
- * 把同步任务挂到响应之后执行。Vercel 上交给 waitUntil 保住函数生命周期；
- * 本地或自托管没有这个模块时任务已经启动，忽略即可。
- * 任务自身的异常一律吞掉——同步失败不能冒泡到评论接口。
+ * 把同步任务挂到响应之后执行。waitUntil 必须静态导入：动态 import 的回调可能在
+ * 响应返回后才 resolve，那时 Serverless 实例已经被冻结，任务会半路停掉。
  */
 export function runInBackground(task: () => Promise<void>): void {
   const running = task().catch(() => {});
-  import("@vercel/functions")
-    .then(({ waitUntil }) => waitUntil(running))
-    .catch(() => {
-      // 没有 @vercel/functions：任务已在跑，不额外处理
-    });
+  try {
+    waitUntil(running);
+  } catch {
+    // 非 Vercel 运行时：任务已经在跑，不需要额外挂载
+  }
 }
 
 function notionHeaders(withBody: boolean): Record<string, string> {
@@ -137,27 +137,16 @@ export function verifyNotionSignature(raw: string, header: string | null, secret
 // 站长白名单：只认作者本人，其他成员或集成的评论不进博客
 // ---------------------------------------------------------------------------
 
-let ownerCache: { ids: Set<string>; at: number } | null = null;
-const OWNER_TTL_MS = 60 * 60 * 1000;
-
-async function ownerIds(): Promise<Set<string>> {
+/**
+ * 只认作者本人。`/v1/users` 在 bot 视角下只返回 bot，看不到工作区里的成员，
+ * 猜不出作者是谁，所以必须用 NOTION_OWNER_USER_ID 显式指定；没配就拒绝处理，
+ * 避免任意成员或集成冒充作者写入博客。
+ */
+async function ownerIds(): Promise<Set<string> | null> {
   const configured = process.env.NOTION_OWNER_USER_ID?.trim();
   if (configured) return new Set([configured]);
-  if (ownerCache && Date.now() - ownerCache.at < OWNER_TTL_MS) return ownerCache.ids;
-  try {
-    const res = await notionFetch("/users?page_size=100");
-    if (!res.ok) return new Set();
-    const body = (await res.json()) as { results?: { id?: string; type?: string }[] };
-    const ids = new Set(
-      (body.results ?? [])
-        .filter((u) => u.type === "person" && typeof u.id === "string")
-        .map((u) => u.id as string)
-    );
-    ownerCache = { ids, at: Date.now() };
-    return ids;
-  } catch {
-    return new Set();
-  }
+  console.warn("[comment-sync] 未配置 NOTION_OWNER_USER_ID，Notion 页面评论不会同步回博客");
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -293,10 +282,12 @@ export function parseNotionEvent(raw: unknown): ParsedEvent | null {
   const author = authors[0];
   if (typeof author?.id !== "string" || typeof author?.type !== "string") return null;
   const ts = typeof e.timestamp === "string" ? Date.parse(e.timestamp) : NaN;
+  // 没有可信时间戳就无法判断时间窗，直接丢弃，不拿当前时间兜底
+  if (!Number.isFinite(ts)) return null;
   return {
     id: e.id,
     type,
-    timestamp: Number.isFinite(ts) ? ts : Date.now(),
+    timestamp: ts,
     commentId: entity.id,
     pageId: data.page_id,
     authorId: author.id,
@@ -324,11 +315,13 @@ async function fetchNotionComment(commentId: string): Promise<{ text: string } |
 export async function handleNotionCommentEvent(raw: unknown): Promise<"handled" | "ignored" | "retry"> {
   const event = parseNotionEvent(raw);
   if (!event) return "ignored";
+  // 时间窗两头都卡：太旧的拆掉，明显来自未来的也不收
+  if (event.timestamp > Date.now() + 60_000) return "ignored";
   if (Date.now() - event.timestamp > 10 * 60 * 1000) return "ignored";
   // 只认作者本人；bot 就是我们自己同步过去的那条，必须忽略，否则会循环
   if (event.authorType !== "person") return "ignored";
   const owners = await ownerIds();
-  if (!owners.has(event.authorId)) return "ignored";
+  if (!owners || !owners.has(event.authorId)) return "ignored";
 
   const diaries = await getCachedDiaries();
   if (!diaries || !diaries.some((d) => d.id === event.pageId)) return "ignored";
@@ -344,45 +337,66 @@ export async function handleNotionCommentEvent(raw: unknown): Promise<"handled" 
     return "retry";
   }
 
+  let result: "handled" | "ignored" | "retry";
+  try {
+    result = await processEvent(event, redis);
+  } catch {
+    result = "retry";
+  }
+  // 失败要把事件键放回去，否则 Notion 重投时会被当成重复事件直接丢掉，评论永久不同步
+  if (result === "retry") {
+    try {
+      await redis.del(EVENT_PREFIX + event.id);
+    } catch {
+      // 删不掉只能等 TTL；下一次重投大概率仍会被拦，属于极端情况
+    }
+  }
+  return result;
+}
+
+async function processEvent(
+  event: ParsedEvent,
+  redis: NonNullable<ReturnType<typeof redisOrNull>>
+): Promise<"handled" | "ignored" | "retry"> {
   const mappingKey = MAPPING_PREFIX + event.commentId;
 
   if (event.type === "comment.deleted") {
-    let commentId: string | null = null;
+    let mapped: string | null = null;
     try {
-      const mapped = await redis.get<string>(mappingKey);
-      if (typeof mapped === "string" && mapped !== "deleted") commentId = mapped;
+      mapped = await redis.get<string>(mappingKey);
     } catch {
       return "retry";
     }
-    if (!commentId) return "ignored";
-    await deleteComment(event.pageId, commentId);
+    // 先落 tombstone，再删评论：即使 created 正在并发处理，它落库后也能看到删除标记
     try {
       await redis.set(mappingKey, "deleted", { ex: TOMBSTONE_TTL_S });
     } catch {
-      // 映射写失败不影响已经完成的删除
+      return "retry";
+    }
+    if (typeof mapped === "string" && mapped !== "deleted" && mapped !== "pending") {
+      await deleteComment(event.pageId, mapped);
     }
     return "handled";
   }
 
   if (event.type === "comment.updated") {
-    let commentId: string | null = null;
+    let mapped: string | null = null;
     try {
-      const mapped = await redis.get<string>(mappingKey);
-      if (typeof mapped === "string" && mapped !== "deleted") commentId = mapped;
+      mapped = await redis.get<string>(mappingKey);
     } catch {
       return "retry";
     }
-    if (!commentId) return "ignored";
+    if (typeof mapped !== "string" || mapped === "deleted" || mapped === "pending") return "ignored";
     const fetched = await fetchNotionComment(event.commentId);
     if (!fetched) return "retry";
     const text = fetched.text.trim().slice(0, MAX_TEXT);
     if (!text) return "ignored";
-    await updateCommentContent(event.pageId, commentId, text);
+    await updateCommentContent(event.pageId, mapped, text);
     return "handled";
   }
 
   // comment.created：先占住映射键。已存在（含删除后的 tombstone）或并发抢占失败都忽略，
-  // 一次 SET NX 同时覆盖"重复投递"与"两个事件同时到达"两种情况，不必先 get 再 set。
+  // 一次 SET NX 同时覆盖"重复投递"与"两个事件同时到达"两种情况。
   try {
     const lock = await redis.set(mappingKey, "pending", { nx: true, ex: 60 });
     if (lock !== "OK") return "ignored";
@@ -393,8 +407,7 @@ export async function handleNotionCommentEvent(raw: unknown): Promise<"handled" 
   const fetched = await fetchNotionComment(event.commentId);
   if (!fetched) {
     try {
-      const redis2 = redisOrNull();
-      if (redis2) await redis2.del(mappingKey);
+      await redis.del(mappingKey);
     } catch {
       // 留给下一条事件重试
     }
@@ -406,21 +419,26 @@ export async function handleNotionCommentEvent(raw: unknown): Promise<"handled" 
     return "ignored";
   }
 
-  try {
-    const profile = await getProfile();
-    const created = await addComment({
-      diaryId: event.pageId,
-      author: profile.name,
-      content,
-      isAuthor: true,
-      notionCommentId: event.commentId,
-    });
-    await redis.set(mappingKey, created.id);
-    return "handled";
-  } catch {
-    await redis.del(mappingKey);
-    return "retry";
+  // 处理期间作者可能已经在 Notion 删掉这条评论：tombstone 会覆盖占位
+  const pending = await redis.get<string>(mappingKey);
+  if (pending === "deleted") return "ignored";
+
+  const profile = await getProfile();
+  const created = await addComment({
+    diaryId: event.pageId,
+    author: profile.name,
+    content,
+    isAuthor: true,
+  });
+  // 落库后再查一次：删除事件可能刚好在写入前发生
+  const after = await redis.get<string>(mappingKey);
+  if (after === "deleted") {
+    await deleteComment(event.pageId, created.id);
+    return "ignored";
   }
+  await setNotionCommentId(event.pageId, created.id, event.commentId);
+  await redis.set(mappingKey, created.id);
+  return "handled";
 }
 
 // ---------------------------------------------------------------------------
@@ -450,6 +468,8 @@ export async function drainPending(max = 20): Promise<number> {
       continue;
     }
     const ok = await runPending(item);
+    // Notion 限速约 3 请求/秒：逐条串行并留间隔，避免一次批量重试打成 429
+    await new Promise((resolve) => setTimeout(resolve, 250));
     if (ok) {
       await redis.zrem(PENDING_KEY, raw);
       done += 1;
@@ -473,6 +493,12 @@ async function runPending(item: SyncPending): Promise<boolean> {
     if (comment.notionCommentId) return true;
     const notionId = await createNotionComment(item.diaryId, buildCommentText(comment, (await getProfile()).name));
     if (!notionId) return false;
+    // 重试期间评论可能已被作者删掉：刚建出来的 Notion 评论不能留
+    const still = await getComment(item.diaryId, item.commentId);
+    if (!still) {
+      await deleteNotionComment(notionId);
+      return true;
+    }
     const ok = await setNotionCommentId(item.diaryId, item.commentId, notionId);
     if (!ok) {
       await deleteNotionComment(notionId);

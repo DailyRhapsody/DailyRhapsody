@@ -27,7 +27,9 @@
 4. 事件勾选 `comment.created`、`comment.updated`、`comment.deleted` 三个。
 5. 创建后 Notion 会向该 URL 发一个带 `verification_token` 的请求。端点会直接回 200，token 不会自动保存；到订阅页面点 **Resend token**，把收到的 token 值填进 Notion 的验证框。
 6. 同一个 token 写入环境变量 `NOTION_WEBHOOK_SECRET`（Production / Preview / Development 各一份），本地 `.env.local` 同步一份。
-7. 可选：设置 `NOTION_OWNER_USER_ID` 为作者本人的 Notion 用户 id，只认这一个账号的评论。不设时会从 `GET /v1/users` 取所有 person 用户。
+7. **必填** `NOTION_OWNER_USER_ID`：作者本人的 Notion 用户 id。不配置时反向同步会直接忽略所有事件，避免工作区里任意成员或集成冒充作者写进博客。
+
+   获取方式：任取一篇自己的文章，调 `GET /v1/pages/{page_id}`，响应里的 `last_edited_by.id` 就是本人；也可以先不配，等自己在 Notion 页面评论里回一条，从 webhook 事件的 `authors[0].id` 里读出来。`/v1/users` 在 bot 视角下只返回 bot，拿不到成员列表，不能靠它推断。
 
 ## Redis 键
 

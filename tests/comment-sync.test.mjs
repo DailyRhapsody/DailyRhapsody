@@ -105,7 +105,9 @@ function registerMocks() {
 export const getCommentsRedis = () => globalThis.__SYNC_ENV__.redis;
 export async function getComment(diaryId, commentId) {
   const c = globalThis.__SYNC_ENV__.comments.get(diaryId + ":" + commentId);
-  return c ? { ...c } : null;
+  if (!c) return null;
+  const nid = globalThis.__SYNC_ENV__.redis.kv.get("dr:comment-notion-id:" + diaryId + ":" + commentId)?.value;
+  return { ...c, ...(typeof nid === "string" && nid ? { notionCommentId: nid } : {}) };
 }
 export async function addComment(input) {
   const id = "c" + globalThis.__SYNC_ENV__.nextId++;
@@ -114,13 +116,13 @@ export async function addComment(input) {
   return comment;
 }
 export async function deleteComment(diaryId, commentId) {
+  globalThis.__SYNC_ENV__.redis.kv.delete("dr:comment-notion-id:" + diaryId + ":" + commentId);
   return globalThis.__SYNC_ENV__.comments.delete(diaryId + ":" + commentId);
 }
 export async function setNotionCommentId(diaryId, commentId, notionId) {
   const key = diaryId + ":" + commentId;
-  const c = globalThis.__SYNC_ENV__.comments.get(key);
-  if (!c) return false;
-  globalThis.__SYNC_ENV__.comments.set(key, { ...c, notionCommentId: notionId });
+  if (!globalThis.__SYNC_ENV__.comments.has(key)) return false;
+  globalThis.__SYNC_ENV__.redis.kv.set("dr:comment-notion-id:" + key, { value: notionId, exp: 0 });
   return true;
 }
 export async function updateCommentContent(diaryId, commentId, content) {
@@ -266,7 +268,10 @@ test("作者在 Notion 新增评论：写进博客并标作者，同一 comment 
   const only = [...env.comments.values()][0];
   assert.equal(only.content, "来自 Notion 的回复");
   assert.equal(only.isAuthor, true);
-  assert.equal(only.notionCommentId, "notion-comment-1");
+  assert.equal(
+    env.redis.kv.get(`dr:comment-notion-id:${PAGE_ID}:${only.id}`)?.value,
+    "notion-comment-1"
+  );
   // 不同 event.id、同一个 comment：应被映射键挡住
   assert.equal(await sync.handleNotionCommentEvent(makeEvent("comment.created", { id: "evt-2" })), "ignored");
   assert.equal(env.comments.size, 1);
@@ -325,7 +330,7 @@ test("正向同步：创建成功回写 notionCommentId 并建映射", async () 
     return jsonResponse({});
   });
   await sync.syncCreatedComment(PAGE_ID, env.comments.get(`${PAGE_ID}:c1`));
-  assert.equal(env.comments.get(`${PAGE_ID}:c1`).notionCommentId, "notion-created-1");
+  assert.equal(env.redis.kv.get(`dr:comment-notion-id:${PAGE_ID}:c1`)?.value, "notion-created-1");
   assert.equal(await env.redis.get("dr:comment-notion:notion-created-1"), "c1");
   const body = JSON.parse(env.calls[0].init.body);
   assert.equal(body.parent.page_id, PAGE_ID);
@@ -344,7 +349,7 @@ test("正向同步：Notion 失败进待补队列，评论本身不受影响", a
   });
   const restore = stubFetch(() => jsonResponse({ error: "boom" }, 500));
   await sync.syncCreatedComment(PAGE_ID, env.comments.get(`${PAGE_ID}:c1`));
-  assert.equal(env.comments.get(`${PAGE_ID}:c1`).notionCommentId, undefined);
+  assert.equal(env.redis.kv.get(`dr:comment-notion-id:${PAGE_ID}:c1`), undefined);
   assert.equal(env.redis.zsets.get("dr:comment-sync:pending")?.size, 1);
   restore();
 });
@@ -380,8 +385,69 @@ test("待补队列：重试成功后清空", async () => {
   const restore = stubFetch(() => jsonResponse({ id: "notion-later-1" }));
   const done = await sync.drainPending(10);
   assert.equal(done, 1);
-  assert.equal(env.comments.get(`${PAGE_ID}:c1`).notionCommentId, "notion-later-1");
+  assert.equal(env.redis.kv.get(`dr:comment-notion-id:${PAGE_ID}:c1`)?.value, "notion-later-1");
   assert.equal(env.redis.zsets.get("dr:comment-sync:pending")?.size ?? 0, 0);
+  restore();
+});
+
+
+test("没有配置作者 id 时拒绝处理，避免任意成员冒充作者", async () => {
+  const env = freshEnv();
+  const restore = stubFetch(() => jsonResponse({ rich_text: [{ plain_text: "不该出现" }] }));
+  delete process.env.NOTION_OWNER_USER_ID;
+  try {
+    const result = await sync.handleNotionCommentEvent(makeEvent("comment.created"));
+    assert.equal(result, "ignored");
+    assert.equal(env.comments.size, 0);
+  } finally {
+    process.env.NOTION_OWNER_USER_ID = OWNER_ID;
+  }
+  restore();
+});
+
+test("处理失败会释放事件键，Notion 重投时能再处理", async () => {
+  const env = freshEnv();
+  let fail = true;
+  const restore = stubFetch(() =>
+    fail ? jsonResponse({ error: "boom" }, 500) : jsonResponse({ rich_text: [{ plain_text: "补上了" }] })
+  );
+  assert.equal(await sync.handleNotionCommentEvent(makeEvent("comment.created", { id: "evt-retry" })), "retry");
+  assert.equal(await env.redis.get("dr:notion-event:evt-retry"), null);
+  fail = false;
+  assert.equal(await sync.handleNotionCommentEvent(makeEvent("comment.created", { id: "evt-retry" })), "handled");
+  assert.equal(env.comments.size, 1);
+  restore();
+});
+
+test("时间戳缺失或来自未来直接丢掉", async () => {
+  freshEnv();
+  assert.equal(sync.parseNotionEvent({ ...makeEvent("comment.created"), timestamp: undefined }), null);
+  const future = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  assert.equal(await sync.handleNotionCommentEvent(makeEvent("comment.created", { timestamp: future })), "ignored");
+});
+
+test("created 与 deleted 竞态：删除先到，创建完成后不留下评论", async () => {
+  const env = freshEnv();
+  const restore = stubFetch(() => jsonResponse({ rich_text: [{ plain_text: "竞态" }] }));
+  // 先把映射写成 tombstone，模拟删除事件已经落库
+  await env.redis.set(`dr:comment-notion:notion-comment-1`, "deleted", { ex: 60 });
+  const result = await sync.handleNotionCommentEvent(makeEvent("comment.created"));
+  assert.equal(result, "ignored");
+  assert.equal(env.comments.size, 0);
+  restore();
+});
+
+
+test("创建处理期间删除事件先到：不再写入评论", async () => {
+  const env = freshEnv();
+  const restore = stubFetch(async () => {
+    // 模拟 fetch 评论期间，deleted 事件已经把映射改成 tombstone
+    await env.redis.set("dr:comment-notion:notion-comment-1", "deleted", { ex: 60 });
+    return jsonResponse({ rich_text: [{ plain_text: "不该写入" }] });
+  });
+  const result = await sync.handleNotionCommentEvent(makeEvent("comment.created"));
+  assert.equal(result, "ignored");
+  assert.equal(env.comments.size, 0);
   restore();
 });
 
