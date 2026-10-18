@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getCachedReferenceItems, getReferenceItems, isReferenceConfigured, type ReferenceItem } from "@/lib/notion-reference";
-import ReferencePageClient from "./ReferencePageClient";
+import { getProfile } from "@/lib/profile-store";
+import EntriesPageClient from "../blog/EntriesPageClient";
 
 // app router 默认会缓存，但 dr_seed 必须随每次请求新签发，所以强制 dynamic
 export const dynamic = "force-dynamic";
@@ -51,6 +52,13 @@ function tagCountsOf(items: ReferenceItem[]): { name: string; value: number }[] 
  * 只读缓存、不触发 Notion；缓存冷时交给客户端兜底拉取。
  */
 export default async function ReferencePage() {
+  let initialProfile = null;
+  try {
+    initialProfile = await getProfile();
+  } catch {
+    initialProfile = null;
+  }
+
   let initialItems: ReferenceItem[] | undefined;
   let initialTotal: number | undefined;
   let initialTagCounts: { name: string; value: number }[] | undefined;
@@ -70,10 +78,11 @@ export default async function ReferencePage() {
   }
 
   return (
-    <ReferencePageClient
-      initialItems={initialItems}
-      initialTotal={initialTotal}
-      initialTagCounts={initialTagCounts}
+    <EntriesPageClient
+      initialProfile={initialProfile}
+      initialReferenceItems={initialItems}
+      initialReferenceTotal={initialTotal}
+      initialReferenceTagCounts={initialTagCounts}
     />
   );
 }
