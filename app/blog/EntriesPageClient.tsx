@@ -296,7 +296,6 @@ export default function EntriesPageClient({
           requestId={requestEntry}
           hrefFor={entryHref}
           messages={ENTRY_MESSAGES}
-          onOpenTree={() => setTreeOpen(true)}
         />
       ) : (
         <ScrollTimeline
@@ -408,7 +407,7 @@ export default function EntriesPageClient({
             <>
               {/* 标签词云：正常参与滚动 */}
               {tagCounts.length > 0 && (
-                <section className="mb-5 rounded-2xl border border-zinc-200 bg-white/60 px-4 py-5 shadow-sm transition-apple dark:border-zinc-800 dark:bg-zinc-900/40 [contain:layout_paint]">
+                <section className="relative mb-5 rounded-2xl border border-zinc-200 bg-white/60 px-4 py-5 pr-14 shadow-sm transition-apple dark:border-zinc-800 dark:bg-zinc-900/40 [contain:layout_paint]">
                   <div className="flex flex-wrap items-center gap-2">
                     {tagCounts.map(({ name, value }) => (
                       <button
@@ -437,6 +436,22 @@ export default function EntriesPageClient({
                       </button>
                     </p>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => setTreeOpen(true)}
+                    aria-label="打开思维大树"
+                    title="思维大树"
+                    className="absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center text-zinc-500 transition-colors hover:text-zinc-800 focus:outline-none focus-visible:text-zinc-900 dark:text-zinc-500 dark:hover:text-zinc-300 dark:focus-visible:text-zinc-100"
+                  >
+                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 21V7.6" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 14.2 8.2 10.4V7.2" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.2 15.8 12.4V9.2" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9.6 9.2 6.8V4.6" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 10.9 14.8 8.1V5.9" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21h9" />
+                    </svg>
+                  </button>
                 </section>
               )}
 
