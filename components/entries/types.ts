@@ -39,6 +39,8 @@ export type Comment = {
   avatar?: number;
   /** 站长发的评论 */
   isAuthor?: boolean;
+  /** 对应的 Notion 页面评论 id：双向同步用 */
+  notionCommentId?: string;
 };
 
 export type PublicMedia = {

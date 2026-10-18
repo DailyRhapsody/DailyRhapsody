@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/auth";
 import { getClientIpFromRequest } from "@/lib/client-ip";
+import { syncCreatedComment, runInBackground } from "@/lib/comment-sync";
 import {
   addComment,
   COMMENT_AVATAR_COUNT,
@@ -130,6 +131,8 @@ export async function POST(
       content,
       ...(admin ? { isAuthor: true } : { avatar }),
     });
+    // 同步到 Notion 页面评论：放后台跑，失败只进待补队列，不影响访客这次提交
+    runInBackground(() => syncCreatedComment(diaryId, comment));
     return json(comment);
   } catch (e) {
     if (e instanceof CommentLimitError) return json({ error: "这篇的评论已满" }, 409);

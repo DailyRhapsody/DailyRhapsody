@@ -11,6 +11,8 @@ export type Comment = {
   avatar?: number;
   /** 站长（已登录后台）发的评论 */
   isAuthor?: boolean;
+  /** 对应的 Notion 页面评论 id：双向同步用，删除时据此删 Notion 那条 */
+  notionCommentId?: string;
 };
 
 /** public/comment-avatars/ 里的头像数量，与 components/entries/CommentAvatar.tsx 一致 */
@@ -54,6 +56,11 @@ export function isCommentsStoreConfigured(): boolean {
   return redis !== null;
 }
 
+/** 供评论同步模块复用同一实例：两边对评论 JSON 的编解码方式必须一致 */
+export function getCommentsRedis(): Redis | null {
+  return redis;
+}
+
 function parseComment(raw: unknown): Comment | null {
   if (typeof raw !== "string") return null;
   try {
@@ -69,6 +76,7 @@ function parseComment(raw: unknown): Comment | null {
       createdAt: c.createdAt,
       ...(typeof c.avatar === "number" ? { avatar: c.avatar } : {}),
       ...(c.isAuthor === true ? { isAuthor: true } : {}),
+      ...(typeof c.notionCommentId === "string" ? { notionCommentId: c.notionCommentId } : {}),
     };
   } catch {
     return null;
@@ -153,6 +161,48 @@ export async function deleteComment(diaryId: string, commentId: string): Promise
   const removed = (await redis.hdel(threadKey(diaryId), commentId)) > 0;
   if (removed) await redis.incr(COUNTS_GEN_KEY);
   return removed;
+}
+
+/** 读单条评论：删除与同步都要先拿到 notionCommentId */
+export async function getComment(diaryId: string, commentId: string): Promise<Comment | null> {
+  if (!redis) return null;
+  const raw = await redis.hget(threadKey(diaryId), commentId);
+  return parseComment(raw);
+}
+
+/**
+ * 回写 Notion 评论 id。只补一个字段，条数没变，所以**不**递增计数版本号
+ * （递增会让计数缓存整份重算，属于无谓开销）。
+ */
+export async function setNotionCommentId(
+  diaryId: string,
+  commentId: string,
+  notionCommentId: string
+): Promise<boolean> {
+  if (!redis) return false;
+  const current = await getComment(diaryId, commentId);
+  if (!current) return false;
+  const next: Comment = { ...current, notionCommentId };
+  await redis.hset(threadKey(diaryId), { [commentId]: JSON.stringify(next) });
+  return true;
+}
+
+/** 站长在 Notion 改了评论正文：更新文本，条数不变，但要递增版本号让计数缓存与线程缓存失效 */
+export async function updateCommentContent(
+  diaryId: string,
+  commentId: string,
+  content: string
+): Promise<boolean> {
+  if (!redis) return false;
+  const current = await getComment(diaryId, commentId);
+  if (!current) return false;
+  const next: Comment = { ...current, content };
+  await redis
+    .multi()
+    .hset(threadKey(diaryId), { [commentId]: JSON.stringify(next) })
+    .incr(COUNTS_GEN_KEY)
+    .exec();
+  return true;
 }
 
 /**
