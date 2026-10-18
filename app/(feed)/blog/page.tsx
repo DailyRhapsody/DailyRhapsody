@@ -1,4 +1,5 @@
 import { getProfile } from "@/lib/profile-store";
+import { getCachedReferenceItems, referenceTagCounts, type ReferenceItem } from "@/lib/notion-reference";
 import EntriesPageClient from "./EntriesPageClient";
 
 /**
@@ -19,5 +20,19 @@ export default async function EntriesPage() {
     initialProfile = null;
   }
 
-  return <EntriesPageClient initialProfile={initialProfile} />;
+  let referenceItems: ReferenceItem[] = [];
+  try {
+    referenceItems = (await getCachedReferenceItems())?.filter((item) => item.isPublic) ?? [];
+  } catch {
+    referenceItems = [];
+  }
+
+  return (
+    <EntriesPageClient
+      initialProfile={initialProfile}
+      initialReferenceItems={referenceItems}
+      initialReferenceTotal={referenceItems.length}
+      initialReferenceTagCounts={referenceTagCounts(referenceItems)}
+    />
+  );
 }

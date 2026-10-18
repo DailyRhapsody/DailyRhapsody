@@ -55,3 +55,38 @@ export function momentTimelineRows(outline: MomentOutlineItem[]): TimelineRow[] 
     };
   });
 }
+
+const REFERENCE_KIND_LABEL: Record<string, string> = {
+  external: "外部资料",
+  commentary: "行业评论",
+  test: "实测报告",
+  interview: "访谈",
+};
+
+/** 参考资料的 Notion 创建时间时间轴；与博客/动态各自独立。 */
+export function referenceTimelineRows(
+  outline: {
+    id: string;
+    clippedAt: string;
+    name: string;
+    source: string;
+    summary: string;
+    kind: string;
+  }[],
+): TimelineRow[] {
+  return outline.map((o) => {
+    const parts = [
+      dateOf(o.clippedAt),
+      REFERENCE_KIND_LABEL[o.kind] ?? "资料",
+      o.source,
+    ].filter(Boolean);
+    return {
+      id: o.id,
+      at: o.clippedAt,
+      width: widthAt(Math.min(1, (o.summary?.length ?? 0) / 160)),
+      line1: parts.join(" · "),
+      line2: o.name,
+      label: [...parts, o.name, o.summary ?? ""].filter(Boolean).join("，"),
+    };
+  });
+}

@@ -22,6 +22,7 @@ export type FeedStats = {
   dates: string[];
   momentsThumbs: { src: string; isVideo: boolean }[];
   referenceTotal: number;
+  referenceThumbs: { src: string; isVideo: boolean }[];
 };
 
 type FeedStatsContextValue = {
@@ -179,14 +180,39 @@ export default function FeedShell({
               type="button"
               onClick={() => navigateTab(2)}
               aria-current={active === 2 ? "page" : undefined}
-              className={`${CARD} ${active === 2 ? ACTIVE : INACTIVE}`}
+              aria-label="参考"
+              className={`inline-grid h-[148px] w-[168px] shrink-0 rounded-xl border border-zinc-200 bg-white/80 p-2.5 shadow-sm transition-apple dark:border-zinc-700 dark:bg-zinc-800/80 ${
+                active === 2 ? ACTIVE : INACTIVE
+              }`}
             >
-              <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">参考</p>
-              <p className="text-[0.7rem] text-zinc-500 dark:text-zinc-400">
-                {stats.referenceTotal > 0
-                  ? `${stats.referenceTotal} 条资料`
-                  : "行业资料库"}
-              </p>
+              <div className="grid h-full w-full grid-cols-2 grid-rows-2 gap-2">
+                {Array.from({ length: 4 }).map((_, i) => {
+                  const item = stats.referenceThumbs[i];
+                  return (
+                    <div
+                      key={item ? `${item.src}-${i}` : `ref-ph-${i}`}
+                      className="relative overflow-hidden rounded-[8px] bg-zinc-100 ring-1 ring-zinc-200/70 dark:bg-zinc-700/60 dark:ring-zinc-600/60"
+                    >
+                      {item ? (
+                        item.isVideo ? (
+                          <video
+                            src={item.src}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            className="absolute inset-0 h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div
+                            className="absolute inset-0 bg-cover bg-center"
+                            style={{ backgroundImage: `url("${item.src.replace(/"/g, "%22")}")` }}
+                          />
+                        )
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
             </button>
           </div>
         </div>

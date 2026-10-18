@@ -370,6 +370,18 @@ function extractIsPublic(page: PageObjectResponse): boolean {
   return false;
 }
 
+export function referenceTagCounts(items: ReferenceItem[]): { name: string; value: number }[] {
+  const count = new Map<string, number>();
+  for (const item of items) {
+    for (const tag of item.tags) {
+      count.set(tag, (count.get(tag) ?? 0) + 1);
+    }
+  }
+  return Array.from(count.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+}
+
 function extractClippedAt(page: PageObjectResponse): string {
   const prop = page.properties["ClippedAt"];
   if (prop?.type === "created_time") return prop.created_time;

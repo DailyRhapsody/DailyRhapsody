@@ -1,10 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import { ReferenceCard } from "@/components/ReferenceCard";
-import { useReference, type ReferenceListItem } from "@/hooks/useReference";
+import type { ReferenceListItem } from "@/hooks/useReference";
 import { useReferenceLikes } from "@/hooks/useReferenceLikes";
-import { usePublishFeedStats } from "../FeedShell";
 
 function SkeletonGrid() {
   return (
@@ -28,43 +26,31 @@ function SkeletonGrid() {
 
 /**
  * 参考页的内容区：只负责中间的标签、画廊与分页。
- * 外层 Header、顶部卡、地图、时间轴、树都由 EntriesPageClient 统一提供，
- * 切到 reference 时只替换这一块，不重建整页。
+ * 数据由 EntriesPageClient 统一持有，和顶部卡、时间轴共用同一份列表；
+ * 切换 tab 时这里只换渲染，不再重新挂载、不再重新请求。
  */
 export default function ReferenceFeed({
-  initialItems,
-  initialTotal,
-  initialTagCounts,
+  items,
+  total,
+  tagCounts,
+  loading,
+  loadingMore,
+  hasMore,
+  sentinelRef,
+  selectedTag,
+  onTagClick,
 }: {
-  initialItems?: ReferenceListItem[];
-  initialTotal?: number;
-  initialTagCounts?: { name: string; value: number }[];
+  items: ReferenceListItem[];
+  total: number;
+  tagCounts: { name: string; value: number }[];
+  loading: boolean;
+  loadingMore: boolean;
+  hasMore: boolean;
+  sentinelRef: React.RefObject<HTMLDivElement | null>;
+  selectedTag: string | null;
+  onTagClick: (tag: string) => void;
 }) {
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const {
-    items,
-    total,
-    tagCounts,
-    loading,
-    loadingMore,
-    hasMore,
-    sentinelRef,
-  } = useReference(
-    selectedTag,
-    initialItems
-      ? {
-          items: initialItems,
-          total: initialTotal ?? initialItems.length,
-          tagCounts: initialTagCounts ?? [],
-        }
-      : undefined,
-  );
   const { likes, toggle } = useReferenceLikes(items.map((it) => it.id));
-  usePublishFeedStats({ referenceTotal: total });
-
-  const handleTagClick = (tag: string) => {
-    setSelectedTag((prev) => (prev === tag ? null : tag));
-  };
 
   return (
     <>
@@ -77,7 +63,7 @@ export default function ReferenceFeed({
               <button
                 key={name}
                 type="button"
-                onClick={() => handleTagClick(name)}
+                onClick={() => onTagClick(name)}
                 className={`rounded-full px-2.5 py-1 text-xs transition-apple focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-900 ${
                   selectedTag === name
                     ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
@@ -94,7 +80,7 @@ export default function ReferenceFeed({
               当前筛选：{selectedTag}（共 {total} 条）
               <button
                 type="button"
-                onClick={() => handleTagClick(selectedTag)}
+                onClick={() => onTagClick(selectedTag)}
                 className="ml-2 rounded underline transition-apple hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
               >
                 取消
@@ -123,12 +109,13 @@ export default function ReferenceFeed({
               <h2 className="sr-only">资料列表</h2>
               <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {items.map((it) => (
-                  <ReferenceCard
-                    key={it.id}
-                    item={it}
-                    like={likes[it.id]}
-                    onLike={toggle}
-                  />
+                  <div key={it.id} id={`reference-${it.id}`} className="scroll-mt-24">
+                    <ReferenceCard
+                      item={it}
+                      like={likes[it.id]}
+                      onLike={toggle}
+                    />
+                  </div>
                 ))}
               </section>
             </>
