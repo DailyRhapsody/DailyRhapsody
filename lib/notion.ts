@@ -1067,6 +1067,16 @@ export async function resolveNotionFileUrl(
         file = b.video.file;
         media = "video";
       }
+    } else if (kind === "r") {
+      // Reference 卡片封面：优先 Cover 属性，其次 page.cover。
+      // 只认 Notion 托管文件，外链封面不走代理。
+      const page = await withNotionRetry(() => client.pages.retrieve({ page_id: id }), deadline);
+      if (!("properties" in page)) return null;
+      const full = page as PageObjectResponse;
+      const coverProp = full.properties["Cover"];
+      const first = coverProp?.type === "files" ? coverProp.files[0] : undefined;
+      if (first?.type === "file") file = first.file;
+      else if (full.cover?.type === "file") file = full.cover.file;
     } else {
       const page = await withNotionRetry(() => client.pages.retrieve({ page_id: id }), deadline);
       if (!("properties" in page)) return null;

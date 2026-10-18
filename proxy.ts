@@ -50,6 +50,8 @@ function isProtectedPublicApi(pathname: string, method: string): boolean {
   // 首页底图的访客点位：同样是公开数据接口，必须先过 PoW 握手
   if (method === "GET" && pathname === "/api/analytics/visitor-map") return true;
   if (method === "GET" && pathname.startsWith("/api/reference")) return true;
+  // Reference 的写接口也走 PoW 握手：POST 不在上面的 GET 分支里，漏掉会直接绕过 gate。
+  if (method === "POST" && /^\/api\/reference\/[^/]+\/(like|comments)$/.test(pathname)) return true;
   if (!pathname.startsWith("/api/diaries")) return false;
   if (method === "GET") return true;
   if (method === "POST") {
@@ -240,7 +242,8 @@ export default async function proxy(req: NextRequest) {
   }
 
   if (isGateIssuingPage(pathname, method)) {
-    return withAntiScrapeHeaders(attachSeed(NextResponse.next(), req, ip));
+    const indexable = pathname === "/reference" || pathname.startsWith("/reference/");
+    return withAntiScrapeHeaders(attachSeed(NextResponse.next(), req, ip), { indexable });
   }
 
   return withAntiScrapeHeaders(NextResponse.next());

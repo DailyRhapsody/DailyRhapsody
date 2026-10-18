@@ -10,14 +10,27 @@
  *   URL         URL         — 原文链接
  *   Source      Select      — 站点/feed 名（Web Clipper 自动填或手填）
  *   Tag         Multi-select — 分类标签（手动）
- *   Public      Checkbox    — 是否公开（默认勾上）
+ *   Public      Checkbox    — 是否公开（缺省 false：公开是显式动作）
  *
- * 可选属性：
- *   ClippedAt   Created time — Notion 自动；缺失时 fallback page.created_time
+ * 可选属性（P0 站点有消费者的）：
+ *   Type        Select      — 外部资料 / 行业评论 / 实测报告 / 访谈
+ *   Domain      Multi-select — 导航定位 / 感知 / 运动控制 / 操作 / 本体与执行 /
+ *                              调度与集群 / 安全与合规 / 具身智能（VLA）/ 数据与评测
+ *   Year        Number      — 发表/测试/访谈年份
+ *   Summary     Rich text   — 一句话结论（卡片、OG、分享卡共用）
+ *   License     Select      — 自有 / 已授权 / 公开转载 / 仅链接
+ *   Copyright   Rich text   — 版权归属、来源与授权说明
+ *   Attachment  Files       — 自有/授权/公开转载文件（Notion 托管或外链）
+ *   Cover       Files       — 可选封面；为空时回退页面 cover
+ *   ClippedAt   Created time— Notion 自动；缺失时 fallback page.created_time
  *
  * 必填环境变量：
  *   NOTION_TOKEN              — 与 diaries 共用同一个 integration token
  *   NOTION_REFERENCE_DB_ID    — 32-char hex
+ *
+ * 缓存与签名的两条不变式：
+ * 1) 缓存里只允许存稳定路径，禁止存 Notion 签名 URL（签名 1 小时过期，缓存 24–48 小时）。
+ * 2) 条目结构带 schemaVersion；版本不符视为未命中，避免半结构化缓存直接进 React。
  */
 
 import { Client } from "@notionhq/client";
@@ -27,10 +40,20 @@ import type {
 } from "@notionhq/client/build/src/api-endpoints";
 import { extractBodyMarkdown } from "@/lib/notion";
 import { assertNotionFetchAllowed, isNotionFetchAllowed, runWithRefreshLock } from "@/lib/notion-quota";
+import { mediaProxyPath } from "@/lib/notion-media";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+export const REFERENCE_SCHEMA_VERSION = 2;
+
+export type ReferenceKind = "external" | "commentary" | "test" | "interview";
+export type ReferenceLicense = "own" | "authorized" | "public" | "link-only";
+
+export type ReferenceAttachment =
+  | { kind: "file"; name: string }
+  | { kind: "external"; name: string; url: string };
 
 export type ReferenceItem = {
   id: string;
@@ -40,8 +63,20 @@ export type ReferenceItem = {
   tags: string[];
   clippedAt: string; // ISO UTC
   isPublic: boolean;
+  kind: ReferenceKind;
+  domains: string[];
+  year: number | null;
+  summary: string;
+  license: ReferenceLicense;
+  copyright: string;
+  /** 稳定地址：Notion 托管封面是 /api/media/r/…；外链封面是原始 URL */
+  coverPath: string | null;
+  coverKind: "file" | "external" | null;
+  attachment: ReferenceAttachment | null;
   bodyMarkdown?: string; // 仅详情接口才填，列表不返
 };
+
+export type ReferenceMediaOwner = { pageId: string; isPublic: boolean };
 
 // ---------------------------------------------------------------------------
 // Singleton client
@@ -84,8 +119,13 @@ async function getRedis() {
   return _redis;
 }
 
-const LIST_CACHE_KEY = "notion:reference:items";
-const ITEM_CACHE_PREFIX = "notion:reference:item:";
+// v2：字段结构变了。旧键刻意不复用，部署后第一次读取自动重建。
+const LIST_CACHE_KEY = "notion:reference:items:v2";
+const ITEM_CACHE_PREFIX = "notion:reference:item:v2:";
+// 附件签名 URL：只在下载时换签，按 expiry 缓存；与媒体图分开
+const FILE_CACHE_PREFIX = "notion:reference:file:v2:";
+// Reference 正文图归属：blockId:version → pageId，供 /api/media 鉴权
+const REF_MEDIA_PREFIX = "dr:ref:media:";
 // Notion 自动化调 /api/revalidate 时写入；晚于列表快照开始时刻即视为过期（同 lib/notion.ts）
 const LIST_INVALIDATED_KEY = "notion:reference:items:invalidatedAt";
 // 跨实例刷新锁（lib/notion-quota.ts）
@@ -93,6 +133,11 @@ const REFRESH_LOCK_KEY = "notion:reference:items:refreshLock";
 const CACHE_STALE_MS = (Number(process.env.NOTION_CACHE_STALE_S) || 300) * 1000;
 // 48h + 下限钳制：与 lib/notion.ts 同因（NOTION_CACHE_TTL 曾被误配为 300 压塌 SWR）。
 const CACHE_HARD_TTL_S = 48 * 60 * 60;
+// 单条正文缓存 24h；正文里的图片是稳定代理路径，不随签名过期
+const ITEM_TTL_S = 24 * 60 * 60;
+// 正文图归属键比单条缓存多留 5 分钟，避免条目缓存刚好过期时图片 404
+const REF_MEDIA_TTL_S = ITEM_TTL_S + 5 * 60;
+const SIGNED_URL_SAFETY_S = 60;
 
 function listTtl(): number {
   // Math.floor：Redis 的 EX 只接受整数，小数会让 set 被拒、缓存永远写不进去
@@ -103,23 +148,85 @@ function listTtl(): number {
   return configured;
 }
 
-type ListCacheEntry = { data: ReferenceItem[]; refreshedAt: number; snapshotAt?: number };
+type ListCacheEntry = {
+  schemaVersion: typeof REFERENCE_SCHEMA_VERSION;
+  data: ReferenceItem[];
+  refreshedAt: number;
+  snapshotAt?: number;
+};
+type ItemCacheEntry = {
+  schemaVersion: typeof REFERENCE_SCHEMA_VERSION;
+  item: ReferenceItem;
+};
 type CachedList = ListCacheEntry & { invalidatedAt: number };
+
+/** Notion SDK 2.3.0 没有导出统一的 FileObjectResponse，这里按实际响应收窄。 */
+type NotionFileValue = {
+  type?: "file" | "external";
+  file?: { url: string; expiry_time: string };
+  external?: { url: string };
+  name?: string;
+};
+
+function isReferenceKind(value: unknown): value is ReferenceKind {
+  return value === "external" || value === "commentary" || value === "test" || value === "interview";
+}
+
+function isReferenceLicense(value: unknown): value is ReferenceLicense {
+  return value === "own" || value === "authorized" || value === "public" || value === "link-only";
+}
+
+function isReferenceAttachment(value: unknown): value is ReferenceAttachment | null {
+  if (value === null) return true;
+  if (!value || typeof value !== "object") return false;
+  const a = value as Partial<ReferenceAttachment>;
+  if (a.kind === "file") return typeof a.name === "string";
+  if (a.kind === "external") return typeof a.name === "string" && typeof a.url === "string";
+  return false;
+}
+
+/**
+ * 缓存读回来的条目必须过这一层。少了它，字段改名/半结构化条目会直接把
+ * `item.domains.map` 之类调用抛成 500，而不是回退到 Notion 重拉。
+ */
+function isReferenceItem(value: unknown): value is ReferenceItem {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<ReferenceItem>;
+  return (
+    typeof item.id === "string" &&
+    typeof item.name === "string" &&
+    typeof item.url === "string" &&
+    typeof item.source === "string" &&
+    Array.isArray(item.tags) &&
+    item.tags.every((t) => typeof t === "string") &&
+    typeof item.clippedAt === "string" &&
+    typeof item.isPublic === "boolean" &&
+    isReferenceKind(item.kind) &&
+    Array.isArray(item.domains) &&
+    item.domains.every((d) => typeof d === "string") &&
+    (item.year === null || typeof item.year === "number") &&
+    typeof item.summary === "string" &&
+    isReferenceLicense(item.license) &&
+    typeof item.copyright === "string" &&
+    (item.coverPath === null || typeof item.coverPath === "string") &&
+    (item.coverKind === null || item.coverKind === "file" || item.coverKind === "external") &&
+    isReferenceAttachment(item.attachment) &&
+    (item.bodyMarkdown === undefined || typeof item.bodyMarkdown === "string")
+  );
+}
 
 async function getCachedList(): Promise<CachedList | null> {
   const redis = await getRedis();
   if (!redis) return null;
   try {
     const [data, invalidatedAt] = await redis.mget<
-      [ListCacheEntry | ReferenceItem[] | null, number | null]
+      [ListCacheEntry | null, number | null]
     >(LIST_CACHE_KEY, LIST_INVALIDATED_KEY);
-    if (!data) return null;
-    if (Array.isArray(data)) {
-      return { data, refreshedAt: 0, invalidatedAt: 0 };
-    }
-    if (typeof data !== "object" || !Array.isArray(data.data)) {
+    if (!data || typeof data !== "object" || data.schemaVersion !== REFERENCE_SCHEMA_VERSION) {
       return null;
     }
+    if (!Array.isArray(data.data)) return null;
+    if (!data.data.every(isReferenceItem)) return null;
     return { ...data, invalidatedAt: Number(invalidatedAt) || 0 };
   } catch {
     return null;
@@ -130,7 +237,12 @@ async function setCachedList(items: ReferenceItem[], snapshotAt: number): Promis
   const redis = await getRedis();
   if (!redis) return;
   try {
-    const entry: ListCacheEntry = { data: items, refreshedAt: Date.now(), snapshotAt };
+    const entry: ListCacheEntry = {
+      schemaVersion: REFERENCE_SCHEMA_VERSION,
+      data: items,
+      refreshedAt: Date.now(),
+      snapshotAt,
+    };
     await redis.set(LIST_CACHE_KEY, entry, { ex: listTtl() });
   } catch {
     // 写缓存失败不影响读取
@@ -141,9 +253,11 @@ async function getCachedItem(id: string): Promise<ReferenceItem | null> {
   const redis = await getRedis();
   if (!redis) return null;
   try {
-    const data = await redis.get<ReferenceItem>(`${ITEM_CACHE_PREFIX}${id}`);
-    if (!data || typeof data !== "object" || typeof data.id !== "string") return null;
-    return data;
+    const data = await redis.get<ItemCacheEntry>(`${ITEM_CACHE_PREFIX}${id}`);
+    if (!data || typeof data !== "object" || data.schemaVersion !== REFERENCE_SCHEMA_VERSION) {
+      return null;
+    }
+    return isReferenceItem(data.item) ? data.item : null;
   } catch {
     return null;
   }
@@ -153,12 +267,32 @@ async function setCachedItem(item: ReferenceItem): Promise<void> {
   const redis = await getRedis();
   if (!redis) return;
   try {
-    // 单条正文缓存无 SWR（过期即重拉），保持 24h 独立 TTL——不随列表硬 TTL 提到
-    // 48h，否则作者改完正文最长 48h 才对外更新（列表元数据仍有 5min SWR 兜底）
-    await redis.set(`${ITEM_CACHE_PREFIX}${item.id}`, item, { ex: 24 * 60 * 60 });
+    const entry: ItemCacheEntry = { schemaVersion: REFERENCE_SCHEMA_VERSION, item };
+    await redis.set(`${ITEM_CACHE_PREFIX}${item.id}`, entry, { ex: ITEM_TTL_S });
+    if (item.bodyMarkdown) await recordReferenceMedia(item.id, item.bodyMarkdown);
   } catch {
     // ignore
   }
+}
+
+/**
+ * 正文图走 /api/media/b/<blockId>/<version>，媒体路由需要知道这张图属于哪一条。
+ * 记 blockId:version → pageId，媒体路由再查该条目的公开性。
+ * 失败不阻塞正文缓存；图最多 404，不会泄露私密内容。
+ */
+async function recordReferenceMedia(pageId: string, bodyMarkdown: string): Promise<void> {
+  const redis = await getRedis();
+  if (!redis) return;
+  const re = /\/api\/media\/b\/([0-9a-f]{32})\/([0-9a-f]{10})/g;
+  const keys: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(bodyMarkdown)) !== null) {
+    keys.push(`${REF_MEDIA_PREFIX}${m[1]}:${m[2]}`);
+  }
+  if (keys.length === 0) return;
+  const pipe = redis.pipeline();
+  for (const key of keys) pipe.set(key, pageId, { ex: REF_MEDIA_TTL_S });
+  await pipe.exec();
 }
 
 /**
@@ -224,11 +358,14 @@ function extractTags(page: PageObjectResponse): string[] {
   return [];
 }
 
+/**
+ * 缺 Public 时返回 false：公开必须是显式动作。
+ * Reference 是公开资料库，fail-open 会把草稿/私密条目直接暴露出去。
+ */
 function extractIsPublic(page: PageObjectResponse): boolean {
   const prop = page.properties["Public"];
   if (prop?.type === "checkbox") return prop.checkbox;
-  // 缺 Public 字段的话默认公开（避免新手忘了加属性整个 DB 都不显示）
-  return true;
+  return false;
 }
 
 function extractClippedAt(page: PageObjectResponse): string {
@@ -242,7 +379,89 @@ function extractClippedAt(page: PageObjectResponse): string {
   return page.created_time;
 }
 
+function extractKind(page: PageObjectResponse): ReferenceKind {
+  const prop = page.properties["Type"];
+  const name = prop?.type === "select" ? prop.select?.name ?? "" : "";
+  // 也接受英文值，方便 API 直接写入
+  if (name === "行业评论" || name === "commentary") return "commentary";
+  if (name === "实测报告" || name === "test") return "test";
+  if (name === "访谈" || name === "interview") return "interview";
+  return "external";
+}
+
+function extractDomains(page: PageObjectResponse): string[] {
+  const prop = page.properties["Domain"];
+  if (prop?.type === "multi_select") return prop.multi_select.map((d) => d.name);
+  return [];
+}
+
+function extractYear(page: PageObjectResponse): number | null {
+  const prop = page.properties["Year"];
+  if (prop?.type !== "number") return null;
+  const n = prop.number;
+  if (typeof n !== "number" || !Number.isFinite(n)) return null;
+  // Notion 里可能填 2026.0 / 26；只收合理年份，避免把 26 当 26 年
+  if (n < 1900 || n > 2100) return null;
+  return Math.trunc(n);
+}
+
+function extractSummary(page: PageObjectResponse): string {
+  const prop = page.properties["Summary"];
+  if (prop?.type === "rich_text") return richTextToPlain(prop.rich_text).trim();
+  return "";
+}
+
+function extractLicense(page: PageObjectResponse): ReferenceLicense {
+  const prop = page.properties["License"];
+  const name = prop?.type === "select" ? prop.select?.name ?? "" : "";
+  if (name === "自有" || name === "own") return "own";
+  if (name === "已授权" || name === "authorized") return "authorized";
+  if (name === "公开转载" || name === "public") return "public";
+  return "link-only";
+}
+
+function extractCopyright(page: PageObjectResponse): string {
+  const prop = page.properties["Copyright"];
+  if (prop?.type === "rich_text") return richTextToPlain(prop.rich_text).trim();
+  return "";
+}
+
+function firstFilesProp(page: PageObjectResponse, name: string): NotionFileValue | null {
+  const prop = page.properties[name];
+  if (prop?.type !== "files") return null;
+  return (prop.files[0] as NotionFileValue | undefined) ?? null;
+}
+
+function extractCover(
+  page: PageObjectResponse
+): { path: string; kind: "file" | "external" } | null {
+  // 优先 Cover 属性，其次页面 cover。Notion 托管的只存稳定代理路径，
+  // 绝不把 1h 签名地址写进 48h 列表缓存。
+  const file = firstFilesProp(page, "Cover") ?? (page.cover as NotionFileValue | null) ?? null;
+  if (!file) return null;
+  if (file.type === "file" && file.file) {
+    return { path: mediaProxyPath("r", page.id, file.file.url), kind: "file" };
+  }
+  if (file.type === "external" && file.external) {
+    return { path: file.external.url, kind: "external" };
+  }
+  return null;
+}
+
+function extractAttachment(page: PageObjectResponse): ReferenceAttachment | null {
+  const file = firstFilesProp(page, "Attachment");
+  if (!file) return null;
+  if (file.type === "file" && file.file) {
+    return { kind: "file", name: file.name ?? "附件" };
+  }
+  if (file.type === "external" && file.external) {
+    return { kind: "external", name: file.name ?? "附件", url: file.external.url };
+  }
+  return null;
+}
+
 function mapPageToItem(page: PageObjectResponse, bodyMarkdown?: string): ReferenceItem {
+  const cover = extractCover(page);
   return {
     id: page.id,
     name: extractTitle(page),
@@ -251,6 +470,15 @@ function mapPageToItem(page: PageObjectResponse, bodyMarkdown?: string): Referen
     tags: extractTags(page),
     clippedAt: extractClippedAt(page),
     isPublic: extractIsPublic(page),
+    kind: extractKind(page),
+    domains: extractDomains(page),
+    year: extractYear(page),
+    summary: extractSummary(page),
+    license: extractLicense(page),
+    copyright: extractCopyright(page),
+    coverPath: cover?.path ?? null,
+    coverKind: cover?.kind ?? null,
+    attachment: extractAttachment(page),
     ...(bodyMarkdown != null ? { bodyMarkdown } : {}),
   };
 }
@@ -348,10 +576,27 @@ export async function getReferenceItems(): Promise<ReferenceItem[]> {
   return refreshNow();
 }
 
+/**
+ * 只读缓存：不触发 Notion。首屏 SSR、媒体鉴权、评论存在性检查都用它，
+ * 避免一次页面请求把 3 req/s 的共享额度打满。
+ */
+export async function getCachedReferenceItems(): Promise<ReferenceItem[] | null> {
+  const cached = await getCachedList();
+  return cached?.data ?? null;
+}
+
 /** Cron 预热入口：强制重拉并写缓存，返回条数。与用户请求共享 in-flight 去重。 */
 export async function warmReferenceCache(): Promise<number> {
   const items = await refreshNow();
   return items.length;
+}
+
+/** 从单条缓存或列表缓存取一条，不触发 Notion。 */
+export async function getCachedReferenceItem(id: string): Promise<ReferenceItem | null> {
+  const item = await getCachedItem(id);
+  if (item) return item;
+  const items = await getCachedReferenceItems();
+  return items?.find((i) => i.id === id) ?? null;
 }
 
 /**
@@ -368,11 +613,92 @@ export async function getReferenceItem(id: string): Promise<ReferenceItem | null
     const page = await client.pages.retrieve({ page_id: id });
     if (!("properties" in page)) return null;
 
-    const body = await extractBodyMarkdown(id);
+    // proxyMedia：正文图输出稳定 /api/media/b/… 路径，签名过期不会裂图。
+    // 归属由 recordReferenceMedia 记录，/api/media 鉴权时再查本条目的公开性。
+    const body = await extractBodyMarkdown(id, { proxyMedia: true });
     const item = mapPageToItem(page as PageObjectResponse, body ?? "");
     // 正文没抓到（限流、预算用完）不写 24h 缓存，下次请求再抓
     if (body !== null) await setCachedItem(item);
     return item;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 页面 cover / 正文图的归属查询，供 /api/media 鉴权。
+ * 只认 Reference 缓存，不接受调用方传入的“我是公开的”声明。
+ */
+export async function getReferenceMediaOwner(pageId: string): Promise<ReferenceMediaOwner | null> {
+  const item = await getCachedReferenceItem(pageId);
+  if (!item) return null;
+  return { pageId: item.id, isPublic: item.isPublic };
+}
+
+/**
+ * 正文图的 blockId:version → pageId 映射。返回 null 表示这张图不是 Reference 正文图；
+ * 返回 owner 后调用方仍要按 isPublic 决定 public/private。
+ */
+export async function getReferenceBodyMediaOwner(
+  blockId: string,
+  version: string
+): Promise<ReferenceMediaOwner | null> {
+  const redis = await getRedis();
+  if (!redis) return null;
+  try {
+    const pageId = await redis.get<string>(`${REF_MEDIA_PREFIX}${blockId}:${version}`);
+    if (typeof pageId !== "string" || !pageId) return null;
+    return getReferenceMediaOwner(pageId);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 下载附件换签。缓存里的不是 URL，而是 pageId；每次按 expiry 重新取签名地址，
+ * 避免 1 小时过期后下载 403。返回 null 表示没有可下载附件。
+ */
+export async function getReferenceAttachmentUrl(
+  pageId: string
+): Promise<{ url: string; name: string } | null> {
+  const redis = await getRedis();
+  if (redis) {
+    try {
+      const hit = await redis.get<{ url: string; name: string }>(`${FILE_CACHE_PREFIX}${pageId}`);
+      if (hit?.url) return hit;
+    } catch {
+      // 当作未命中
+    }
+  }
+
+  try {
+    const client = getClient();
+    const page = await client.pages.retrieve({ page_id: pageId });
+    if (!("properties" in page)) return null;
+    const file = firstFilesProp(page as PageObjectResponse, "Attachment");
+    if (!file) return null;
+
+    let url: string;
+    let name: string;
+    if (file.type === "file" && file.file) {
+      url = file.file.url;
+      name = file.name ?? "附件";
+      const expiry = new Date(file.file.expiry_time).getTime();
+      const ttlS = Math.floor((expiry - Date.now()) / 1000) - SIGNED_URL_SAFETY_S;
+      if (redis && ttlS >= 60) {
+        try {
+          await redis.set(`${FILE_CACHE_PREFIX}${pageId}`, { url, name }, { ex: ttlS });
+        } catch {
+          // non-fatal
+        }
+      }
+    } else if (file.type === "external" && file.external) {
+      url = file.external.url;
+      name = file.name ?? "附件";
+    } else {
+      return null;
+    }
+    return { url, name };
   } catch {
     return null;
   }
@@ -383,4 +709,15 @@ export function isReferenceConfigured(): boolean {
     process.env.NOTION_TOKEN?.trim() &&
     process.env.NOTION_REFERENCE_DB_ID?.trim()
   );
+}
+
+/** 下载计数：只加总数，不记用户；失败不影响 302。 */
+export async function recordReferenceDownload(id: string): Promise<void> {
+  const redis = await getRedis();
+  if (!redis) return;
+  try {
+    await redis.incr(`dr:ref:dl:${id}`);
+  } catch {
+    // ignore
+  }
 }

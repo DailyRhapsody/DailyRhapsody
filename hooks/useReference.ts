@@ -13,6 +13,15 @@ export type ReferenceListItem = {
   tags: string[];
   clippedAt: string;
   isPublic: boolean;
+  kind: "external" | "commentary" | "test" | "interview";
+  domains: string[];
+  year: number | null;
+  summary: string;
+  license: "own" | "authorized" | "public" | "link-only";
+  copyright: string;
+  coverPath: string | null;
+  coverKind: "file" | "external" | null;
+  attachment: { kind: "file" | "external"; name: string; url?: string } | null;
 };
 
 type ReferenceListResponse = {
@@ -39,11 +48,22 @@ export type UseReferenceState = {
  *  - sentinel 进入视窗 → append 下一页
  *  - 不做日历热力图、彩蛋、hash 深链（reference 没有这些需求）
  */
-export function useReference(selectedTag: string | null): UseReferenceState {
-  const [items, setItems] = useState<ReferenceListItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [tagCounts, setTagCounts] = useState<{ name: string; value: number }[]>([]);
+export function useReference(
+  selectedTag: string | null,
+  initial?: {
+    items: ReferenceListItem[];
+    total: number;
+    tagCounts: { name: string; value: number }[];
+  },
+): UseReferenceState {
+  const [items, setItems] = useState<ReferenceListItem[]>(initial?.items ?? []);
+  const [total, setTotal] = useState(initial?.total ?? 0);
+  const [tagCounts, setTagCounts] = useState<{ name: string; value: number }[]>(
+    initial?.tagCounts ?? [],
+  );
   const [loadingMore, setLoadingMore] = useState(false);
+  /** 首屏数据由服务端给过：挂载时不要再打一次 /api/reference，否则 SSR 白做 */
+  const skipHydrationFetchRef = useRef(Boolean(initial));
 
   /* ── gate 就绪时的重加载触发器 ── */
   const [gateGen, setGateGen] = useState(0);
@@ -58,7 +78,9 @@ export function useReference(selectedTag: string | null): UseReferenceState {
    * 这样 effect body 里不需要同步 setState（react-hooks/set-state-in-effect），
    * 也避免了切 tag 时先渲染一帧旧数据、再翻转 loading 的级联渲染。
    */
-  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const [loadedKey, setLoadedKey] = useState<string | null>(
+    initial ? `${selectedTag ?? ""}#0` : null,
+  );
   const requestKey = `${selectedTag ?? ""}#${gateGen}`;
   const loading = loadedKey !== requestKey;
 
@@ -86,7 +108,9 @@ export function useReference(selectedTag: string | null): UseReferenceState {
    *   一滚动还会把 B 的下一页追加到 A 的数据后面，跨 tag 混排）；
    * - 同 tag 刷新失败（gate 就绪重拉）→ 保留旧数据，不把「加载失败」渲染成「暂无收藏」。
    */
-  const loadedTagRef = useRef<string | null | undefined>(undefined);
+  const loadedTagRef = useRef<string | null | undefined>(
+    initial ? selectedTag : undefined,
+  );
 
   const hasMore = items.length < total && total > 0;
   const maxTagCount = tagCounts[0]?.value ?? 1;
@@ -124,6 +148,12 @@ export function useReference(selectedTag: string | null): UseReferenceState {
    * 后首页失败」时清空，同 tag 刷新失败保留旧数据，「加载失败」不再被渲染成
    * 「暂无收藏」。 */
   useEffect(() => {
+    // 首屏数据已经由 server component 塞进来：跳过挂载时的重复请求。
+    // 后续切 tag、gate 就绪重拉照常走下面的逻辑。
+    if (skipHydrationFetchRef.current) {
+      skipHydrationFetchRef.current = false;
+      return;
+    }
     const ctrl = new AbortController();
     // 首屏换血后列表整体重置，在途的旧 append 结果不能再接到新列表后面
     appendCtrlRef.current?.abort();

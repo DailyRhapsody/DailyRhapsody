@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback, type SetStateAction } from "react";
 import { usePathname } from "next/navigation";
+import Link from "next/link";
 import Image from "next/image";
 import RainbowBrushTrail from "@/components/RainbowBrushTrail";
 import { VisitorWorldMap } from "@/components/entries/VisitorWorldMap";
@@ -402,6 +403,15 @@ export default function EntriesPageClient({
                 })}
               </div>
             </button>
+            {/* 第三张内容卡：真跳转到 /reference。不要加进 TAB_PATHS/replaceState，
+                /reference 不是 /blog 的 rewrite 目标，换地址不换渲染树会错位。 */}
+            <Link
+              href="/reference"
+              className="inline-flex h-[148px] w-[168px] shrink-0 flex-col justify-between rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm transition-apple hover:border-zinc-300 hover:shadow-md dark:border-zinc-700 dark:bg-zinc-800/80 dark:hover:border-zinc-600"
+            >
+              <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">参考</p>
+              <p className="text-[0.7rem] text-zinc-500 dark:text-zinc-400">行业资料库</p>
+            </Link>
           </div>
 
           {activeTopTab === 0 ? (
