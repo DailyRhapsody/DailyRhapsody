@@ -78,7 +78,7 @@ export default function ReferencePageClient({
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-100 to-white font-sans text-zinc-900 dark:from-black dark:via-zinc-950 dark:to-black dark:text-zinc-50">
-      <main id="reference" className="mx-auto flex max-w-6xl flex-col pb-8">
+      <main id="reference" className="mx-auto flex max-w-4xl flex-col pb-8">
         <StickyProfileHeader profile={profile} />
 
         {/* 站内第三个位置：和博客、动态并列。真跳转，不进 /blog 的 replaceState 状态机。 */}
