@@ -13,9 +13,11 @@ import StickyProfileHeader, {
 export default function FeedHeader({
   profile,
   bgmSrc,
+  className,
 }: {
   profile: StickyProfileHeaderData | null;
   bgmSrc?: string;
+  className?: string;
 }) {
   const pathname = usePathname();
   const isContentFeed = pathname === "/blog" || pathname === "/moments";
@@ -23,6 +25,7 @@ export default function FeedHeader({
     <StickyProfileHeader
       profile={profile}
       entriesBgmSrc={isContentFeed ? bgmSrc : undefined}
+      className={className}
     />
   );
 }

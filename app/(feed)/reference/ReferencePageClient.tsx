@@ -1,15 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { ReferenceCard } from "@/components/ReferenceCard";
 import { useHorizontalSwipeNavigation } from "@/hooks/useHorizontalSwipeNavigation";
 import { useReference, type ReferenceListItem } from "@/hooks/useReference";
 import { useReferenceLikes } from "@/hooks/useReferenceLikes";
-
-const TOP_CARD =
-  "flex h-[148px] w-full min-w-0 flex-1 flex-col justify-between rounded-xl border border-zinc-200 bg-white/80 p-3 text-left shadow-sm transition-apple hover:border-zinc-300 hover:shadow-md dark:border-zinc-700 dark:bg-zinc-800/80 dark:hover:border-zinc-600 sm:w-[168px] sm:flex-none sm:p-5";
+import { usePublishFeedStats } from "../FeedShell";
 
 function SkeletonGrid() {
   return (
@@ -60,6 +57,7 @@ export default function ReferencePageClient({
       : undefined,
   );
   const { likes, toggle } = useReferenceLikes(items.map((it) => it.id));
+  usePublishFeedStats({ referenceTotal: total });
   const router = useRouter();
 
   // 与博客、动态的顶部卡片保持同一套手势：左滑下一张（博客），右滑上一张（动态，循环）。
@@ -72,33 +70,8 @@ export default function ReferencePageClient({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-100 to-white font-sans text-zinc-900 dark:from-black dark:via-zinc-950 dark:to-black dark:text-zinc-50">
+    <div className="font-sans text-zinc-900 dark:text-zinc-50">
       <main id="reference" className="mx-auto flex max-w-4xl flex-col pb-8">
-        {/* 站内第三个位置：和博客、动态并列。真跳转，不进 /blog 的 replaceState 状态机。 */}
-        <nav
-          aria-label="内容切换，左右滑动可切换"
-          className="flex gap-3 px-4 pt-4"
-        >
-          {/* 当前页放第一：三张卡在窄屏按等分宽度收缩，全部留在视口内。 */}
-          <div
-            aria-current="page"
-            className={`${TOP_CARD} ring-2 ring-inset ring-zinc-400 dark:ring-zinc-500`}
-          >
-            <p className="text-xl font-bold text-zinc-900 dark:text-zinc-50 sm:text-2xl">参考</p>
-            <p className="text-[0.65rem] text-zinc-500 dark:text-zinc-400 sm:text-[0.7rem]">
-              {total > 0 ? `${total} 条资料` : "行业资料库"}
-            </p>
-          </div>
-          <Link href="/blog" className={TOP_CARD}>
-            <p className="text-xl font-bold text-zinc-900 dark:text-zinc-50 sm:text-2xl">博客</p>
-            <p className="text-[0.65rem] text-zinc-500 dark:text-zinc-400 sm:text-[0.7rem]">文章与日常</p>
-          </Link>
-          <Link href="/moments" className={TOP_CARD}>
-            <p className="text-xl font-bold text-zinc-900 dark:text-zinc-50 sm:text-2xl">动态</p>
-            <p className="text-[0.65rem] text-zinc-500 dark:text-zinc-400 sm:text-[0.7rem]">图片与片段</p>
-          </Link>
-        </nav>
-
         <div className="px-4 pt-5">
           <h1 className="sr-only">Reference · 机器人行业资料库</h1>
 

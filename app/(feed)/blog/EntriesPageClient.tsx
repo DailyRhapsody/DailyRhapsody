@@ -2,16 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback, type SetStateAction } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import Link from "next/link";
-import Image from "next/image";
 import RainbowBrushTrail from "@/components/RainbowBrushTrail";
 import { VisitorWorldMap } from "@/components/entries/VisitorWorldMap";
 import type { VisitorMapPoint } from "@/lib/visitor-map";
 import ConfettiBurst from "@/components/ConfettiBurst";
 import { MomentLightbox } from "@/components/entries/MomentLightbox";
-import { CalendarHeatmap } from "@/components/entries/CalendarHeatmap";
-import { ReadingStatsCard } from "@/components/entries/ReadingStatsCard";
-import type { ReadingStats } from "@/lib/weread";
 import { EntryCard } from "@/components/entries/EntryCard";
 import { ScrollTimeline } from "@/components/entries/ScrollTimeline";
 import { CognitiveTreeOverlay } from "@/components/entries/CognitiveTreeOverlay";
@@ -19,6 +14,7 @@ import { entryTimelineRows, momentTimelineRows } from "@/components/entries/time
 import { MomentsTab } from "@/components/entries/MomentsTab";
 import { getSizeClass } from "@/components/entries/utils";
 import type { MomentsTimelineRow } from "@/components/entries/types";
+import { usePublishFeedStats } from "../FeedShell";
 import { useProfile, type Profile } from "@/hooks/useProfile";
 import { useAdminSession } from "@/hooks/useAdminSession";
 import { useMoments } from "@/hooks/useMoments";
@@ -37,10 +33,8 @@ const MOMENT_MESSAGES = { loading: "正在载入更早的动态", failed: "未�
 
 export default function EntriesPageClient({
   initialProfile,
-  readingStats,
 }: {
   initialProfile: Profile | null;
-  readingStats: ReadingStats | null;
 }) {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const {
@@ -148,6 +142,13 @@ export default function EntriesPageClient({
     }
     return items.slice(0, 4);
   }, [momentsTimeline]);
+
+  usePublishFeedStats({
+    totalPosts,
+    thisMonthPostCount,
+    dates: [...datesWithPosts],
+    momentsThumbs,
+  });
 
   useEffect(() => {
     return () => {
@@ -289,7 +290,7 @@ export default function EntriesPageClient({
 
   return (
     // 整页文字不可选中（输入框除外，访客写评论时照常能选）
-    <div className="min-h-screen select-none bg-[#f1f1f1]/80 font-sans text-zinc-900 dark:bg-black/80 dark:text-zinc-50 [&_:is(input,textarea,[contenteditable=true])]:select-text">
+    <div className="font-sans text-zinc-900 dark:text-zinc-50">
       <VisitorWorldMap points={mapPoints} />
       <RainbowBrushTrail />
       <ConfettiBurst />
@@ -343,80 +344,6 @@ export default function EntriesPageClient({
             className={!hasMore && isRebounding ? "rebound-transition" : ""}
           >
           <div className="px-4 pt-5">
-          {/* data-hscroll：豁免整页横滑切 tab 的接管，让卡片条在触屏上能横向滚动。
-              见 hooks/useTabSwipeNavigation.ts 的 isExempt()。
-              py-1 是给键盘焦点环留的位置：全局 :focus-visible 是 2px outline + 2px offset，
-              这张条 overflow-x-auto 的横向滚动会把 overflow-y 也算成 auto，没有纵向内边距时
-              焦点环的顶边整条被裁掉（评审逐像素量过）。 */}
-          <div data-hscroll className="entries-top-cards mb-5 -mx-4 flex items-start gap-4 overflow-x-auto px-4 py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            {/* 日历热力图：始终显示，无选中态 */}
-            <div className="shrink-0">
-              <CalendarHeatmap datesWithPosts={datesWithPosts} />
-            </div>
-            {/* 微信读书阅读数据：无数据时组件自行返回 null，不占位。
-                书籍分布云图（作者三屏、出版社三屏）就在这张卡里轮播，不额外占卡片条位置 */}
-            <ReadingStatsCard stats={readingStats} />
-            {/* 博客卡片：activeTopTab===0 选中 */}
-            <button
-              type="button"
-              onClick={() => setActiveTopTab(0)}
-              className={`inline-flex h-[148px] w-[168px] shrink-0 flex-col items-start justify-center rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm transition-apple dark:border-zinc-700 dark:bg-zinc-800/80 ${activeTopTab === 0 ? "ring-2 ring-inset ring-zinc-400 dark:ring-zinc-500" : "opacity-60"}`}
-            >
-              <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">{totalPosts}</p>
-              <p className="text-[0.7rem] text-zinc-500 dark:text-zinc-400">篇文章</p>
-              <p className="mt-1.5 text-[0.7rem] text-zinc-400 dark:text-zinc-500">
-                本月 {thisMonthPostCount} 篇更新
-              </p>
-            </button>
-            {/* 动态卡片：activeTopTab===1 选中 */}
-            <button
-              type="button"
-              onClick={() => setActiveTopTab(1)}
-              className={`inline-grid h-[148px] w-[168px] shrink-0 rounded-xl border border-zinc-200 bg-white/80 p-2.5 shadow-sm transition-apple dark:border-zinc-700 dark:bg-zinc-800/80 ${activeTopTab === 1 ? "ring-2 ring-inset ring-zinc-400 dark:ring-zinc-500" : "opacity-60"}`}
-            >
-              <div className="grid h-full w-full grid-cols-2 grid-rows-2 gap-2">
-                {Array.from({ length: 4 }).map((_, i) => {
-                  const item = momentsThumbs[i];
-                  return (
-                    <div
-                      key={item ? `${item.src}-${i}` : `ph-${i}`}
-                      className="relative overflow-hidden rounded-[8px] bg-zinc-100 ring-1 ring-zinc-200/70 dark:bg-zinc-700/60 dark:ring-zinc-600/60"
-                    >
-                      {item ? (
-                        item.isVideo ? (
-                          <video
-                            src={item.src}
-                            muted
-                            playsInline
-                            preload="metadata"
-                            className="absolute inset-0 h-full w-full object-cover"
-                          />
-                        ) : (
-                          <Image
-                            src={item.src}
-                            alt=""
-                            fill
-                            className="object-cover"
-                            sizes="76px"
-                          />
-                        )
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            </button>
-            {/* 第三张内容卡：真跳转到 /reference。不要加进 TAB_PATHS/replaceState，
-                /reference 不是 /blog 的 rewrite 目标，换地址不换渲染树会错位。 */}
-            <Link
-              href="/reference"
-              className="inline-flex h-[148px] w-[168px] shrink-0 flex-col justify-between rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm transition-apple hover:border-zinc-300 hover:shadow-md dark:border-zinc-700 dark:bg-zinc-800/80 dark:hover:border-zinc-600"
-            >
-              <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">参考</p>
-              <p className="text-[0.7rem] text-zinc-500 dark:text-zinc-400">行业资料库</p>
-            </Link>
-          </div>
-
           {activeTopTab === 0 ? (
             <>
               {/* 标签词云：正常参与滚动 */}
