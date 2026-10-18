@@ -443,9 +443,9 @@ export default function EntriesPageClient({
                     title="思维大树"
                     className="absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center text-zinc-400 transition-colors hover:text-zinc-600 focus:outline-none focus-visible:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300 dark:focus-visible:text-zinc-200"
                   >
-                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.25} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                      <path d="M8 19a4 4 0 0 1-2.24-7.32A3.5 3.5 0 1 1 9 6.03V6a3 3 0 1 1 6 0v.04a3.5 3.5 0 1 1 3.24 5.64A4 4 0 0 1 16 19Z" />
-                      <path d="M12 19v3" />
+                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="m12 3-5.2 7h3L5 15.5h5V20h4v-4.5h5L15.2 10h3L12 3Z" />
+                      <path d="M12 20v2" />
                     </svg>
                   </button>
                 </section>
