@@ -166,7 +166,7 @@ node --experimental-test-module-mocks --test tests/*.test.mjs
 2. **缓存预热**：每日定时任务顺序重拉三个内容源并写缓存，让缓存在没有流量的时段也有数据。
 3. **按需刷新**：`POST /api/revalidate` 把三个缓存标记为过期并保留旧数据，下一次访问先返回旧数据、再在后台重拉。密钥只从请求头读取。
 4. **上游故障**：页面不等待上游。缓存过期时仍立即返回旧数据并触发后台刷新，拉取失败保留旧数据，页面不会因为上游故障变成空白。
-5. **评论同步**：访客评论写入后由后台任务在文章的 Notion 页面评论里建一条；作者在 Notion 里新增、编辑、删除评论时，Notion 通过 webhook 推回博客。同步失败进 `dr:comment-sync:pending`，由 `/api/cron/sync-comments` 每 30 分钟重试。配置与排查见 [docs/comment-sync.md](./docs/comment-sync.md)。
+5. **评论同步**：访客评论写入后由后台任务在文章的 Notion 页面评论里建一条；作者在 Notion 里新增、编辑、删除评论时，Notion 通过 webhook 推回博客。同步失败进 `dr:comment-sync:pending`，读评论时顺带重试（10 分钟限频），每日预热任务兜底。配置与排查见 [docs/comment-sync.md](./docs/comment-sync.md)。
 
 ### 7.3 公开接口防护
 

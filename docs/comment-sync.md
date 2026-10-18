@@ -9,7 +9,7 @@
   └─ 写 Upstash dr:comments:<diaryId>（立即返回给访客）
        └─ 后台任务 POST /v1/comments 到对应文章页面
             └─ 成功：把 notionCommentId 回写评论记录
-            └─ 失败：进 dr:comment-sync:pending，由 cron 每 30 分钟重试
+            └─ 失败：进 dr:comment-sync:pending，读评论时顺带重试（10 分钟限频），每日预热兜底
 
 作者在 Notion 页面评论里操作
   └─ Notion webhook → POST /api/notion/webhook
@@ -37,7 +37,7 @@
 | --- | --- |
 | `dr:comment-notion:<notionCommentId>` | 映射到博客评论 id；评论删除后写 `deleted` 占位，保留 30 天，防止旧事件把评论复活 |
 | `dr:notion-event:<event.id>` | 事件级去重，保留 24 小时（Notion 同一事件最多重试 8 次） |
-| `dr:comment-sync:pending` | 待补任务（ZSET，score 为下次重试时间），cron 每 30 分钟处理最多 20 条 |
+| `dr:comment-sync:pending` | 待补任务（ZSET，score 为下次重试时间）；读评论时顺带处理最多 10 条（10 分钟限频），每日预热任务兜底 20 条 |
 
 ## 行为边界
 

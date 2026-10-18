@@ -445,6 +445,27 @@ async function processEvent(
 // 待补队列
 // ---------------------------------------------------------------------------
 
+/**
+ * 待补队列的触发点：评论列表每次被读取时顺带试一次，用 Redis 锁限频 10 分钟。
+ *
+ * 不用 Vercel Cron 每 30 分钟跑：Hobby 计划只允许每天一次的 cron，更频繁的表达式
+ * 会让部署直接失败（2026-10-18 实测，Vercel 检查指向 cron 定价页）。有流量时
+ * 10 分钟内就会补上；没有流量的时段由每日预热任务兜底。
+ */
+export function schedulePendingDrain(): void {
+  const redis = redisOrNull();
+  if (!redis || !isCommentSyncConfigured()) return;
+  runInBackground(async () => {
+    try {
+      const got = await redis.set("dr:comment-sync:tick", "1", { nx: true, ex: 600 });
+      if (got !== "OK") return;
+      await drainPending(10);
+    } catch {
+      // 待补是兜底，失败不影响读评论
+    }
+  });
+}
+
 /** 处理到期的待补任务；返回处理条数 */
 export async function drainPending(max = 20): Promise<number> {
   const redis = redisOrNull();
