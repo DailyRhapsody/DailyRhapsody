@@ -296,6 +296,7 @@ export default function EntriesPageClient({
           requestId={requestEntry}
           hrefFor={entryHref}
           messages={ENTRY_MESSAGES}
+          onOpenTree={() => setTreeOpen(true)}
         />
       ) : (
         <ScrollTimeline
@@ -407,7 +408,7 @@ export default function EntriesPageClient({
             <>
               {/* 标签词云：正常参与滚动 */}
               {tagCounts.length > 0 && (
-                <section className="relative mb-5 rounded-2xl border border-zinc-200 bg-white/60 px-4 py-5 pr-14 shadow-sm transition-apple dark:border-zinc-800 dark:bg-zinc-900/40 [contain:layout_paint]">
+                <section className="mb-5 rounded-2xl border border-zinc-200 bg-white/60 px-4 py-5 shadow-sm transition-apple dark:border-zinc-800 dark:bg-zinc-900/40 [contain:layout_paint]">
                   <div className="flex flex-wrap items-center gap-2">
                     {tagCounts.map(({ name, value }) => (
                       <button
@@ -436,18 +437,6 @@ export default function EntriesPageClient({
                       </button>
                     </p>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setTreeOpen(true)}
-                    aria-label="打开思维大树"
-                    title="思维大树"
-                    className="absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center text-zinc-400 transition-colors hover:text-zinc-600 focus:outline-none focus-visible:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300 dark:focus-visible:text-zinc-200"
-                  >
-                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.25} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                      <path d="M8 19a4 4 0 0 1-2.24-7.32A3.5 3.5 0 1 1 9 6.03V6a3 3 0 1 1 6 0v.04a3.5 3.5 0 1 1 3.24 5.64A4 4 0 0 1 16 19Z" />
-                      <path d="M12 19v3" />
-                    </svg>
-                  </button>
                 </section>
               )}
 
