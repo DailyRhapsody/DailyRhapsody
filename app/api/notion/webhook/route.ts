@@ -9,11 +9,7 @@
  *   直接 ACK 200，token 由作者填回 Notion 页面。
  */
 import { NextResponse } from "next/server";
-import {
-  captureVerificationToken,
-  handleNotionCommentEvent,
-  verifyNotionSignature,
-} from "@/lib/comment-sync";
+import { handleNotionCommentEvent, verifyNotionSignature } from "@/lib/comment-sync";
 
 export const maxDuration = 60;
 
@@ -42,12 +38,6 @@ export async function POST(req: Request) {
   // 必须在 secret 检查之前 ACK——它发生在 secret 还没配置的时候，回 503 会让
   // Notion 认为端点不可达，订阅建不起来。
   if (payload && typeof payload === "object" && typeof (payload as { verification_token?: unknown }).verification_token === "string") {
-    // 临时：把 token 存一份供站长读取，配置完成后删除这段
-    try {
-      await captureVerificationToken((payload as { verification_token: string }).verification_token);
-    } catch {
-      // 存不下也照常 ACK
-    }
     return NextResponse.json({ ok: true });
   }
 

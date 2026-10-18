@@ -72,16 +72,6 @@ export function isCommentSyncConfigured(): boolean {
 }
 
 /**
- * 临时调试用：把订阅验证 token 存进 Redis，供站长在配置阶段读取。
- * 配置完成后必须删除这段代码——token 就是验签密钥，不该长期落在可读位置。
- */
-export async function captureVerificationToken(value: string): Promise<void> {
-  const redis = getCommentsRedis();
-  if (!redis) return;
-  await redis.set("dr:debug:webhook-token", value, { ex: 3600 });
-}
-
-/**
  * 把同步任务挂到响应之后执行。waitUntil 必须静态导入：动态 import 的回调可能在
  * 响应返回后才 resolve，那时 Serverless 实例已经被冻结，任务会半路停掉。
  */
