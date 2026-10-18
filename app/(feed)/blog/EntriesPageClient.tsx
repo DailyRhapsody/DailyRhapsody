@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback, type SetStateAction } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import RainbowBrushTrail from "@/components/RainbowBrushTrail";
 import { VisitorWorldMap } from "@/components/entries/VisitorWorldMap";
 import type { VisitorMapPoint } from "@/lib/visitor-map";
@@ -14,7 +14,9 @@ import { entryTimelineRows, momentTimelineRows } from "@/components/entries/time
 import { MomentsTab } from "@/components/entries/MomentsTab";
 import { getSizeClass } from "@/components/entries/utils";
 import type { MomentsTimelineRow } from "@/components/entries/types";
+import type { ReferenceListItem } from "@/hooks/useReference";
 import { usePublishFeedStats } from "../FeedShell";
+import ReferenceFeed from "../reference/ReferenceFeed";
 import { useProfile, type Profile } from "@/hooks/useProfile";
 import { useAdminSession } from "@/hooks/useAdminSession";
 import { useMoments } from "@/hooks/useMoments";
@@ -27,14 +29,20 @@ import { useEggPullToRefresh } from "@/hooks/useEggPullToRefresh";
 const entryHref = (id: string) => `/blog#entry-${id}`;
 const momentHref = () => "/moments";
 /** 顶部两个 tab 对应的地址：切 tab 时同步到地址栏，刷新、分享都落回同一个 tab */
-const TAB_PATHS = ["/blog", "/moments"] as const;
+const TAB_PATHS = ["/blog", "/moments", "/reference"] as const;
 const ENTRY_MESSAGES = { loading: "正在载入更早的文章", failed: "未能载入这篇文章" };
 const MOMENT_MESSAGES = { loading: "正在载入更早的动态", failed: "未能载入这条动态" };
 
 export default function EntriesPageClient({
   initialProfile,
+  initialReferenceItems,
+  initialReferenceTotal,
+  initialReferenceTagCounts,
 }: {
   initialProfile: Profile | null;
+  initialReferenceItems?: ReferenceListItem[];
+  initialReferenceTotal?: number;
+  initialReferenceTagCounts?: { name: string; value: number }[];
 }) {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const {
@@ -59,34 +67,25 @@ export default function EntriesPageClient({
        切 tab 只用 replaceState 改地址栏（不重载、不新增历史记录），Next 会同步 usePathname，
        浏览器前进后退时也按该条历史的真实地址落回对应 tab ── */
   const pathname = usePathname();
-  const router = useRouter();
-  const activeTopTab = pathname === "/moments" ? 1 : 0; // 0=博客, 1=动态
+  const activeTopTab =
+    pathname === "/moments" ? 1 : pathname === "/reference" ? 2 : 0; // 0=博客, 1=动态, 2=参考
   const activeTabRef = useRef(activeTopTab);
-  const routingToReferenceRef = useRef(false);
   useEffect(() => {
     activeTabRef.current = activeTopTab;
   }, [activeTopTab]);
   const setActiveTopTab = useCallback((next: SetStateAction<number>) => {
     const current = activeTabRef.current;
-    const value = typeof next === "function" ? next(current) : next;
+    const raw = typeof next === "function" ? next(current) : next;
+    const value = ((raw % 3) + 3) % 3;
     if (value === current) return;
-    // 第三张卡是独立路由：博客右滑 / 动态左滑都落到 /reference。
-    // 这里不写进页内 state，否则会出现「地址还是 /blog、内容已经空」的中间态。
-    if (value < 0 || value > 1) {
-      if (!routingToReferenceRef.current) {
-        routingToReferenceRef.current = true;
-        router.push("/reference");
-      }
-      return;
-    }
     activeTabRef.current = value;
     const params = new URLSearchParams(window.location.search);
     params.delete("tab");
     const query = params.toString();
-    // 博客的 #entry- 深链只在博客 tab 保留；切到动态时去掉，免得回到博客后被拉回旧锚点
+    // 博客的 #entry- 深链只在博客 tab 保留；切到动态/参考时去掉，免得回到博客后被拉回旧锚点
     const hash = value === 0 ? window.location.hash : "";
-    window.history.replaceState(null, "", `${TAB_PATHS[value === 1 ? 1 : 0]}${query ? `?${query}` : ""}${hash}`);
-  }, [router]);
+    window.history.replaceState(null, "", `${TAB_PATHS[value]}${query ? `?${query}` : ""}${hash}`);
+  }, []);
   const {
     moments,
     hasMore: momentsHasMore,
@@ -143,12 +142,16 @@ export default function EntriesPageClient({
     return items.slice(0, 4);
   }, [momentsTimeline]);
 
-  usePublishFeedStats({
-    totalPosts,
-    thisMonthPostCount,
-    dates: [...datesWithPosts],
-    momentsThumbs,
-  });
+  usePublishFeedStats(
+    activeTopTab === 2
+      ? {}
+      : {
+          totalPosts,
+          thisMonthPostCount,
+          dates: [...datesWithPosts],
+          momentsThumbs,
+        },
+  );
 
   useEffect(() => {
     return () => {
@@ -216,7 +219,7 @@ export default function EntriesPageClient({
   }, []);
 
   /* ── 横向滚轮 / 触屏左右滑动切 tab + 屏蔽浏览器自带的左右回退 ── */
-  useTabSwipeNavigation(setActiveTopTab, { min: -1, max: 2, enabled: lightbox == null && !treeOpen });
+  useTabSwipeNavigation(setActiveTopTab, { min: -1, max: 3, enabled: lightbox == null && !treeOpen });
 
   const handleTagClick = (tag: string) => {
     requestEntry(null);
@@ -295,7 +298,7 @@ export default function EntriesPageClient({
       <RainbowBrushTrail />
       <ConfettiBurst />
       {/* 必须在 entries-flip-wrapper 之外：它的 perspective/transform 会让 fixed 相对 main 定位 */}
-      {activeTopTab === 0 ? (
+      {activeTopTab === 0 || activeTopTab === 2 ? (
         <ScrollTimeline
           key={`entries:${selectedTag ?? ""}`}
           ariaLabel="文章时间轴"
@@ -440,7 +443,7 @@ export default function EntriesPageClient({
                 <div className="h-[140px] shrink-0" aria-hidden />
               )}
             </>
-          ) : (
+          ) : activeTopTab === 1 ? (
             <MomentsTab
               timeline={momentsTimeline}
               loading={momentsLoading}
@@ -448,6 +451,12 @@ export default function EntriesPageClient({
               loadingMore={momentsLoadingMore}
               sentinelRef={momentsSentinelRef}
               onOpenLightbox={(lb) => setLightbox(lb)}
+            />
+          ) : (
+            <ReferenceFeed
+              initialItems={initialReferenceItems}
+              initialTotal={initialReferenceTotal}
+              initialTagCounts={initialReferenceTagCounts}
             />
           )}
           </div>

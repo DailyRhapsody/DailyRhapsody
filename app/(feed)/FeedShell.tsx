@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   createContext,
   useCallback,
@@ -60,7 +60,6 @@ export default function FeedShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [stats, setStats] = useState<FeedStats>(initialStats);
 
   const publish = useCallback((patch: Partial<FeedStats>) => {
@@ -84,36 +83,26 @@ export default function FeedShell({
   const navigateTab = useCallback(
     (target: 0 | 1 | 2) => {
       if (target === active) return;
-      if (target === 2) {
-        router.push("/reference");
-        return;
-      }
-      const path = target === 0 ? "/blog" : "/moments";
-      if (pathname === "/reference") {
-        router.push(path);
-        return;
-      }
+      const path =
+        target === 0 ? "/blog" : target === 1 ? "/moments" : "/reference";
       const params = new URLSearchParams(window.location.search);
       params.delete("tab");
       const query = params.toString();
       const hash = target === 0 ? window.location.hash : "";
+      // 三个 tab 共用同一个 EntriesPageClient；只改地址与内容，不触发路由导航。
       window.history.replaceState(
         null,
         "",
         `${path}${query ? `?${query}` : ""}${hash}`,
       );
     },
-    [active, pathname, router],
+    [active],
   );
 
   return (
     <FeedStatsContext.Provider value={contextValue}>
       <div
-        className={`min-h-screen font-sans text-zinc-900 select-none dark:text-zinc-50 [&_:is(input,textarea,[contenteditable=true])]:select-text ${
-          active === 2
-            ? "bg-gradient-to-b from-zinc-100 to-white dark:from-black dark:via-zinc-950 dark:to-black"
-            : "bg-[#f1f1f1]/80 dark:bg-black/80"
-        }`}
+        className={`min-h-screen bg-[#f1f1f1]/80 font-sans text-zinc-900 select-none dark:bg-black/80 dark:text-zinc-50 [&_:is(input,textarea,[contenteditable=true])]:select-text`}
       >
         <FeedHeader
           profile={profile}
