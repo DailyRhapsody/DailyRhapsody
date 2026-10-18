@@ -1,5 +1,4 @@
 import { getProfile } from "@/lib/profile-store";
-import { getReadingStats } from "@/lib/weread";
 import EntriesPageClient from "./EntriesPageClient";
 
 /**
@@ -20,14 +19,5 @@ export default async function EntriesPage() {
     initialProfile = null;
   }
 
-  let readingStats = null;
-  try {
-    readingStats = await getReadingStats();
-  } catch {
-    readingStats = null;
-  }
-
-  return (
-    <EntriesPageClient initialProfile={initialProfile} readingStats={readingStats} />
-  );
+  return <EntriesPageClient initialProfile={initialProfile} />;
 }

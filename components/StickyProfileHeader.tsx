@@ -21,10 +21,13 @@ export type StickyProfileHeaderData = {
 export default function StickyProfileHeader({
   profile,
   entriesBgmSrc,
+  className,
 }: {
   profile: StickyProfileHeaderData | null;
   /** 文章页背景音乐 URL（如 `/audio/houlai-dewomen.mp3`）；不传则头像仍可点进首页 */
   entriesBgmSrc?: string;
+  /** 外壳用来限制 Header 自身宽度，不要把父容器撑成内容宽度 */
+  className?: string;
 }) {
   const [scrollY, setScrollY] = useState(0);
   const [isReturnToTopAnimating, setIsReturnToTopAnimating] = useState(false);
@@ -415,7 +418,7 @@ export default function StickyProfileHeader({
       ref={headerRef}
       className={`sticky top-0 z-30 w-full overflow-hidden rounded-b-2xl bg-gradient-to-b from-zinc-900 via-zinc-800 to-black transition-[height] ease-out ${
         isReturning ? "duration-0" : "duration-300"
-      }`}
+      } ${className ?? ""}`}
       style={{
         height: `${height}px`,
       }}
