@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useState } from "react";
 import StickyProfileHeader from "@/components/StickyProfileHeader";
 import { ReferenceCard } from "@/components/ReferenceCard";
+import { useHorizontalSwipeNavigation } from "@/hooks/useHorizontalSwipeNavigation";
 import { useProfile, type Profile } from "@/hooks/useProfile";
 import { useReference, type ReferenceListItem } from "@/hooks/useReference";
 import { useReferenceLikes } from "@/hooks/useReferenceLikes";
 
 const TOP_CARD =
-  "flex h-[148px] w-[168px] shrink-0 flex-col justify-between rounded-xl border border-zinc-200 bg-white/80 p-5 text-left shadow-sm transition-apple hover:border-zinc-300 hover:shadow-md dark:border-zinc-700 dark:bg-zinc-800/80 dark:hover:border-zinc-600";
+  "flex h-[148px] w-full min-w-0 flex-1 flex-col justify-between rounded-xl border border-zinc-200 bg-white/80 p-3 text-left shadow-sm transition-apple hover:border-zinc-300 hover:shadow-md dark:border-zinc-700 dark:bg-zinc-800/80 dark:hover:border-zinc-600 sm:w-[168px] sm:flex-none sm:p-5";
 
 function SkeletonGrid() {
   return (
@@ -63,6 +65,12 @@ export default function ReferencePageClient({
       : undefined,
   );
   const { likes, toggle } = useReferenceLikes(items.map((it) => it.id));
+  const router = useRouter();
+
+  // 与博客、动态的顶部卡片保持同一套手势：左滑下一张（博客），右滑上一张（动态，循环）。
+  const goNext = useCallback(() => router.push("/blog"), [router]);
+  const goPrev = useCallback(() => router.push("/moments"), [router]);
+  useHorizontalSwipeNavigation({ onNext: goNext, onPrev: goPrev });
 
   const handleTagClick = (tag: string) => {
     setSelectedTag((prev) => (prev === tag ? null : tag));
@@ -75,39 +83,31 @@ export default function ReferencePageClient({
 
         {/* 站内第三个位置：和博客、动态并列。真跳转，不进 /blog 的 replaceState 状态机。 */}
         <nav
-          aria-label="内容切换"
-          className="flex gap-3 overflow-x-auto px-4 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          data-hscroll
+          aria-label="内容切换，左右滑动可切换"
+          className="flex gap-3 px-4 pt-4"
         >
-          {/* 当前页放第一：手机 375px 下三张卡放不下，第三张会被裁在视口外 */}
+          {/* 当前页放第一：三张卡在窄屏按等分宽度收缩，全部留在视口内。 */}
           <div
             aria-current="page"
             className={`${TOP_CARD} ring-2 ring-inset ring-zinc-400 dark:ring-zinc-500`}
           >
-            <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">参考</p>
-            <p className="text-[0.7rem] text-zinc-500 dark:text-zinc-400">
+            <p className="text-xl font-bold text-zinc-900 dark:text-zinc-50 sm:text-2xl">参考</p>
+            <p className="text-[0.65rem] text-zinc-500 dark:text-zinc-400 sm:text-[0.7rem]">
               {total > 0 ? `${total} 条资料` : "行业资料库"}
             </p>
           </div>
           <Link href="/blog" className={TOP_CARD}>
-            <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">博客</p>
-            <p className="text-[0.7rem] text-zinc-500 dark:text-zinc-400">文章与日常</p>
+            <p className="text-xl font-bold text-zinc-900 dark:text-zinc-50 sm:text-2xl">博客</p>
+            <p className="text-[0.65rem] text-zinc-500 dark:text-zinc-400 sm:text-[0.7rem]">文章与日常</p>
           </Link>
           <Link href="/moments" className={TOP_CARD}>
-            <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">动态</p>
-            <p className="text-[0.7rem] text-zinc-500 dark:text-zinc-400">图片与片段</p>
+            <p className="text-xl font-bold text-zinc-900 dark:text-zinc-50 sm:text-2xl">动态</p>
+            <p className="text-[0.65rem] text-zinc-500 dark:text-zinc-400 sm:text-[0.7rem]">图片与片段</p>
           </Link>
         </nav>
 
         <div className="px-4 pt-5">
-          <div className="mb-5">
-            <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-              Reference
-            </h1>
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              机器人行业的资料、评论、实测与访谈。{total > 0 ? `共 ${total} 条。` : ""}
-            </p>
-          </div>
+          <h1 className="sr-only">Reference · 机器人行业资料库</h1>
 
           {tagCounts.length > 0 && (
             <section className="mb-5 rounded-2xl border border-zinc-200 bg-white/60 px-4 py-4 shadow-sm transition-apple dark:border-zinc-800 dark:bg-zinc-900/40">
