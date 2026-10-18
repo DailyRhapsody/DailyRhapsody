@@ -441,10 +441,11 @@ export default function EntriesPageClient({
                     onClick={() => setTreeOpen(true)}
                     aria-label="打开思维大树"
                     title="思维大树"
-                    className="absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center text-zinc-500 transition-colors hover:text-zinc-800 focus:outline-none focus-visible:text-zinc-900 dark:text-zinc-500 dark:hover:text-zinc-300 dark:focus-visible:text-zinc-100"
+                    className="absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center text-zinc-400 transition-colors hover:text-zinc-600 focus:outline-none focus-visible:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300 dark:focus-visible:text-zinc-200"
                   >
-                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                      <path d="M12 2C9.8 2 8 3.7 7.6 5.8 5.5 6.2 4 8 4 10.2c0 1.3.6 2.5 1.5 3.3-.3.5-.5 1.1-.5 1.7 0 2.3 1.9 4.2 4.2 4.2H11V22h2v-2.6h1.8c2.3 0 4.2-1.9 4.2-4.2 0-.6-.2-1.2-.5-1.7.9-.8 1.5-2 1.5-3.3 0-2.2-1.5-4-3.6-4.4C16 3.7 14.2 2 12 2Z" />
+                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.25} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="M8 19a4 4 0 0 1-2.24-7.32A3.5 3.5 0 1 1 9 6.03V6a3 3 0 1 1 6 0v.04a3.5 3.5 0 1 1 3.24 5.64A4 4 0 0 1 16 19Z" />
+                      <path d="M12 19v3" />
                     </svg>
                   </button>
                 </section>
