@@ -16,7 +16,10 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: "*",
-        allow: "/",
+        // 只放行页面；API 仍需要 PoW，爬虫抓 /api/* 只会吃 403 并累计违规，
+        // 极端情况下把搜索引擎 IP 拉黑，连累整站索引。
+        allow: ["/", "/blog", "/moments", "/about", "/reference", "/reference/"],
+        disallow: ["/api/", "/admin/"],
       },
     ],
     sitemap: `${siteUrl}/sitemap.xml`,

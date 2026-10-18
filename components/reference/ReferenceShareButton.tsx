@@ -12,8 +12,9 @@ export function ReferenceShareButton({ title, text }: { title: string; text?: st
       try {
         await navigator.share({ title, text: text ?? title, url });
         return;
-      } catch {
-        // 用户取消或不支持：继续走剪贴板
+      } catch (err) {
+        // 用户主动取消不等于失败：不要转去覆盖剪贴板
+        if (err instanceof DOMException && err.name === "AbortError") return;
       }
     }
     try {

@@ -19,10 +19,13 @@ export async function DELETE(
   }
 
   const { id, commentId } = await params;
-  if (!isReferenceThreadId(id) || !commentId) {
+  if (!isReferenceThreadId(id) || !/^[0-9a-z-]{1,64}$/i.test(commentId)) {
     return withAntiScrapeHeaders(NextResponse.json({ error: "Invalid id" }, { status: 400 }));
   }
 
   const removed = await deleteReferenceComment(id, commentId);
-  return withAntiScrapeHeaders(NextResponse.json({ ok: removed }));
+  if (!removed) {
+    return withAntiScrapeHeaders(NextResponse.json({ ok: false, error: "Not found" }, { status: 404 }));
+  }
+  return withAntiScrapeHeaders(NextResponse.json({ ok: true }));
 }

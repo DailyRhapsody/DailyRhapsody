@@ -58,11 +58,18 @@ export function readLikeDeviceId(cookieHeader: string | null | undefined): strin
     .map((s) => s.trim())
     .find((s) => s.startsWith(prefix));
   if (!part) return null;
-  const raw = decodeURIComponent(part.slice(prefix.length));
+  let raw: string;
+  try {
+    raw = decodeURIComponent(part.slice(prefix.length));
+  } catch {
+    // 畸形百分号编码：当没有 cookie，不要让一个请求打成 500
+    return null;
+  }
   const dot = raw.lastIndexOf(".");
   if (dot <= 0) return null;
   const payload = raw.slice(0, dot);
   const sig = raw.slice(dot + 1);
+  if (!/^[0-9a-f]{64}$/i.test(sig)) return null;
   if (!safeEqualHex(sig, sign(payload))) return null;
 
   const [version, did, iatRaw] = payload.split(".");

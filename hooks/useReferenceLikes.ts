@@ -13,6 +13,13 @@ type Response = { likes?: Record<string, ReferenceLikeState> };
  */
 export function useReferenceLikes(ids: string[]) {
   const [likes, setLikes] = useState<Record<string, ReferenceLikeState>>({});
+  /** GateClient 完成握手后重拉一次：首访时 GET 可能先吃 403，不能把 0 当最终值 */
+  const [gateGen, setGateGen] = useState(0);
+  useEffect(() => {
+    const onReady = () => setGateGen((g) => g + 1);
+    window.addEventListener("dr-gate-ready", onReady);
+    return () => window.removeEventListener("dr-gate-ready", onReady);
+  }, []);
   const idsKey = useMemo(
     () => [...new Set(ids)].filter(Boolean).sort().join(","),
     [ids],
@@ -52,7 +59,7 @@ export function useReferenceLikes(ids: string[]) {
     return () => {
       cancelled = true;
     };
-  }, [idsKey]);
+  }, [idsKey, gateGen]);
 
   const toggle = useCallback(
     async (id: string) => {

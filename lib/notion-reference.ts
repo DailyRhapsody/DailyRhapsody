@@ -38,9 +38,11 @@ import type {
   PageObjectResponse,
   RichTextItemResponse,
 } from "@notionhq/client/build/src/api-endpoints";
-import { extractBodyMarkdown } from "@/lib/notion";
+import { createHash } from "node:crypto";
+import { extractBodyMarkdown, withNotionRetry } from "@/lib/notion";
 import { assertNotionFetchAllowed, isNotionFetchAllowed, runWithRefreshLock } from "@/lib/notion-quota";
 import { mediaProxyPath, mediaVersion } from "@/lib/notion-media";
+import { canonicalReferenceId } from "@/lib/reference-ids";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -539,13 +541,19 @@ async function warmCoverCache(pages: PageObjectResponse[]): Promise<void> {
     const ttlS =
       Math.floor((new Date(file.file.expiry_time).getTime() - Date.now()) / 1000) -
       SIGNED_URL_SAFETY_S;
-    if (ttlS < 60) continue;
+    if (!Number.isFinite(ttlS) || ttlS < 60) continue;
     const id = page.id.replace(/-/g, "");
     const key = `notion:media:v2:r:${id}:${mediaVersion(file.file.url)}`;
     pipe.set(key, { url: file.file.url, media: "image" }, { ex: ttlS });
     count += 1;
   }
-  if (count > 0) await pipe.exec();
+  if (count > 0) {
+    try {
+      await pipe.exec();
+    } catch {
+      // 预热失败不影响列表本身；媒体路由会回源换签
+    }
+  }
 }
 
 /** 返回 null：后台刷新没拿到跨实例锁（见 lib/notion.ts 同名函数）。 */
@@ -609,7 +617,11 @@ export async function getReferenceItems(): Promise<ReferenceItem[]> {
  */
 export async function getCachedReferenceItems(): Promise<ReferenceItem[] | null> {
   const cached = await getCachedList();
-  return cached?.data ?? null;
+  if (!cached) return null;
+  // 显式失效（Notion 自动化改了公开性/正文）后，鉴权与首屏都不能再拿旧快照，
+  // 否则取消 Public 的条目最长 48h 仍可下载/评论/点赞。
+  if (cached.invalidatedAt > (cached.snapshotAt ?? cached.refreshedAt)) return null;
+  return cached.data;
 }
 
 /** Cron 预热入口：强制重拉并写缓存，返回条数。与用户请求共享 in-flight 去重。 */
@@ -618,12 +630,15 @@ export async function warmReferenceCache(): Promise<number> {
   return items.length;
 }
 
-/** 从单条缓存或列表缓存取一条，不触发 Notion。 */
+/** 从单条缓存或列表缓存取一条，不触发 Notion。id 的两种写法先规范化。 */
 export async function getCachedReferenceItem(id: string): Promise<ReferenceItem | null> {
-  const item = await getCachedItem(id);
+  const canonical = canonicalReferenceId(id);
+  const list = await getCachedList();
+  if (list && list.invalidatedAt > (list.snapshotAt ?? list.refreshedAt)) return null;
+  const item = await getCachedItem(canonical);
   if (item) return item;
-  const items = await getCachedReferenceItems();
-  return items?.find((i) => i.id === id) ?? null;
+  const items = list?.data ?? (await getCachedReferenceItems());
+  return items?.find((i) => canonicalReferenceId(i.id) === canonical) ?? null;
 }
 
 /**
@@ -632,17 +647,21 @@ export async function getCachedReferenceItem(id: string): Promise<ReferenceItem 
  *  - 未命中：同步从 Notion 拉 page meta + body，写缓存
  */
 export async function getReferenceItem(id: string): Promise<ReferenceItem | null> {
-  const cachedFull = await getCachedItem(id);
+  const pageId = canonicalReferenceId(id);
+  const cachedFull = await getCachedItem(pageId);
   if (cachedFull && cachedFull.bodyMarkdown != null) return cachedFull;
 
   try {
     const client = getClient();
-    const page = await client.pages.retrieve({ page_id: id });
+    const page = await withNotionRetry(
+      () => client.pages.retrieve({ page_id: pageId }),
+      Date.now() + 20_000,
+    );
     if (!("properties" in page)) return null;
 
     // proxyMedia：正文图输出稳定 /api/media/b/… 路径，签名过期不会裂图。
     // 归属由 recordReferenceMedia 记录，/api/media 鉴权时再查本条目的公开性。
-    const body = await extractBodyMarkdown(id, { proxyMedia: true });
+    const body = await extractBodyMarkdown(pageId, { proxyMedia: true });
     const item = mapPageToItem(page as PageObjectResponse, body ?? "");
     // 正文没抓到（限流、预算用完）不写 24h 缓存，下次请求再抓
     if (body !== null) await setCachedItem(item);
@@ -688,10 +707,11 @@ export async function getReferenceBodyMediaOwner(
 export async function getReferenceAttachmentUrl(
   pageId: string
 ): Promise<{ url: string; name: string } | null> {
+  const canonical = canonicalReferenceId(pageId);
   const redis = await getRedis();
   if (redis) {
     try {
-      const hit = await redis.get<{ url: string; name: string }>(`${FILE_CACHE_PREFIX}${pageId}`);
+      const hit = await redis.get<{ url: string; name: string }>(`${FILE_CACHE_PREFIX}${canonical}`);
       if (hit?.url) return hit;
     } catch {
       // 当作未命中
@@ -700,7 +720,10 @@ export async function getReferenceAttachmentUrl(
 
   try {
     const client = getClient();
-    const page = await client.pages.retrieve({ page_id: pageId });
+    const page = await withNotionRetry(
+      () => client.pages.retrieve({ page_id: canonical }),
+      Date.now() + 20_000,
+    );
     if (!("properties" in page)) return null;
     const file = firstFilesProp(page as PageObjectResponse, "Attachment");
     if (!file) return null;
@@ -714,7 +737,7 @@ export async function getReferenceAttachmentUrl(
       const ttlS = Math.floor((expiry - Date.now()) / 1000) - SIGNED_URL_SAFETY_S;
       if (redis && ttlS >= 60) {
         try {
-          await redis.set(`${FILE_CACHE_PREFIX}${pageId}`, { url, name }, { ex: ttlS });
+          await redis.set(`${FILE_CACHE_PREFIX}${canonical}`, { url, name }, { ex: ttlS });
         } catch {
           // non-fatal
         }
@@ -738,12 +761,16 @@ export function isReferenceConfigured(): boolean {
   );
 }
 
-/** 下载计数：只加总数，不记用户；失败不影响 302。 */
-export async function recordReferenceDownload(id: string): Promise<void> {
+/** 下载计数：按 IP 日去重，只加总数，不记用户；失败不影响 302。 */
+export async function recordReferenceDownload(id: string, ip: string): Promise<void> {
   const redis = await getRedis();
   if (!redis) return;
   try {
-    await redis.incr(`dr:ref:dl:${id}`);
+    const day = new Date().toISOString().slice(0, 10);
+    const ipHash = createHash("sha256").update(ip).digest("hex").slice(0, 16);
+    const dedupe = `dr:ref:dl:${id}:${day}:${ipHash}`;
+    const first = await redis.set(dedupe, "1", { nx: true, ex: 24 * 60 * 60 });
+    if (first === "OK") await redis.incr(`dr:ref:dl:${id}`);
   } catch {
     // ignore
   }

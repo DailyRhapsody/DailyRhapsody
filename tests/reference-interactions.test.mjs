@@ -10,6 +10,7 @@ import { registerHooks } from "node:module";
 import { test } from "node:test";
 
 const PAGE_ID = "11111111111111111111111111111111";
+const THREAD_ID = "11111111-1111-1111-1111-111111111111";
 
 test("reference likes and comments stay isolated from diary keys", { timeout: 8000 }, async (t) => {
   process.env.AUTH_SECRET = "0123456789abcdef0123456789abcdef";
@@ -208,23 +209,23 @@ test("reference likes and comments stay isolated from diary keys", { timeout: 80
       content: "实测数据补一条",
       avatar: 3,
     });
-    assert.equal(comment.threadId, PAGE_ID);
+    assert.equal(comment.threadId, THREAD_ID);
 
-    assert.ok(hashes.has(`dr:ref:comments:${PAGE_ID}`), "reference hash must exist");
-    assert.ok(sets.get("dr:ref:comments:index")?.has(PAGE_ID), "reference index must contain the id");
-    assert.ok(!hashes.has(`dr:comments:${PAGE_ID}`), "diary hash must stay untouched");
+    assert.ok(hashes.has(`dr:ref:comments:${THREAD_ID}`), "reference hash must exist");
+    assert.ok(sets.get("dr:ref:comments:index")?.has(THREAD_ID), "reference index must contain the id");
+    assert.ok(!hashes.has(`dr:comments:${THREAD_ID}`), "diary hash must stay untouched");
     assert.ok(!sets.has("dr:comments:index"), "diary index must stay untouched");
     assert.ok(!strings.has("dr:comments:gen"), "diary gen must stay untouched");
 
     const { threads } = await comments.getReferenceCommentsMany([PAGE_ID]);
-    assert.equal(threads[PAGE_ID].length, 1);
-    assert.equal(threads[PAGE_ID][0].content, "实测数据补一条");
+    assert.equal(threads[THREAD_ID].length, 1);
+    assert.equal(threads[THREAD_ID][0].content, "实测数据补一条");
 
     const counts = await comments.getReferenceCommentCounts(new Set([PAGE_ID]));
-    assert.equal(counts[PAGE_ID], 1);
+    assert.equal(counts[THREAD_ID], 1);
 
     assert.equal(await comments.deleteReferenceComment(PAGE_ID, comment.id), true);
-    assert.equal(hashes.get(`dr:ref:comments:${PAGE_ID}`).size, 0);
+    assert.equal(hashes.get(`dr:ref:comments:${THREAD_ID}`).size, 0);
     assert.ok(strings.has("dr:ref:comments:gen"), "reference gen should advance on delete");
     assert.ok(!strings.has("dr:comments:gen"));
   });

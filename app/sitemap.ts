@@ -26,7 +26,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     return [
       ...base,
       ...items
-        .filter((item) => item.isPublic)
+        .filter((item) => item.isPublic && !Number.isNaN(new Date(item.clippedAt).getTime()))
         .map((item) => ({
           url: `${siteUrl}/reference/${item.id}`,
           lastModified: new Date(item.clippedAt),

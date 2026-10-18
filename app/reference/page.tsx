@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { getProfile } from "@/lib/profile-store";
-import { getCachedReferenceItems, isReferenceConfigured, type ReferenceItem } from "@/lib/notion-reference";
+import { getCachedReferenceItems, getReferenceItems, isReferenceConfigured, type ReferenceItem } from "@/lib/notion-reference";
 import ReferencePageClient from "./ReferencePageClient";
 
 // app router 默认会缓存，但 dr_seed 必须随每次请求新签发，所以强制 dynamic
@@ -56,15 +56,15 @@ export default async function ReferencePage() {
 
   if (isReferenceConfigured()) {
     try {
-      const cached = await getCachedReferenceItems();
-      if (cached) {
-        const visible = cached.filter((item) => item.isPublic);
-        initialItems = visible.slice(0, PAGE_SIZE);
-        initialTotal = visible.length;
-        initialTagCounts = tagCountsOf(visible);
-      }
+      // 缓存冷时必须回源一次：可索引页面如果只输出空态，爬虫看到的就是空页，
+      // 而客户端 /api/reference 又要过 PoW，爬虫不会跑。
+      const cached = (await getCachedReferenceItems()) ?? (await getReferenceItems());
+      const visible = cached.filter((item) => item.isPublic);
+      initialItems = visible.slice(0, PAGE_SIZE);
+      initialTotal = visible.length;
+      initialTagCounts = tagCountsOf(visible);
     } catch {
-      // 缓存读不到：交给客户端挂载后走受保护的 /api/reference
+      // Notion 限流/未配置：交给客户端挂载后走受保护的 /api/reference
     }
   }
 

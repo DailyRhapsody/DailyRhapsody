@@ -11,7 +11,7 @@ import {
   verifyGateValue,
   verifySeedValue,
 } from "@/lib/scrape-gate";
-import { isLikelyBotUserAgent, withAntiScrapeHeaders } from "@/lib/request-guard";
+import { isLikelyBotUserAgent, isLegitSearchBot, withAntiScrapeHeaders } from "@/lib/request-guard";
 import { isIpBlocked, blockedTtlSeconds, recordViolation } from "@/lib/honeypot";
 import { blockedPageHtml, wantsHtml } from "@/lib/blocked-page";
 import { limitByIp } from "@/lib/upstash-rate-limit";
@@ -203,15 +203,18 @@ export default async function proxy(req: NextRequest) {
     return withAntiScrapeHeaders(NextResponse.next());
   }
 
+  // 分享图/图标是静态衍生路由，不要下发 dr_seed，也不要被 no-store 打死 CDN 缓存
+  if (pathname.startsWith("/reference/") && /\/(opengraph-image|twitter-image)$/.test(pathname)) {
+    return NextResponse.next();
+  }
+
   if (isProtectedPublicApi(pathname, method)) {
     if (!passPublicDataApi(req)) {
-      // 合法浏览器在 GateClient 完成 PoW 握手前会带着 dr_seed 先发出若干并发请求，
-      // 此时尚未拥有 dr_gate 是预期状态 → 返回 403 但不计违规（否则首屏 3 个并发
-      // 受保护请求就会瞬间逼近阈值，刷新一次直接把真人封掉）。
-      // 完全没有 dr_seed 的请求才是典型的脚本/curl 直连抓取，仍需记违规。
       const seedRaw = req.cookies.get(SCRAPE_SEED_COOKIE)?.value;
       const hasLegitSeed = verifySeedValue(seedRaw, ip);
-      if (!hasLegitSeed) {
+      // 合法浏览器在握手前并发请求是预期状态，不计违规；搜索引擎也放行，
+      // 否则 Googlebot 抓一次 /api 就可能把搜索引擎 IP 计入黑名单，连累整站索引。
+      if (!hasLegitSeed && !isLegitSearchBot(ua)) {
         await recordViolation(ip, `no gate cookie on ${pathname}`);
       }
       return withAntiScrapeHeaders(
@@ -242,7 +245,8 @@ export default async function proxy(req: NextRequest) {
   }
 
   if (isGateIssuingPage(pathname, method)) {
-    const indexable = pathname === "/reference" || pathname.startsWith("/reference/");
+    const indexable =
+      pathname === "/reference" || /^\/reference\/[0-9a-f-]{32,36}$/i.test(pathname);
     return withAntiScrapeHeaders(attachSeed(NextResponse.next(), req, ip), { indexable });
   }
 

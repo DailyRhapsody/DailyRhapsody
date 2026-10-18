@@ -14,6 +14,7 @@
 
 import { randomUUID } from "node:crypto";
 import { Redis } from "@upstash/redis";
+import { canonicalReferenceId, isReferencePageId } from "@/lib/reference-ids";
 
 export type ReferenceComment = {
   id: string;
@@ -39,16 +40,14 @@ const redis =
     ? new Redis({ url: redisUrl, token: redisToken, automaticDeserialization: false })
     : null;
 
-const threadKey = (threadId: string) => `dr:ref:comments:${threadId}`;
+const threadKey = (threadId: string) => `dr:ref:comments:${canonicalReferenceId(threadId)}`;
 const INDEX_KEY = "dr:ref:comments:index";
 const COUNTS_CACHE_KEY = "dr:ref:comments:counts";
 const COUNTS_GEN_KEY = "dr:ref:comments:gen";
 const COUNTS_TTL_S = 30;
 
-const PAGE_ID_RE = /^[0-9a-f]{8}-?(?:[0-9a-f]{4}-?){3}[0-9a-f]{12}$/i;
-
 export function isReferenceThreadId(id: string): boolean {
-  return PAGE_ID_RE.test(id);
+  return isReferencePageId(id);
 }
 
 export function isReferenceCommentsConfigured(): boolean {
@@ -100,18 +99,20 @@ const BATCH_BYTES_MAX = 3_000_000;
 export async function getReferenceCommentsMany(
   threadIds: string[]
 ): Promise<{ threads: Record<string, ReferenceComment[]>; pending: string[] }> {
+  // 两种 id 写法必须归一到同一条线程，否则 /reference/<dashed> 与 <dashless> 会各写一份
+  const ids = [...new Set(threadIds.map(canonicalReferenceId))];
   const threads: Record<string, ReferenceComment[]> = {};
-  if (!redis || threadIds.length === 0) {
-    for (const id of threadIds) threads[id] = [];
+  if (!redis || ids.length === 0) {
+    for (const id of ids) threads[id] = [];
     return { threads, pending: [] };
   }
   const pipe = redis.pipeline();
-  for (const id of threadIds) pipe.hgetall(threadKey(id));
+  for (const id of ids) pipe.hgetall(threadKey(id));
   const raws = await pipe.exec();
 
   let bytes = 0;
   const pending: string[] = [];
-  threadIds.forEach((id, i) => {
+  ids.forEach((id, i) => {
     const thread = toThread(raws[i]);
     const size = Buffer.byteLength(JSON.stringify(thread));
     if (bytes > 0 && bytes + size > BATCH_BYTES_MAX) {
@@ -128,19 +129,21 @@ export async function addReferenceComment(
   input: Omit<ReferenceComment, "id" | "createdAt">
 ): Promise<ReferenceComment> {
   if (!redis) throw new ReferenceCommentsUnavailableError();
-  const key = threadKey(input.threadId);
+  const threadId = canonicalReferenceId(input.threadId);
+  const key = threadKey(threadId);
   if ((await redis.hlen(key)) >= MAX_REFERENCE_COMMENTS) {
     throw new ReferenceCommentLimitError();
   }
   const comment: ReferenceComment = {
     ...input,
+    threadId,
     id: `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`,
     createdAt: new Date().toISOString(),
   };
   await redis
     .multi()
     .hset(key, { [comment.id]: JSON.stringify(comment) })
-    .sadd(INDEX_KEY, input.threadId)
+    .sadd(INDEX_KEY, threadId)
     .incr(COUNTS_GEN_KEY)
     .exec();
   return comment;
@@ -151,7 +154,8 @@ export async function deleteReferenceComment(
   commentId: string
 ): Promise<boolean> {
   if (!redis) return false;
-  const removed = (await redis.hdel(threadKey(threadId), commentId)) > 0;
+  const key = threadKey(threadId);
+  const removed = (await redis.hdel(key, commentId)) > 0;
   if (removed) await redis.incr(COUNTS_GEN_KEY);
   return removed;
 }
@@ -161,6 +165,7 @@ export async function getReferenceCommentCounts(
   known: ReadonlySet<string>
 ): Promise<Record<string, number>> {
   if (!redis) return {};
+  const knownIds = new Set([...known].map(canonicalReferenceId));
   const [cached, genRaw] = await redis.mget(COUNTS_CACHE_KEY, COUNTS_GEN_KEY);
   const gen = String(genRaw ?? "0");
   if (typeof cached === "string") {
@@ -168,14 +173,14 @@ export async function getReferenceCommentCounts(
       const hit = JSON.parse(cached) as { gen?: string; counts?: Record<string, number> };
       if (hit.gen === gen && hit.counts) {
         return Object.fromEntries(
-          Object.entries(hit.counts).filter(([id]) => known.has(id))
+          Object.entries(hit.counts).filter(([id]) => knownIds.has(id))
         );
       }
     } catch {
       // 缓存损坏：按未命中处理
     }
   }
-  const ids = (await redis.smembers(INDEX_KEY)).map(String).filter((id) => known.has(id));
+  const ids = (await redis.smembers(INDEX_KEY)).map(String).filter((id) => knownIds.has(id));
   const counts: Record<string, number> = {};
   if (ids.length > 0) {
     const pipe = redis.pipeline();

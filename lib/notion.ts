@@ -21,6 +21,7 @@ import type {
   RichTextItemResponse,
 } from "@notionhq/client/build/src/api-endpoints";
 import { mediaProxyPath, mediaVersion, type MediaKind } from "@/lib/notion-media";
+import { canonicalReferenceId } from "@/lib/reference-ids";
 import { assertNotionFetchAllowed, isNotionFetchAllowed, runWithRefreshLock } from "@/lib/notion-quota";
 import { extractNotionDiaryDate } from "@/lib/notion-diary-date";
 
@@ -407,7 +408,7 @@ function retryDelayMs(e: unknown, attempt: number): number | null {
   return null;
 }
 
-async function withNotionRetry<T>(call: () => Promise<T>, deadline: number): Promise<T> {
+export async function withNotionRetry<T>(call: () => Promise<T>, deadline: number): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; ; attempt++) {
     // 预算用完不再发起新请求；重试等完才超时的，抛回上一次的错误（限流仍按限流处理，媒体代理回 503）
@@ -1069,8 +1070,12 @@ export async function resolveNotionFileUrl(
       }
     } else if (kind === "r") {
       // Reference 卡片封面：优先 Cover 属性，其次 page.cover。
-      // 只认 Notion 托管文件，外链封面不走代理。
-      const page = await withNotionRetry(() => client.pages.retrieve({ page_id: id }), deadline);
+      // 只认 Notion 托管文件，外链封面不走代理。媒体路径里的 id 去掉了连字符，
+      // Notion 的 pages.retrieve 需要规范 id。
+      const page = await withNotionRetry(
+        () => client.pages.retrieve({ page_id: canonicalReferenceId(id) }),
+        deadline
+      );
       if (!("properties" in page)) return null;
       const full = page as PageObjectResponse;
       const coverProp = full.properties["Cover"];

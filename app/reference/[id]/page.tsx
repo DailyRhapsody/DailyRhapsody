@@ -56,11 +56,15 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  if (!isReferenceConfigured()) return { title: "Reference | DailyRhapsody" };
+  if (!isReferenceConfigured()) {
+    return { title: "Reference | DailyRhapsody", robots: { index: false, follow: false } };
+  }
   const item = await getItem(id);
   const admin = await isAdmin();
   // 私密条目不把标题/摘要泄给爬虫与分享卡片
-  if (!item || (!admin && !item.isPublic)) return { title: "Reference | DailyRhapsody" };
+  if (!item || (!admin && !item.isPublic)) {
+    return { title: "Reference | DailyRhapsody", robots: { index: false, follow: false } };
+  }
 
   const description = descriptionOf(item);
   return {
@@ -127,6 +131,14 @@ export default async function ReferenceDetailPage({
         headline: item.name,
         description: item.summary || undefined,
         url: `${siteUrl}/reference/${item.id}`,
+        ...(item.coverPath
+          ? {
+              image:
+                item.coverKind === "external"
+                  ? item.coverPath
+                  : `${siteUrl}${item.coverPath}`,
+            }
+          : {}),
         inLanguage: "zh-CN",
         isPartOf: {
           "@type": "CollectionPage",

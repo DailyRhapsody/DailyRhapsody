@@ -11,8 +11,9 @@ import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { test } from "node:test";
 
-const PAGE_ID = "11111111111111111111111111111111";
-const PAGE_PRIVATE = "22222222222222222222222222222222";
+const PAGE_ID = "11111111-1111-1111-1111-111111111111";
+const PAGE_PRIVATE = "22222222-2222-2222-2222-222222222222";
+const DASHLESS_ID = PAGE_ID.replace(/-/g, "");
 const IMAGE_BLOCK = "33333333333333333333333333333333";
 const DATABASE = "44444444444444444444444444444444";
 
@@ -261,7 +262,7 @@ test("reference store maps new properties, stores stable media paths, and fails 
     const mediaKey = `dr:ref:media:${IMAGE_BLOCK}:${version}`;
     assert.equal(store.get(mediaKey), PAGE_ID);
 
-    const owner = await getReferenceMediaOwner(PAGE_ID);
+    const owner = await getReferenceMediaOwner(DASHLESS_ID);
     assert.deepEqual(owner, { pageId: PAGE_ID, isPublic: true });
     const bodyOwner = await getReferenceBodyMediaOwner(IMAGE_BLOCK, version);
     assert.deepEqual(bodyOwner, { pageId: PAGE_ID, isPublic: true });
@@ -274,6 +275,19 @@ test("reference store maps new properties, stores stable media paths, and fails 
     assert.ok(cached);
     assert.equal(cached.length, 2);
     assert.equal(queryCalls, before);
+  });
+
+  await t.test("explicit invalidation fails closed for media and auth reads", async () => {
+    const key = "notion:reference:items:invalidatedAt";
+    const previous = store.get(key);
+    store.set(key, Date.now() + 1000);
+    try {
+      assert.equal(await getCachedReferenceItems(), null);
+      assert.equal(await getReferenceMediaOwner(DASHLESS_ID), null);
+    } finally {
+      if (previous === undefined) store.delete(key);
+      else store.set(key, previous);
+    }
   });
 
   await t.test("attachment URL is resolved from the page and cached by expiry", async () => {

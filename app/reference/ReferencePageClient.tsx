@@ -13,7 +13,7 @@ const TOP_CARD =
 
 function SkeletonGrid() {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-hidden>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3" role="status" aria-label="资料加载中">
       {Array.from({ length: 6 }).map((_, i) => (
         <div
           key={i}
@@ -79,14 +79,7 @@ export default function ReferencePageClient({
           className="flex gap-3 overflow-x-auto px-4 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           data-hscroll
         >
-          <Link href="/blog" className={TOP_CARD}>
-            <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">博客</p>
-            <p className="text-[0.7rem] text-zinc-500 dark:text-zinc-400">文章与日常</p>
-          </Link>
-          <Link href="/moments" className={TOP_CARD}>
-            <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">动态</p>
-            <p className="text-[0.7rem] text-zinc-500 dark:text-zinc-400">图片与片段</p>
-          </Link>
+          {/* 当前页放第一：手机 375px 下三张卡放不下，第三张会被裁在视口外 */}
           <div
             aria-current="page"
             className={`${TOP_CARD} ring-2 ring-inset ring-zinc-400 dark:ring-zinc-500`}
@@ -96,6 +89,14 @@ export default function ReferencePageClient({
               {total > 0 ? `${total} 条资料` : "行业资料库"}
             </p>
           </div>
+          <Link href="/blog" className={TOP_CARD}>
+            <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">博客</p>
+            <p className="text-[0.7rem] text-zinc-500 dark:text-zinc-400">文章与日常</p>
+          </Link>
+          <Link href="/moments" className={TOP_CARD}>
+            <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">动态</p>
+            <p className="text-[0.7rem] text-zinc-500 dark:text-zinc-400">图片与片段</p>
+          </Link>
         </nav>
 
         <div className="px-4 pt-5">
@@ -157,16 +158,19 @@ export default function ReferencePageClient({
                 </p>
               )}
               {items.length > 0 && (
-                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {items.map((it) => (
-                    <ReferenceCard
-                      key={it.id}
-                      item={it}
-                      like={likes[it.id]}
-                      onLike={toggle}
-                    />
-                  ))}
-                </section>
+                <>
+                  <h2 className="sr-only">资料列表</h2>
+                  <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {items.map((it) => (
+                      <ReferenceCard
+                        key={it.id}
+                        item={it}
+                        like={likes[it.id]}
+                        onLike={toggle}
+                      />
+                    ))}
+                  </section>
+                </>
               )}
               {hasMore && !loading && <div ref={sentinelRef} className="h-4" aria-hidden />}
               {loadingMore && (

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
 import type { ReferenceListItem } from "@/hooks/useReference";
 import type { ReferenceLikeState } from "@/hooks/useReferenceLikes";
 
@@ -100,6 +101,8 @@ export function ReferenceCard({
   const meta = KIND_META[item.kind] ?? KIND_META.external;
   const sourceLabel = item.source || hostnameOf(item.url) || "";
   const hasCover = Boolean(item.coverPath);
+  const [coverFailed, setCoverFailed] = useState(false);
+  const showCover = hasCover && !coverFailed;
 
   return (
     <article
@@ -111,15 +114,16 @@ export function ReferenceCard({
         className="relative block aspect-[16/10] overflow-hidden bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:bg-zinc-800"
         aria-label={item.name || "参考条目"}
       >
-        {hasCover && item.coverKind === "file" ? (
+        {showCover && item.coverKind === "file" ? (
           <Image
             src={item.coverPath!}
             alt=""
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw"
             className="object-cover transition-apple group-hover:scale-[1.02]"
+            onError={() => setCoverFailed(true)}
           />
-        ) : hasCover && item.coverKind === "external" ? (
+        ) : showCover && item.coverKind === "external" ? (
           // 外链封面域名不可枚举，不能用 next/image 的 remotePatterns；
           // 用原生 img 并限制在固定比例容器里，避免布局抖动。
           // eslint-disable-next-line @next/next/no-img-element
@@ -129,6 +133,7 @@ export function ReferenceCard({
             loading="lazy"
             decoding="async"
             className="absolute inset-0 h-full w-full object-cover transition-apple group-hover:scale-[1.02]"
+            onError={() => setCoverFailed(true)}
           />
         ) : (
           <div
@@ -192,7 +197,11 @@ export function ReferenceCard({
             onClick={() => onLike?.(item.id)}
             disabled={!onLike}
             aria-pressed={Boolean(like?.liked)}
-            aria-label={like?.liked ? "取消点赞" : "点赞"}
+            aria-label={
+              like?.liked
+                ? `取消点赞，当前 ${like?.count ?? 0} 人觉得有用`
+                : `点赞，当前 ${like?.count ?? 0} 人觉得有用`
+            }
             className={`inline-flex items-center gap-1 rounded-full px-2 py-1 transition-apple focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
               like?.liked
                 ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-300"

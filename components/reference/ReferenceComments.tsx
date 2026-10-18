@@ -25,8 +25,15 @@ export function ReferenceComments({ threadId }: { threadId: string }) {
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [gateGen, setGateGen] = useState(0);
   const { name, avatar, setName, shuffleAvatar } = useCommentIdentity();
   const honeypotRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const onReady = () => setGateGen((g) => g + 1);
+    window.addEventListener("dr-gate-ready", onReady);
+    return () => window.removeEventListener("dr-gate-ready", onReady);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,7 +50,7 @@ export function ReferenceComments({ threadId }: { threadId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [threadId]);
+  }, [threadId, gateGen]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

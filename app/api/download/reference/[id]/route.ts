@@ -78,7 +78,7 @@ export async function GET(
   }
   if (!target) return json({ error: "文件暂时不可用，请稍后再试" }, 503);
 
-  await recordReferenceDownload(item.id);
+  await recordReferenceDownload(item.id, getClientIpFromRequest(req));
 
   const res = NextResponse.redirect(target, 302);
   // 目标 URL 是临时签名地址；不要把 302 本身写进任何缓存
