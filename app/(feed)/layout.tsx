@@ -68,9 +68,16 @@ export default async function FeedLayout({
   }
 
   let referenceTotal = 0;
+  const referenceThumbs: { src: string; isVideo: boolean }[] = [];
   try {
     const items = await getCachedReferenceItems();
-    referenceTotal = (items ?? []).filter((item) => item.isPublic).length;
+    const publicItems = (items ?? []).filter((item) => item.isPublic);
+    referenceTotal = publicItems.length;
+    for (const item of publicItems) {
+      if (!item.coverPath) continue;
+      referenceThumbs.push({ src: item.coverPath, isVideo: false });
+      if (referenceThumbs.length >= 4) break;
+    }
   } catch {
     referenceTotal = 0;
   }
@@ -81,6 +88,7 @@ export default async function FeedLayout({
     dates,
     momentsThumbs,
     referenceTotal,
+    referenceThumbs,
   };
 
   return (

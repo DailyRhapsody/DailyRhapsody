@@ -10,11 +10,11 @@ import { MomentLightbox } from "@/components/entries/MomentLightbox";
 import { EntryCard } from "@/components/entries/EntryCard";
 import { ScrollTimeline } from "@/components/entries/ScrollTimeline";
 import { CognitiveTreeOverlay } from "@/components/entries/CognitiveTreeOverlay";
-import { entryTimelineRows, momentTimelineRows } from "@/components/entries/timelineRows";
+import { entryTimelineRows, momentTimelineRows, referenceTimelineRows } from "@/components/entries/timelineRows";
 import { MomentsTab } from "@/components/entries/MomentsTab";
 import { getSizeClass } from "@/components/entries/utils";
 import type { MomentsTimelineRow } from "@/components/entries/types";
-import type { ReferenceListItem } from "@/hooks/useReference";
+import { useReference, type ReferenceListItem } from "@/hooks/useReference";
 import { usePublishFeedStats } from "../FeedShell";
 import ReferenceFeed from "../reference/ReferenceFeed";
 import { useProfile, type Profile } from "@/hooks/useProfile";
@@ -32,6 +32,8 @@ const momentHref = () => "/moments";
 const TAB_PATHS = ["/blog", "/moments", "/reference"] as const;
 const ENTRY_MESSAGES = { loading: "正在载入更早的文章", failed: "未能载入这篇文章" };
 const MOMENT_MESSAGES = { loading: "正在载入更早的动态", failed: "未能载入这条动态" };
+const REFERENCE_MESSAGES = { loading: "正在载入更早的资料", failed: "未能载入这条资料" };
+const referenceHref = (id: string) => `/reference/${id}`;
 
 export default function EntriesPageClient({
   initialProfile,
@@ -45,6 +47,7 @@ export default function EntriesPageClient({
   initialReferenceTagCounts?: { name: string; value: number }[];
 }) {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [referenceTag, setReferenceTag] = useState<string | null>(null);
   const {
     items,
     total,
@@ -60,6 +63,24 @@ export default function EntriesPageClient({
     pendingEntryId,
     requestEntry,
   } = useEntries(selectedTag);
+  const {
+    items: referenceItems,
+    total: referenceTotal,
+    tagCounts: referenceTagCounts,
+    loading: referenceLoading,
+    loadingMore: referenceLoadingMore,
+    hasMore: referenceHasMore,
+    sentinelRef: referenceSentinelRef,
+  } = useReference(
+    referenceTag,
+    initialReferenceItems
+      ? {
+          items: initialReferenceItems,
+          total: initialReferenceTotal ?? initialReferenceItems.length,
+          tagCounts: initialReferenceTagCounts ?? [],
+        }
+      : undefined,
+  );
   const totalPosts = total;
   const currentEntries = items;
 
@@ -114,6 +135,17 @@ export default function EntriesPageClient({
   const entryRows = useMemo(() => entryTimelineRows(outline), [outline]);
   const entryIds = useMemo(() => items.map((d) => d.id), [items]);
   const momentRows = useMemo(() => momentTimelineRows(momentsOutline), [momentsOutline]);
+  const referenceRows = useMemo(() => referenceTimelineRows(referenceItems), [referenceItems]);
+  const referenceIds = useMemo(() => referenceItems.map((r) => r.id), [referenceItems]);
+  const referenceThumbs = useMemo(
+    () =>
+      referenceItems
+        .map((r) => r.coverPath)
+        .filter((src): src is string => Boolean(src))
+        .slice(0, 4)
+        .map((src) => ({ src, isVideo: false })),
+    [referenceItems],
+  );
   // 与 MomentsTab 的渲染条件一致：没有图片/视频的动态不渲染，也不参与高亮定位
   const momentIds = useMemo(() => moments.filter((m) => m.media.length > 0).map((m) => String(m.id)), [moments]);
 
@@ -151,6 +183,14 @@ export default function EntriesPageClient({
           dates: [...datesWithPosts],
           momentsThumbs,
         },
+  );
+  usePublishFeedStats(
+    referenceTotal > 0 || referenceThumbs.length > 0
+      ? {
+          ...(referenceTotal > 0 ? { referenceTotal } : {}),
+          ...(referenceThumbs.length > 0 ? { referenceThumbs } : {}),
+        }
+      : {},
   );
 
   useEffect(() => {
@@ -298,7 +338,7 @@ export default function EntriesPageClient({
       <RainbowBrushTrail />
       <ConfettiBurst />
       {/* 必须在 entries-flip-wrapper 之外：它的 perspective/transform 会让 fixed 相对 main 定位 */}
-      {activeTopTab === 0 || activeTopTab === 2 ? (
+      {activeTopTab === 0 ? (
         <ScrollTimeline
           key={`entries:${selectedTag ?? ""}`}
           ariaLabel="文章时间轴"
@@ -306,14 +346,14 @@ export default function EntriesPageClient({
           anchorPrefix="entry-"
           itemIds={entryIds}
           hasMore={hasMore}
-          visible={(entriesFlipped || activeTopTab === 2) && !loading}
+          visible={entriesFlipped && !loading}
           pendingId={pendingEntryId}
           requestId={requestEntry}
           hrefFor={entryHref}
           messages={ENTRY_MESSAGES}
           onOpenTree={() => setTreeOpen(true)}
         />
-      ) : (
+      ) : activeTopTab === 1 ? (
         <ScrollTimeline
           key="moments"
           ariaLabel="动态时间轴"
@@ -326,6 +366,20 @@ export default function EntriesPageClient({
           requestId={requestMoment}
           hrefFor={momentHref}
           messages={MOMENT_MESSAGES}
+        />
+      ) : (
+        <ScrollTimeline
+          key="reference"
+          ariaLabel="资料时间轴"
+          rows={referenceRows}
+          anchorPrefix="reference-"
+          itemIds={referenceIds}
+          hasMore={referenceHasMore}
+          visible={!referenceLoading}
+          pendingId={null}
+          requestId={() => {}}
+          hrefFor={referenceHref}
+          messages={REFERENCE_MESSAGES}
         />
       )}
       <div className="entries-flip-wrapper">
@@ -454,9 +508,15 @@ export default function EntriesPageClient({
             />
           ) : (
             <ReferenceFeed
-              initialItems={initialReferenceItems}
-              initialTotal={initialReferenceTotal}
-              initialTagCounts={initialReferenceTagCounts}
+              items={referenceItems}
+              total={referenceTotal}
+              tagCounts={referenceTagCounts}
+              loading={referenceLoading}
+              loadingMore={referenceLoadingMore}
+              hasMore={referenceHasMore}
+              sentinelRef={referenceSentinelRef}
+              selectedTag={referenceTag}
+              onTagClick={(tag) => setReferenceTag((prev) => (prev === tag ? null : tag))}
             />
           )}
           </div>

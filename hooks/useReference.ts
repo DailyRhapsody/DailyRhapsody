@@ -62,8 +62,9 @@ export function useReference(
     initial?.tagCounts ?? [],
   );
   const [loadingMore, setLoadingMore] = useState(false);
-  /** 首屏数据由服务端给过：挂载时不要再打一次 /api/reference，否则 SSR 白做 */
-  const skipHydrationFetchRef = useRef(Boolean(initial));
+  /** 首屏数据由服务端给过：挂载时不要再打一次 /api/reference，否则 SSR 白做。
+   *  空列表不算「给过」——缓存冷时服务端可能只回空态，仍需客户端走 gate 补拉。 */
+  const skipHydrationFetchRef = useRef(Boolean(initial?.items.length));
 
   /* ── gate 就绪时的重加载触发器 ── */
   const [gateGen, setGateGen] = useState(0);
