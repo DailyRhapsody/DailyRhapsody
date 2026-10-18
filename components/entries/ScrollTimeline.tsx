@@ -169,6 +169,7 @@ export const ScrollTimeline = memo(function ScrollTimeline({
   requestId,
   hrefFor,
   messages,
+  onOpenTree,
 }: {
   ariaLabel: string;
   /** 当前筛选下的全部条目（含未加载的），顺序与列表一致 */
@@ -187,6 +188,8 @@ export const ScrollTimeline = memo(function ScrollTimeline({
   hrefFor: (id: string) => string;
   /** 读屏播报：补载中、补载失败 */
   messages: { loading: string; failed: string };
+  /** 打开思维大树入口；只在博客时间轴传入，动态页不显示 */
+  onOpenTree?: () => void;
 }) {
   const wide = useSyncExternalStore(
     subscribeWidePointer,
@@ -746,6 +749,23 @@ export const ScrollTimeline = memo(function ScrollTimeline({
         visible && appeared ? "opacity-100" : "opacity-0"
       }`}
     >
+      {onOpenTree && (
+        <div className="mb-1 flex pl-4">
+          <button
+            type="button"
+            onClick={onOpenTree}
+            aria-label="打开思维大树"
+            title="思维大树"
+            className="flex h-7 w-7 items-center justify-center text-zinc-400 transition-colors hover:text-zinc-600 focus:outline-none focus-visible:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300 dark:focus-visible:text-zinc-200"
+          >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 21v-7" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 14c-2.3 0-4.1-1.7-4.1-3.8 0-1.3.7-2.4 1.9-3.1C9.6 5.8 10.7 5 12 5s2.4.8 2.2 2.1c1.2.7 1.9 1.8 1.9 3.1 0 2.1-1.8 3.8-4.1 3.8Z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 21h8" />
+            </svg>
+          </button>
+        </div>
+      )}
       <div
         ref={containerRef}
         className="relative overflow-hidden py-1"
