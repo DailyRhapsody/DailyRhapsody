@@ -144,7 +144,7 @@ export function PixelAstronaut({
       >
         <Rects runs={BODY_RUNS} />
         {ai && (
-          <g className="dr-pet-ai" transform="translate(1 -1) scale(0.65)">
+          <g className="dr-pet-ai" transform="translate(-3 -3) scale(0.65)">
             <g fill="#18181b">
               {AI_RUNS.map((r) => <rect key={`ai-o-${r.x}-${r.y}`} x={r.x - .3} y={r.y - .3} width={r.w + .6} height={1.6} />)}
             </g>
