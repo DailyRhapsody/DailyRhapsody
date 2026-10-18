@@ -145,7 +145,7 @@ test("折叠态类名不含任何标题层级 token，展开态才放开 h1-h3",
 
   // 阅读态（Reference / 后台编辑预览）必须显式接上同一套标题层级
   const fs = await import("node:fs/promises");
-  for (const file of ["app/reference/[id]/page.tsx", "app/admin/MarkdownEditor.tsx"]) {
+  for (const file of ["app/(detail)/reference/[id]/page.tsx", "app/admin/MarkdownEditor.tsx"]) {
     const src = await fs.readFile(new URL(`../${file}`, import.meta.url), "utf8");
     assert.ok(src.includes("markdownHeadingClass"), `${file} 少了标题层级`);
   }

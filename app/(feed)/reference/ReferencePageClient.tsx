@@ -3,10 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
-import StickyProfileHeader from "@/components/StickyProfileHeader";
 import { ReferenceCard } from "@/components/ReferenceCard";
 import { useHorizontalSwipeNavigation } from "@/hooks/useHorizontalSwipeNavigation";
-import { useProfile, type Profile } from "@/hooks/useProfile";
 import { useReference, type ReferenceListItem } from "@/hooks/useReference";
 import { useReferenceLikes } from "@/hooks/useReferenceLikes";
 
@@ -34,18 +32,15 @@ function SkeletonGrid() {
 }
 
 export default function ReferencePageClient({
-  initialProfile,
   initialItems,
   initialTotal,
   initialTagCounts,
 }: {
-  initialProfile: Profile | null;
   initialItems?: ReferenceListItem[];
   initialTotal?: number;
   initialTagCounts?: { name: string; value: number }[];
 }) {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const profile = useProfile(initialProfile);
   const {
     items,
     total,
@@ -79,8 +74,6 @@ export default function ReferencePageClient({
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-100 to-white font-sans text-zinc-900 dark:from-black dark:via-zinc-950 dark:to-black dark:text-zinc-50">
       <main id="reference" className="mx-auto flex max-w-4xl flex-col pb-8">
-        <StickyProfileHeader profile={profile} />
-
         {/* 站内第三个位置：和博客、动态并列。真跳转，不进 /blog 的 replaceState 状态机。 */}
         <nav
           aria-label="内容切换，左右滑动可切换"
