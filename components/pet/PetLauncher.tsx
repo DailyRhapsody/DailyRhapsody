@@ -80,6 +80,12 @@ function Launcher() {
           open ? "max-lg:invisible" : ""
         }`}
       >
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -left-1 -top-1 z-10 rounded-[3px] bg-zinc-900/90 px-1 py-[1px] font-mono text-[8px] font-semibold leading-none tracking-[0.06em] text-white shadow-sm ring-1 ring-white/20"
+        >
+          AI
+        </span>
         <PixelAstronaut scale={3} thinking={thinking} />
         {!open && (
           <span className="pointer-events-none absolute right-full top-1/2 mr-2 hidden -translate-y-1/2 whitespace-nowrap rounded-full bg-white/80 px-3 py-1.5 text-[13px] text-zinc-700 opacity-0 shadow-sm ring-1 ring-black/5 backdrop-blur-md transition-apple group-hover:opacity-100 dark:bg-zinc-900/80 dark:text-zinc-200 dark:ring-white/10 sm:block">
