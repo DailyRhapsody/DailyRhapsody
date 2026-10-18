@@ -669,7 +669,9 @@ export async function getReferenceItem(id: string): Promise<ReferenceItem | null
     if (body !== null) await setCachedItem(item);
     return item;
   } catch {
-    return null;
+    // Notion 限流/超时/预算耗尽时，已知条目不能当作 404：它已在 sitemap 里，
+    // 一次 429 就让爬虫记成已删除。回退列表缓存里的元数据，正文留空，下次再补。
+    return getCachedReferenceItem(pageId);
   }
 }
 
