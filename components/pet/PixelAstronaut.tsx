@@ -75,7 +75,7 @@ function toRuns(sprite: string[]): Run[] {
 }
 
 
-/** 5×7 像素字：AI 写在手持牌上，整组跟着 dr-pet-float 一起浮动 */
+/** 5×7 像素字：AI 直接画在头部左上角，跟随 dr-pet-float 一起浮动 */
 const AI_GLYPHS: Record<string, string[]> = {
   A: ["00100", "01010", "10001", "10001", "11111", "10001", "10001"],
   I: ["111", "010", "010", "010", "010", "010", "111"],
@@ -104,12 +104,6 @@ const AI_RUNS = (() => {
   return runs;
 })();
 
-/** 牌子的木柄，从牌底斜着落到左手 */
-const SIGN_STICK = [
-  [-7, 8], [-7, 9], [-6, 10], [-6, 11], [-5, 12], [-5, 13], [-4, 14], [-4, 15],
-  [-3, 16], [-3, 17], [-2, 18], [-1, 18], [0, 19], [1, 19], [2, 19], [3, 19],
-];
-
 const BODY_RUNS = toRuns(ASTRONAUT).filter((r) => r.c !== "E");
 const EYE_RUNS = toRuns(ASTRONAUT).filter((r) => r.c === "E");
 
@@ -134,7 +128,7 @@ export function PixelAstronaut({
   thinking?: boolean;
   /** 面板头像等小尺寸处不漂浮 */
   still?: boolean;
-  /** 右手举 AI 牌子；只给右下角入口使用 */
+  /** 在头部左上角画像素字 AI；只给右下角入口使用 */
   ai?: boolean;
 }) {
   const w = ASTRONAUT[0].length;
@@ -150,14 +144,12 @@ export function PixelAstronaut({
       >
         <Rects runs={BODY_RUNS} />
         {ai && (
-          <g className="dr-pet-ai-sign">
-            <g fill="#5e3b20">
-              {SIGN_STICK.map(([x, y]) => <rect key={`stick-${x}-${y}`} x={x} y={y} width={1} height={1} />)}
+          <g className="dr-pet-ai" transform="translate(1 -1) scale(1.3)">
+            <g fill="#18181b">
+              {AI_RUNS.map((r) => <rect key={`ai-o-${r.x}-${r.y}`} x={r.x - .3} y={r.y - .3} width={r.w + .6} height={1.6} />)}
             </g>
-            <rect x={-13} y={-1} width={12} height={9} fill="#27272a" />
-            <rect x={-12} y={0} width={10} height={7} fill="#f6e7c8" />
-            <g fill="#27272a" transform="translate(-3 -1)">
-              {AI_RUNS.map((r) => <rect key={`ai-${r.x}-${r.y}`} x={r.x} y={r.y} width={r.w} height={1} />)}
+            <g fill="#f8d488">
+              {AI_RUNS.map((r) => <rect key={`ai-f-${r.x}-${r.y}`} x={r.x} y={r.y} width={r.w} height={1} />)}
             </g>
           </g>
         )}
