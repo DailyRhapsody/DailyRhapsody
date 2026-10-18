@@ -13,6 +13,7 @@ import {
   setReferenceLike,
 } from "@/lib/reference-likes";
 import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
+import { canonicalReferenceId } from "@/lib/reference-ids";
 import { rejectCrossSiteWrite } from "@/lib/same-origin";
 import { limitByIp } from "@/lib/upstash-rate-limit";
 
@@ -60,9 +61,14 @@ export async function POST(
 
   const { id } = await params;
   if (!PAGE_ID_RE.test(id)) return json({ error: "Not found" }, 404);
+  const canonical = canonicalReferenceId(id);
 
   const [admin, cached] = await Promise.all([isAdmin(), getCachedReferenceItem(id)]);
-  const item = cached ?? (await getReferenceItems()).find((x) => x.id === id);
+  const item =
+    cached ??
+    (await getReferenceItems()).find(
+      (x) => canonicalReferenceId(x.id) === canonical
+    );
   if (!item || (!admin && !item.isPublic)) return json({ error: "Not found" }, 404);
 
   if (!admin && !(await limitByIp("reference:like:day", getClientIpFromRequest(req), 50, "1 d"))) {

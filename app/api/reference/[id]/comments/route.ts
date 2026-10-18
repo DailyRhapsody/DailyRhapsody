@@ -12,6 +12,7 @@ import {
   ReferenceCommentsUnavailableError,
 } from "@/lib/reference-comments";
 import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
+import { canonicalReferenceId } from "@/lib/reference-ids";
 import { rejectCrossSiteWrite } from "@/lib/same-origin";
 import { limitByIp } from "@/lib/upstash-rate-limit";
 
@@ -89,7 +90,10 @@ export async function POST(
 
   const [admin, items] = await Promise.all([isAdmin(), getCachedReferenceItems()]);
   if (!items && !admin) return json({ error: "服务暂时不可用，请稍后再试" }, 503);
-  const item = (items ?? []).find((x) => x.id === id);
+  const canonical = canonicalReferenceId(id);
+  const item = (items ?? []).find(
+    (x) => canonicalReferenceId(x.id) === canonical
+  );
   if (!item || (!admin && !item.isPublic)) return json({ error: "条目不存在" }, 404);
 
   if (!admin && !(await limitByIp("reference:comments:create:day", getClientIpFromRequest(req), 40, "1 d"))) {

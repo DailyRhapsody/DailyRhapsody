@@ -602,10 +602,12 @@ function triggerBackgroundRefresh(): void {
 export async function getReferenceItems(): Promise<ReferenceItem[]> {
   const cached = await getCachedList();
   if (cached) {
-    const stale =
-      Date.now() - cached.refreshedAt > CACHE_STALE_MS ||
-      cached.invalidatedAt > (cached.snapshotAt ?? cached.refreshedAt);
-    if (stale) triggerBackgroundRefresh();
+    // 公开性/正文被显式标记失效时必须同步换新：这里不能再走 SWR 返回旧快照，
+    // 否则取消 Public 的条目在下载/评论/点赞路径上还会被当成公开。
+    if (cached.invalidatedAt > (cached.snapshotAt ?? cached.refreshedAt)) {
+      return refreshNow();
+    }
+    if (Date.now() - cached.refreshedAt > CACHE_STALE_MS) triggerBackgroundRefresh();
     return cached.data;
   }
   return refreshNow();

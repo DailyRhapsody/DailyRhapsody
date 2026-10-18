@@ -21,6 +21,7 @@ import {
   type ReferenceItem,
 } from "@/lib/notion-reference";
 import { withAntiScrapeHeaders } from "@/lib/request-guard";
+import { canonicalReferenceId } from "@/lib/reference-ids";
 import { limitByIp } from "@/lib/upstash-rate-limit";
 
 const PAGE_ID_RE = /^[0-9a-f]{8}-?(?:[0-9a-f]{4}-?){3}[0-9a-f]{12}$/i;
@@ -32,9 +33,10 @@ function json(body: unknown, status = 200) {
 }
 
 async function findItem(id: string): Promise<ReferenceItem | null> {
+  const canonical = canonicalReferenceId(id);
   const cached = await getCachedReferenceItems();
   const items = cached ?? (await getReferenceItems());
-  return items.find((item) => item.id === id) ?? null;
+  return items.find((item) => canonicalReferenceId(item.id) === canonical) ?? null;
 }
 
 export async function GET(
