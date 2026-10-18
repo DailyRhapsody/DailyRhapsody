@@ -81,6 +81,7 @@ function freshEnv() {
 function registerMocks() {
   return registerHooks({
     resolve(specifier, context, next) {
+      if (specifier === "next/server") return next("next/server.js", context);
       const fromSync = context.parentURL?.includes("/lib/comment-sync.ts");
       if (specifier === "./comments-store" && fromSync) {
         return { url: "mock:comments-store", shortCircuit: true, format: "module" };
@@ -449,6 +450,35 @@ test("创建处理期间删除事件先到：不再写入评论", async () => {
   assert.equal(result, "ignored");
   assert.equal(env.comments.size, 0);
   restore();
+});
+
+
+test("未配置 secret 时，订阅验证请求仍然 200", async () => {
+  delete process.env.NOTION_WEBHOOK_SECRET;
+  const { POST } = await import("../app/api/notion/webhook/route.ts");
+  const res = await POST(
+    new Request("https://example.com/api/notion/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ verification_token: "tok" }),
+    })
+  );
+  assert.equal(res.status, 200);
+  process.env.NOTION_WEBHOOK_SECRET = SECRET;
+});
+
+test("未配置 secret 时，普通事件仍然 503", async () => {
+  delete process.env.NOTION_WEBHOOK_SECRET;
+  const { POST } = await import("../app/api/notion/webhook/route.ts");
+  const res = await POST(
+    new Request("https://example.com/api/notion/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: "e1", type: "comment.created" }),
+    })
+  );
+  assert.equal(res.status, 503);
+  process.env.NOTION_WEBHOOK_SECRET = SECRET;
 });
 
 test.after(() => hooks.deregister?.());

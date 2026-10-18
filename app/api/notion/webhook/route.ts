@@ -17,10 +17,6 @@ export const maxDuration = 60;
 const MAX_BODY_BYTES = 64 * 1024;
 
 export async function POST(req: Request) {
-  const secret = process.env.NOTION_WEBHOOK_SECRET?.trim();
-  if (!secret) {
-    return NextResponse.json({ error: "Not configured" }, { status: 503 });
-  }
   let raw: string;
   try {
     raw = await req.text();
@@ -38,9 +34,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  // 订阅验证请求：只带 verification_token，没有事件结构，也不需要签名
+  // 订阅验证请求：只带 verification_token，没有事件结构，也不需要签名。
+  // 必须在 secret 检查之前 ACK——它发生在 secret 还没配置的时候，回 503 会让
+  // Notion 认为端点不可达，订阅建不起来。
   if (payload && typeof payload === "object" && typeof (payload as { verification_token?: unknown }).verification_token === "string") {
     return NextResponse.json({ ok: true });
+  }
+
+  const secret = process.env.NOTION_WEBHOOK_SECRET?.trim();
+  if (!secret) {
+    return NextResponse.json({ error: "Not configured" }, { status: 503 });
   }
 
   if (!verifyNotionSignature(raw, req.headers.get("x-notion-signature"), secret)) {
