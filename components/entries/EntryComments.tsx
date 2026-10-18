@@ -6,6 +6,7 @@ import { syncCommentCount } from "@/hooks/useCommentCounts";
 import { useCommentIdentity } from "@/hooks/useCommentIdentity";
 import { loadCommentThread, registerCommentThread, updateCachedThread } from "@/lib/comment-threads";
 import { COMMENT_AVATAR_COUNT, CommentAvatar } from "./CommentAvatar";
+import { CommentEmojiPicker } from "./CommentEmojiPicker";
 import { DefaultAvatar } from "./DefaultAvatar";
 import type { Comment } from "./types";
 
@@ -564,6 +565,22 @@ function CommentComposer({
     ta.style.height = `${Math.min(ta.scrollHeight, TEXTAREA_MAX_PX)}px`;
   }, [content]);
 
+  /** 表情按钮：插到光标处，插完把焦点与光标还回输入框 */
+  function insertEmoji(emoji: string) {
+    const ta = textareaRef.current;
+    const start = ta?.selectionStart ?? content.length;
+    const end = ta?.selectionEnd ?? start;
+    // 剩余空间放不下一个完整 emoji（UTF-16 下是双码元）就不插，避免把代理对切成半个字符
+    if (content.length - (end - start) + emoji.length > MAX_CONTENT) return;
+    const next = content.slice(0, start) + emoji + content.slice(end);
+    setContent(next);
+    requestAnimationFrame(() => {
+      ta?.focus();
+      const pos = Math.min(start + emoji.length, MAX_CONTENT);
+      ta?.setSelectionRange(pos, pos);
+    });
+  }
+
   async function submit() {
     const text = content.trim();
     if (!text || submitting) return;
@@ -620,40 +637,43 @@ function CommentComposer({
         </button>
       )}
       <div className="min-w-0 flex-1">
-        <textarea
-          ref={textareaRef}
-          value={content}
-          onChange={(e) => {
-            setContent(e.target.value);
-            if (error) setError(null);
-          }}
-          onKeyDown={(e) => {
-            // 输入法候选框打开时的回车 / Esc 属于输入法（确认、取消候选），不当作发送或关闭
-            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-            if (e.key === "Escape") {
-              e.currentTarget.blur();
-              setEngaged(false);
-              if (!content && showCancel) onCancel();
-              return;
-            }
-            if (e.key !== "Enter") return;
-            // 桌面端回车发送、Shift+回车换行（同 Notion）；触屏回车换行，用按钮发送
-            const send =
-              e.metaKey ||
-              e.ctrlKey ||
-              (!e.shiftKey && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
-            if (!send) return;
-            e.preventDefault();
-            void submit();
-          }}
-          rows={1}
-          maxLength={MAX_CONTENT}
-          // 全局 :focus-visible 黑框是未分层样式，工具类盖不住；输入框有光标和展开的昵称栏，不需要再描边
-          style={{ outline: "none" }}
-          placeholder={divided ? "回复…" : "添加评论…"}
-          aria-label="评论内容"
-          className="block min-h-6 w-full resize-none bg-transparent py-0.5 text-[0.8rem] leading-5 text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
-        />
+        <div className="relative">
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={(e) => {
+              setContent(e.target.value);
+              if (error) setError(null);
+            }}
+            onKeyDown={(e) => {
+              // 输入法候选框打开时的回车 / Esc 属于输入法（确认、取消候选），不当作发送或关闭
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+              if (e.key === "Escape") {
+                e.currentTarget.blur();
+                setEngaged(false);
+                if (!content && showCancel) onCancel();
+                return;
+              }
+              if (e.key !== "Enter") return;
+              // 桌面端回车发送、Shift+回车换行（同 Notion）；触屏回车换行，用按钮发送
+              const send =
+                e.metaKey ||
+                e.ctrlKey ||
+                (!e.shiftKey && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
+              if (!send) return;
+              e.preventDefault();
+              void submit();
+            }}
+            rows={1}
+            maxLength={MAX_CONTENT}
+            // 全局 :focus-visible 黑框是未分层样式，工具类盖不住；输入框有光标和展开的昵称栏，不需要再描边
+            style={{ outline: "none" }}
+            placeholder={divided ? "回复…" : "添加评论…"}
+            aria-label="评论内容"
+            className="block min-h-6 w-full resize-none bg-transparent py-0.5 pr-7 text-[0.8rem] leading-5 text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+          />
+          <CommentEmojiPicker onPick={insertEmoji} />
+        </div>
         {active && (
           <div className="mt-1.5 flex items-center gap-2">
             {canEdit ? (
