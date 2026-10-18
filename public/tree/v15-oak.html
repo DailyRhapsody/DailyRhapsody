@@ -248,7 +248,16 @@ function generate(notes, nF){
         const alpha = rad(tip.order === 1 ? 44 + 18 * R()
           : tip.order === 2 ? 42 + 22 * R()
           : tip.order === 3 ? 50 + 24 * R() : 58 + 26 * R());
-        const phi = k * GA + (R() - .5) * 1.6 + year * .37;
+        // 一级主枝按扇区均分，避免 5 个随机方位全挤在树干同一侧；
+        // 二三级侧枝按黄金角依次换向，让每个枝系自己也有左右。
+        let phi;
+        if (tip.order === 1) {
+          phi = (scaffoldCount + .5) * (Math.PI * 2 / 5) + (R() - .5) * .34;
+        } else {
+          const slot = b.latCount || 0;
+          b.latCount = slot + 1;
+          phi = slot * GA + (R() - .5) * .55 + (tip.order === 2 ? .45 : tip.order === 3 ? .95 : 1.25);
+        }
         const dir = lateral(tanAt(b.pts, t), phi, alpha);
         const len = tip.order === 1 ? TH * .050 : tip.order === 2 ? TH * .035 : TH * .022;
         const child = childShoot(b, base, dir, len * (.85 + .3 * R()), tip.order + 1,
