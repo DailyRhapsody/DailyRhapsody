@@ -19,6 +19,9 @@ import { ReferenceComments } from "@/components/reference/ReferenceComments";
 
 export const dynamic = "force-dynamic";
 
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://tengjun.org";
+
 /** metadata 与页面共用同一次请求，避免各拉一次 Notion/Redis */
 const getItem = cache((id: string) => getReferenceItem(id));
 
@@ -117,8 +120,31 @@ export default async function ReferenceDetailPage({
   const renderedHtml = item.bodyMarkdown ? renderMarkdown(item.bodyMarkdown) : "";
   const canDownload = item.license !== "link-only" && item.attachment != null;
 
+  const jsonLd = item.isPublic
+    ? {
+        "@context": "https://schema.org",
+        "@type": item.kind === "test" ? "Report" : "Article",
+        headline: item.name,
+        description: item.summary || undefined,
+        url: `${siteUrl}/reference/${item.id}`,
+        inLanguage: "zh-CN",
+        isPartOf: {
+          "@type": "CollectionPage",
+          name: "DailyRhapsody Reference",
+          url: `${siteUrl}/reference`,
+        },
+      }
+    : null;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-100 to-white font-sans text-zinc-900 dark:from-black dark:via-zinc-950 dark:to-black dark:text-zinc-50">
+      {jsonLd && (
+        <script
+          type="application/ld+json"
+          // 防止正文标题里的 </script> 提前闭合
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }}
+        />
+      )}
       {/* 顶部固定 bar：返回 + 跳原文 */}
       <div className="sticky top-0 z-30 border-b border-zinc-200 bg-white/80 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/80">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3 text-sm">

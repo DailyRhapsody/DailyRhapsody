@@ -178,8 +178,9 @@ export function withAntiScrapeHeaders(res: NextResponse, opts: { indexable?: boo
   if (ct && !/charset/i.test(ct)) res.headers.set("Content-Type", `${ct}; charset=utf-8`);
   // Reference 是公开资料库，页面需要被搜索引擎收录；其余页面/接口继续 noindex。
   // 只对成功页面传 indexable，封禁/限流/错误分支仍保持 noindex。
-  if (opts.indexable) res.headers.delete("X-Robots-Tag");
-  else res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  if (opts.indexable) {
+    res.headers.delete("X-Robots-Tag");
+  } else res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
   res.headers.set("Cache-Control", "private, no-store");
   return res;
 }

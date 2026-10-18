@@ -40,7 +40,7 @@ import type {
 } from "@notionhq/client/build/src/api-endpoints";
 import { extractBodyMarkdown } from "@/lib/notion";
 import { assertNotionFetchAllowed, isNotionFetchAllowed, runWithRefreshLock } from "@/lib/notion-quota";
-import { mediaProxyPath } from "@/lib/notion-media";
+import { mediaProxyPath, mediaVersion } from "@/lib/notion-media";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -517,8 +517,35 @@ async function refreshFromNotion(): Promise<ReferenceItem[]> {
     (a, b) => new Date(b.clippedAt).getTime() - new Date(a.clippedAt).getTime()
   );
 
+  // 列表已经拿到封面签名地址，顺手预热媒体缓存，避免首屏 N 张封面各自回源
+  await warmCoverCache(pages);
   await setCachedList(items, snapshotAt);
   return items;
+}
+
+/**
+ * 列表查询已经拿到了封面签名地址。顺手把它写进媒体代理的缓存键，
+ * 首屏 N 张封面就不用每张再回源 Notion（共享 token 约 3 req/s，冷启动必 429）。
+ * key 形状必须与 lib/notion.ts 的 resolveNotionFileUrl 完全一致。
+ */
+async function warmCoverCache(pages: PageObjectResponse[]): Promise<void> {
+  const redis = await getRedis();
+  if (!redis) return;
+  const pipe = redis.pipeline();
+  let count = 0;
+  for (const page of pages) {
+    const file = firstFilesProp(page, "Cover") ?? (page.cover as NotionFileValue | null);
+    if (file?.type !== "file" || !file.file) continue;
+    const ttlS =
+      Math.floor((new Date(file.file.expiry_time).getTime() - Date.now()) / 1000) -
+      SIGNED_URL_SAFETY_S;
+    if (ttlS < 60) continue;
+    const id = page.id.replace(/-/g, "");
+    const key = `notion:media:v2:r:${id}:${mediaVersion(file.file.url)}`;
+    pipe.set(key, { url: file.file.url, media: "image" }, { ex: ttlS });
+    count += 1;
+  }
+  if (count > 0) await pipe.exec();
 }
 
 /** 返回 null：后台刷新没拿到跨实例锁（见 lib/notion.ts 同名函数）。 */

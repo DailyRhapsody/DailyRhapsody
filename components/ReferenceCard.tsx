@@ -58,6 +58,36 @@ function HeartIcon({ filled }: { filled: boolean }) {
   );
 }
 
+function KindIcon({ kind }: { kind: ReferenceListItem["kind"] }) {
+  const cls = "h-4 w-4";
+  if (kind === "commentary") {
+    return (
+      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 7H6a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v3l4-3V9a2 2 0 0 0-2-2Zm9 0h-3a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v3l4-3V9a2 2 0 0 0-2-2Z" />
+      </svg>
+    );
+  }
+  if (kind === "test") {
+    return (
+      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 19h16M7 16V9m5 7V5m5 11v-4" />
+      </svg>
+    );
+  }
+  if (kind === "interview") {
+    return (
+      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3Zm-6 8a6 6 0 0 0 12 0M12 18v3m-3 0h6" />
+      </svg>
+    );
+  }
+  return (
+    <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 3h7l4 4v14H7V3Zm7 0v5h4M9.5 12h6M9.5 15.5h6" />
+    </svg>
+  );
+}
+
 export function ReferenceCard({
   item,
   like,
@@ -78,7 +108,7 @@ export function ReferenceCard({
     >
       <Link
         href={`/reference/${item.id}`}
-        className="relative block aspect-[4/3] overflow-hidden bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:bg-zinc-800"
+        className="relative block aspect-[16/10] overflow-hidden bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:bg-zinc-800"
         aria-label={item.name || "参考条目"}
       >
         {hasCover && item.coverKind === "file" ? (
@@ -102,13 +132,15 @@ export function ReferenceCard({
           />
         ) : (
           <div
-            className={`flex h-full w-full flex-col justify-between bg-gradient-to-br p-4 ${meta.gradient}`}
+            className={`flex h-full w-full items-end justify-between bg-gradient-to-br p-4 ${meta.gradient}`}
           >
+            <span
+              className={`inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/70 shadow-sm dark:bg-zinc-950/50 ${meta.text}`}
+            >
+              <KindIcon kind={item.kind} />
+            </span>
             <span className={`text-[0.7rem] font-medium tracking-wide ${meta.text}`}>
               {meta.label}
-            </span>
-            <span className="line-clamp-2 text-lg font-semibold leading-snug text-zinc-800 dark:text-zinc-100">
-              {item.name || "(无标题)"}
             </span>
           </div>
         )}
