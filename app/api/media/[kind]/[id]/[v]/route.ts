@@ -20,6 +20,7 @@ import { getClientIpFromRequest } from "@/lib/client-ip";
 import { getCachedDiaries, resolveNotionFileUrl } from "@/lib/notion";
 import { mediaPathPrefix, type MediaKind } from "@/lib/notion-media";
 import { getCachedMoments } from "@/lib/notion-moments";
+import { getReferenceBodyMediaOwner, getReferenceMediaOwner } from "@/lib/notion-reference";
 import { limitByIp } from "@/lib/upstash-rate-limit";
 
 const PUBLIC_CACHE = "public, max-age=300, s-maxage=300";
@@ -38,10 +39,16 @@ function upstreamBusy() {
 type Visibility = "public" | "private" | "unknown" | "no-cache";
 
 async function lookupVisibility(kind: MediaKind, id: string, v: string): Promise<Visibility> {
+  // Reference 封面：只认 Reference 缓存里的公开性，不能拿日记/moments 的命中做授权。
+  if (kind === "r") {
+    const owner = await getReferenceMediaOwner(id);
+    if (!owner) return "unknown";
+    return owner.isPublic ? "public" : "private";
+  }
+
   const path = `${mediaPathPrefix(kind, id)}${v}`;
   const diaries = await getCachedDiaries();
   const moments = kind === "b" ? await getCachedMoments() : [];
-  if (!diaries && !moments) return "no-cache";
 
   let found = false;
   for (const d of diaries ?? []) {
@@ -55,6 +62,18 @@ async function lookupVisibility(kind: MediaKind, id: string, v: string): Promise
     if (m.isPublic) return "public";
     found = true;
   }
+
+  // Reference 正文图：blockId:version → pageId，再查该条目的公开性。
+  // 与日记/moments 同一套「一处公开即公开」规则。
+  if (kind === "b") {
+    const owner = await getReferenceBodyMediaOwner(id, v);
+    if (owner) {
+      if (owner.isPublic) return "public";
+      found = true;
+    }
+  }
+
+  if (!diaries && !moments && !found) return "no-cache";
   return found ? "private" : "unknown";
 }
 
@@ -63,7 +82,7 @@ export async function GET(
   { params }: { params: Promise<{ kind: string; id: string; v: string }> }
 ) {
   const { kind, id, v } = await params;
-  if ((kind !== "b" && kind !== "p") || !/^[0-9a-f]{32}$/.test(id) || !/^[0-9a-f]{10}$/.test(v)) {
+  if ((kind !== "b" && kind !== "p" && kind !== "r") || !/^[0-9a-f]{32}$/.test(id) || !/^[0-9a-f]{10}$/.test(v)) {
     return jsonError(404, "Not found");
   }
 

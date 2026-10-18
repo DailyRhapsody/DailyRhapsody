@@ -4,7 +4,7 @@
  * 正文图片全部 403、卡片缩略图经 /_next/image 返回 502。
  *
  * 缓存与页面里只存站内稳定路径 /api/media/{kind}/{id}/{v}，由代理路由按需换签：
- *  - kind: b = 正文 block（image / video），p = 页面 Image 属性
+ *  - kind: b = 正文 block（image / video），p = 页面 Image 属性，r = Reference 页面 cover
  *  - id:   去掉连字符的 Notion block / page id
  *  - v:    S3 文件路径（不含签名参数）的哈希。重新签名不变、换图才变，所以可以长缓存
  *
@@ -12,7 +12,7 @@
  */
 import { createHash } from "crypto";
 
-export type MediaKind = "b" | "p";
+export type MediaKind = "b" | "p" | "r";
 
 export function mediaPathPrefix(kind: MediaKind, id: string): string {
   return `/api/media/${kind}/${id.replace(/-/g, "")}/`;
