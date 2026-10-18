@@ -74,6 +74,36 @@ function toRuns(sprite: string[]): Run[] {
   return runs;
 }
 
+
+/** 5×7 像素字；AI 两个字母直接画进小人 SVG，跟着 dr-pet-float 一起浮动 */
+const AI_GLYPHS: Record<string, string[]> = {
+  A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+  I: ["111", "010", "010", "010", "010", "010", "111"],
+};
+
+const AI_RUNS = (() => {
+  const runs: { x: number; y: number; w: number }[] = [];
+  let cursor = -8;
+  for (const ch of "AI") {
+    const rows = AI_GLYPHS[ch];
+    rows.forEach((row, y) => {
+      let x = 0;
+      while (x < row.length) {
+        if (row[x] !== "1") {
+          x++;
+          continue;
+        }
+        let w = 1;
+        while (row[x + w] === "1") w++;
+        runs.push({ x: cursor + x, y: 1 + y, w });
+        x += w;
+      }
+    });
+    cursor += rows[0].length + 1;
+  }
+  return runs;
+})();
+
 const BODY_RUNS = toRuns(ASTRONAUT).filter((r) => r.c !== "E");
 const EYE_RUNS = toRuns(ASTRONAUT).filter((r) => r.c === "E");
 
@@ -91,12 +121,15 @@ export function PixelAstronaut({
   scale = 3,
   thinking = false,
   still = false,
+  ai = false,
 }: {
   /** 每个像素的屏幕尺寸（px） */
   scale?: number;
   thinking?: boolean;
   /** 面板头像等小尺寸处不漂浮 */
   still?: boolean;
+  /** 在头部左上角画像素字 AI；只给右下角入口使用 */
+  ai?: boolean;
 }) {
   const w = ASTRONAUT[0].length;
   const h = ASTRONAUT.length;
@@ -110,6 +143,16 @@ export function PixelAstronaut({
         shapeRendering="crispEdges"
       >
         <Rects runs={BODY_RUNS} />
+        {ai && (
+          <g className="dr-pet-ai">
+            <g fill="#27272a" transform="translate(.8 .8)">
+              {AI_RUNS.map((r) => <rect key={`s-${r.x}-${r.y}`} x={r.x} y={r.y} width={r.w} height={1} />)}
+            </g>
+            <g fill="#f6cf86">
+              {AI_RUNS.map((r) => <rect key={`f-${r.x}-${r.y}`} x={r.x} y={r.y} width={r.w} height={1} />)}
+            </g>
+          </g>
+        )}
         <g className={thinking ? "dr-pet-eyes-think" : "dr-pet-eyes"}>
           <Rects runs={EYE_RUNS} />
         </g>
