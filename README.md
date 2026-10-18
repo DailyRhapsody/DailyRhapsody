@@ -124,7 +124,7 @@ Skill 的目录与实现登记表分两个文件存放，新增一个 Skill 要�
 2. **日记列表**：顶部是资料卡与卡片条，下方是文章流；卡片条可横向滚动，第一张是发布热力图，第二张是微信读书阅读数据卡，后面依次是本站文章数与动态缩略图。
 3. **收藏列表**：站外文章的清单，列出标题、来源与标签，点开进入详情。
 4. **时间轴**：宽屏下正文左侧有一条固定轨道，每条刻度对应一篇文章，长度由篇幅或图片数量映射，当前阅读位置由轨道上的高亮刻度表示。
-5. **评论**：访客留下称呼与头像即可发表，单篇上限 500 条；宽屏作为正文右侧的旁注，窄屏折到文章下方。
+5. **评论**：访客留下称呼与头像即可发表，单篇上限 500 条；宽屏作为正文右侧的旁注，窄屏折到文章下方。评论与对应文章的 Notion 页面评论双向同步，作者可以直接在 Notion 里查看与回复。
 6. **关于页**：站点的自我介绍。
 7. **后台**：作者登录后上传图片、设置封面与站点资料、查看访客统计。
 
@@ -166,6 +166,7 @@ node --experimental-test-module-mocks --test tests/*.test.mjs
 2. **缓存预热**：每日定时任务顺序重拉三个内容源并写缓存，让缓存在没有流量的时段也有数据。
 3. **按需刷新**：`POST /api/revalidate` 把三个缓存标记为过期并保留旧数据，下一次访问先返回旧数据、再在后台重拉。密钥只从请求头读取。
 4. **上游故障**：页面不等待上游。缓存过期时仍立即返回旧数据并触发后台刷新，拉取失败保留旧数据，页面不会因为上游故障变成空白。
+5. **评论同步**：访客评论写入后由后台任务在文章的 Notion 页面评论里建一条；作者在 Notion 里新增、编辑、删除评论时，Notion 通过 webhook 推回博客。同步失败进 `dr:comment-sync:pending`，读评论时顺带重试（10 分钟限频），每日预热任务兜底。配置与排查见 [docs/comment-sync.md](./docs/comment-sync.md)。
 
 ### 7.3 公开接口防护
 
@@ -174,6 +175,7 @@ node --experimental-test-module-mocks --test tests/*.test.mjs
 ## 8 相关文档
 
 - 数字人的人设分级、对话流程、Skill 框架与上线顺序：[docs/pet-digital-twin.md](./docs/pet-digital-twin.md)
+- 评论与 Notion 页面评论的双向同步：[docs/comment-sync.md](./docs/comment-sync.md)
 - 后台编辑器的 AI 辅助：[docs/ai-assistant.md](./docs/ai-assistant.md)
 - 域名与边缘防护：[docs/custom-domain-cloudflare.md](./docs/custom-domain-cloudflare.md)
 

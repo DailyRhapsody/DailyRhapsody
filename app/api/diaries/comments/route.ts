@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/auth";
+import { schedulePendingDrain } from "@/lib/comment-sync";
 import { getCommentsMany, isDiaryId } from "@/lib/comments-store";
 import { getCachedDiaries } from "@/lib/notion";
 import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
@@ -42,5 +43,7 @@ export async function GET(req: Request) {
     : null;
   const allowed = readable ? ids.filter((id) => readable.has(id)) : ids;
   const { threads, pending } = await getCommentsMany(allowed);
+  // 顺带重试评论同步的待补任务（限频 10 分钟一次）；失败不影响这次读取
+  schedulePendingDrain();
   return withAntiScrapeHeaders(NextResponse.json({ threads, pending }));
 }

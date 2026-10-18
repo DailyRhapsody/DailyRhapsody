@@ -14,6 +14,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { drainPending } from "@/lib/comment-sync";
 import { warmDiariesCache } from "@/lib/notion";
 import { warmMomentsCache } from "@/lib/notion-moments";
 import { warmReferenceCache } from "@/lib/notion-reference";
@@ -33,6 +34,12 @@ export async function GET(req: NextRequest) {
   }
 
   const startedAt = Date.now();
+  // 顺带重试评论同步的待补任务：Hobby 计划只允许每天一次的 cron，不能单独开更频繁的
+  try {
+    await drainPending(20);
+  } catch {
+    // 待补失败不影响缓存预热
+  }
   const result: Record<string, number | string> = {};
 
   // 顺序执行而不是并发：三个源共享同一 Notion token 的速率配额（约 3 req/s），
