@@ -23,23 +23,32 @@ export function useReferenceLikes(ids: string[]) {
   useEffect(() => {
     if (!idsKey) return;
     let cancelled = false;
-    fetchWithTimeout(`/api/reference/likes?ids=${encodeURIComponent(idsKey)}`)
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
-      .then((data: Response) => {
-        if (cancelled || !data?.likes) return;
-        setLikes((prev) => {
-          const next = { ...prev };
-          for (const [id, state] of Object.entries(data.likes!)) {
+    const ids = idsKey.split(",").filter(Boolean);
+    // 接口单次最多 30 条；无限滚动后总量会超过，按批取，避免后面的卡片永远显示 0
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += 30) chunks.push(ids.slice(i, i + 30));
+
+    Promise.all(
+      chunks.map((chunk) =>
+        fetchWithTimeout(`/api/reference/likes?ids=${encodeURIComponent(chunk.join(","))}`)
+          .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+          .catch(() => null),
+      ),
+    ).then((responses) => {
+      if (cancelled) return;
+      setLikes((prev) => {
+        const next = { ...prev };
+        for (const data of responses as (Response | null)[]) {
+          if (!data?.likes) continue;
+          for (const [id, state] of Object.entries(data.likes)) {
             // 请求在途时用户刚点过：保留本地值，别被更早的响应覆盖
             if (touchedRef.current.has(id)) continue;
             next[id] = state;
           }
-          return next;
-        });
-      })
-      .catch(() => {
-        // gate 未就绪/限流：保留下一次机会，不把 0 写成最终态
+        }
+        return next;
       });
+    });
     return () => {
       cancelled = true;
     };
