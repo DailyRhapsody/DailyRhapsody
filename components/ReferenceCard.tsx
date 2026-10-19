@@ -107,7 +107,6 @@ export function ReferenceCard({
 
   return (
     <article
-      id={`reference-${item.id}`}
       className="group flex h-full flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white/70 shadow-sm transition-apple hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900/40 dark:hover:border-zinc-700"
     >
       <Link
