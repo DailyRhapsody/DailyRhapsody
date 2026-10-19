@@ -72,11 +72,7 @@ export function MomentsVideoCell({
       <video
         src={src}
         poster={posterUrl}
-        className={
-          compact
-            ? "h-full w-full object-contain"
-            : "max-h-[min(70vh,520px)] w-full object-contain"
-        }
+        className="max-h-[min(70vh,520px)] w-full object-contain"
         controls
         playsInline
         autoPlay
