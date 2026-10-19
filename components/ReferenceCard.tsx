@@ -39,6 +39,43 @@ function HeartIcon({ filled }: { filled: boolean }) {
   );
 }
 
+function KindIcon({ kind }: { kind: ReferenceListItem["kind"] }) {
+  const cls = "h-5 w-5";
+  if (kind === "company") {
+    return (
+      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 20V7l8-3 8 3v13M9 20v-5h6v5M8 9h.01M12 9h.01M16 9h.01M8 12.5h.01M12 12.5h.01M16 12.5h.01" />
+      </svg>
+    );
+  }
+  if (kind === "test") {
+    return (
+      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 19h16M7 16V9m5 7V5m5 11v-4" />
+      </svg>
+    );
+  }
+  if (kind === "commentary") {
+    return (
+      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 6h14v9H9l-4 3V6Z" />
+      </svg>
+    );
+  }
+  if (kind === "interview") {
+    return (
+      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3Zm-6 8a6 6 0 0 0 12 0M12 18v3m-3 0h6" />
+      </svg>
+    );
+  }
+  return (
+    <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 3h7l4 4v14H7V3Zm7 0v5h4M9.5 12h6M9.5 15.5h6" />
+    </svg>
+  );
+}
+
 function ArrowIcon() {
   return (
     <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
@@ -72,29 +109,34 @@ export function ReferenceCard({
           : "border-zinc-200 bg-white/75 hover:border-zinc-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900/40 dark:hover:border-zinc-700"
       }`}
     >
-      <div className="flex items-center justify-between gap-3 text-[0.68rem] text-zinc-500 dark:text-zinc-400">
-        <span className="inline-flex shrink-0 items-center gap-1.5 font-medium text-zinc-600 dark:text-zinc-300">
-          <span className="h-1.5 w-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500" aria-hidden />
-          {KIND_LABELS[item.kind]}
-        </span>
-        <span className="min-w-0 truncate text-right">
-          {sourceLabel}
-          {sourceLabel && item.year ? <span className="px-1 opacity-50">·</span> : null}
-          {item.year || null}
-        </span>
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+          <KindIcon kind={item.kind} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-3 text-[0.68rem] text-zinc-500 dark:text-zinc-400">
+            <span className="inline-flex shrink-0 items-center gap-1.5 font-medium text-zinc-600 dark:text-zinc-300">
+              {KIND_LABELS[item.kind]}
+            </span>
+            <span className="min-w-0 truncate text-right">
+              {sourceLabel}
+              {sourceLabel && item.year ? <span className="px-1 opacity-50">·</span> : null}
+              {item.year || null}
+            </span>
+          </div>
+          <h3 className="mt-1.5 text-[0.98rem] font-semibold leading-snug text-zinc-900 dark:text-zinc-50">
+            <Link
+              href={`/reference/${item.id}`}
+              className="line-clamp-2 rounded transition-colors hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:hover:text-blue-300"
+            >
+              {displayName}
+            </Link>
+          </h3>
+        </div>
       </div>
 
-      <h3 className="mt-2 text-[0.98rem] font-semibold leading-snug text-zinc-900 dark:text-zinc-50">
-        <Link
-          href={`/reference/${item.id}`}
-          className="line-clamp-2 rounded transition-colors hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:hover:text-blue-300"
-        >
-          {displayName}
-        </Link>
-      </h3>
-
       {item.summary ? (
-        <p className="mt-1.5 line-clamp-3 text-[0.8rem] leading-relaxed text-zinc-600 dark:text-zinc-400">
+        <p className="mt-3 line-clamp-3 text-[0.8rem] leading-relaxed text-zinc-600 dark:text-zinc-400">
           {item.summary}
         </p>
       ) : null}
@@ -103,19 +145,19 @@ export function ReferenceCard({
         <dl className="mt-2 grid grid-cols-1 gap-1 text-[0.68rem] leading-4 text-zinc-500 dark:text-zinc-400">
           {profile.scenarios.length > 0 ? (
             <div className="flex min-w-0 gap-1.5">
-              <dt className="w-5 shrink-0 text-zinc-400 dark:text-zinc-500">场景</dt>
+              <dt className="w-8 shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">场景</dt>
               <dd className="truncate">{profile.scenarios.join(" · ")}</dd>
             </div>
           ) : null}
           {profile.productForms.length > 0 ? (
             <div className="flex min-w-0 gap-1.5">
-              <dt className="w-5 shrink-0 text-zinc-400 dark:text-zinc-500">产品</dt>
+              <dt className="w-8 shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">产品</dt>
               <dd className="truncate">{profile.productForms.join(" · ")}</dd>
             </div>
           ) : null}
           {profile.operationCulture ? (
             <div className="flex min-w-0 gap-1.5">
-              <dt className="w-5 shrink-0 text-zinc-400 dark:text-zinc-500">文化</dt>
+              <dt className="w-8 shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">文化</dt>
               <dd className="truncate">{profile.operationCulture}</dd>
             </div>
           ) : null}
