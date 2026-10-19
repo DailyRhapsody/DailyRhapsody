@@ -13,6 +13,7 @@ import {
   referenceLicenseLabel,
 } from "@/lib/reference-taxonomy";
 import { getLang } from "@/lib/i18n-server";
+import { applyReferenceEn, getReferenceEnMap } from "@/lib/reference-i18n";
 import { t, type Lang } from "@/lib/i18n";
 import type { ReferenceCompanyProfile } from "@/lib/reference-profile";
 import { recordReferenceView } from "@/lib/reference-ranking";
@@ -151,12 +152,16 @@ export default async function ReferenceDetailPage({
 }) {
   if (!isReferenceConfigured()) notFound();
   const { id } = await params;
-  const item = await getItem(id);
+  let item = await getItem(id);
   if (!item) notFound();
   const admin = await isAdmin();
   if (!admin && !item.isPublic) notFound();
   if (item.isPublic) await recordReferenceView(item.id);
   const lang = await getLang();
+  if (lang === "en") {
+    const translations = await getReferenceEnMap();
+    item = applyReferenceEn(item, translations.get(item.id));
+  }
 
   const sourceLabel = hostnameOf(item.url) || (item.source && item.source !== "手动添加" ? item.source : "");
   const renderedHtml = item.bodyMarkdown ? renderMarkdown(item.bodyMarkdown) : "";
