@@ -12,7 +12,7 @@ import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
 export const maxDuration = 300;
 
 const DEFAULT_PAGE_SIZE = 30;
-const MAX_PAGE_SIZE = 30;
+const MAX_PAGE_SIZE = 200;
 
 function getTagCounts(items: ReferenceItem[]): { name: string; value: number }[] {
   const count = new Map<string, number>();

@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ReferenceCard } from "@/components/ReferenceCard";
+import { ReferenceFilters } from "@/components/reference/ReferenceFilters";
 import type { ReferenceListItem } from "@/hooks/useReference";
 import { useReferenceLikes } from "@/hooks/useReferenceLikes";
+import { filterReferenceItems, type FilterLogic, type FilterRule } from "@/lib/reference-filters";
 
 function SkeletonGrid() {
   return (
@@ -11,13 +14,13 @@ function SkeletonGrid() {
       {Array.from({ length: 6 }).map((_, i) => (
         <div
           key={i}
-          className="animate-pulse overflow-hidden rounded-2xl border border-zinc-200 bg-white/60 dark:border-zinc-800 dark:bg-zinc-900/40"
+          className="animate-pulse rounded-xl border border-zinc-200 bg-white/60 p-4 dark:border-zinc-800 dark:bg-zinc-900/40"
         >
-          <div className="aspect-[4/3] bg-zinc-100 dark:bg-zinc-800" />
-          <div className="space-y-2 p-4">
+          <div className="space-y-2">
             <div className="h-2.5 w-20 rounded bg-zinc-100 dark:bg-zinc-800" />
             <div className="h-4 w-4/5 rounded bg-zinc-100 dark:bg-zinc-800" />
             <div className="h-2.5 w-full rounded bg-zinc-100 dark:bg-zinc-800" />
+            <div className="h-2.5 w-3/5 rounded bg-zinc-100 dark:bg-zinc-800" />
           </div>
         </div>
       ))}
@@ -26,9 +29,8 @@ function SkeletonGrid() {
 }
 
 /**
- * 参考页的内容区：只负责中间的标签、画廊与分页。
- * 数据由 EntriesPageClient 统一持有，和顶部卡、时间轴共用同一份列表；
- * 切换 tab 时这里只换渲染，不再重新挂载、不再重新请求。
+ * 参考页的内容区：标签、筛选、卡片列表与分页。
+ * 数据由 EntriesPageClient 统一持有，和顶部卡、时间轴共用同一份列表。
  */
 export default function ReferenceFeed({
   items,
@@ -52,26 +54,36 @@ export default function ReferenceFeed({
   onTagClick: (tag: string) => void;
 }) {
   const { likes, toggle } = useReferenceLikes(items.map((it) => it.id));
+  const searchParams = useSearchParams();
+  const selectedId = searchParams.get("focus");
+  const [rules, setRules] = useState<FilterRule[]>([]);
+  const [logic, setLogic] = useState<FilterLogic>("and");
+  const filteredItems = useMemo(
+    () => filterReferenceItems(items, rules, logic),
+    [items, rules, logic],
+  );
   const focusedRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("focus");
-    if (!id || focusedRef.current === id) return;
-    const el = document.getElementById(`reference-${id}`);
+    if (!selectedId) {
+      focusedRef.current = null;
+      return;
+    }
+    const el = document.getElementById(`reference-${selectedId}`);
     if (!el) return;
-    focusedRef.current = id;
+    focusedRef.current = selectedId;
     const frame = requestAnimationFrame(() => {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [items]);
+  }, [selectedId, filteredItems.length]);
 
   return (
     <>
       <h1 className="sr-only">Reference · 机器人行业资料库</h1>
 
       {tagCounts.length > 0 && (
-        <section className="mb-7 rounded-2xl border border-zinc-200 bg-white/60 px-4 py-4 shadow-sm transition-apple dark:border-zinc-800 dark:bg-zinc-900/40">
+        <section className="mb-5 rounded-xl border border-zinc-200 bg-white/60 px-4 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/40">
           <div className="flex flex-wrap items-center gap-2">
             {tagCounts.map(({ name, value }) => (
               <button
@@ -81,7 +93,7 @@ export default function ReferenceFeed({
                 className={`rounded-full px-2.5 py-1 text-xs transition-apple focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-900 ${
                   selectedTag === name
                     ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                    : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 hover:scale-105 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
                 }`}
               >
                 {name}
@@ -91,7 +103,7 @@ export default function ReferenceFeed({
           </div>
           {selectedTag && (
             <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-              当前筛选：{selectedTag}（共 {total} 条）
+              当前标签：{selectedTag}（共 {total} 条）
               <button
                 type="button"
                 onClick={() => onTagClick(selectedTag)}
@@ -103,6 +115,15 @@ export default function ReferenceFeed({
           )}
         </section>
       )}
+
+      <ReferenceFilters
+        items={items}
+        rules={rules}
+        logic={logic}
+        resultCount={filteredItems.length}
+        onRulesChange={setRules}
+        onLogicChange={setLogic}
+      />
 
       {loading && items.length === 0 ? (
         <SkeletonGrid />
@@ -118,20 +139,22 @@ export default function ReferenceFeed({
               暂无资料。等作者从 Notion 添加入库后，这里会自动出现。
             </p>
           )}
-          {items.length > 0 && (
+          {!loading && items.length > 0 && filteredItems.length === 0 && (
+            <p className="px-3 py-8 text-sm text-zinc-500 dark:text-zinc-400">
+              没有符合当前条件的资料。
+            </p>
+          )}
+          {filteredItems.length > 0 && (
             <>
               <h2 className="sr-only">资料列表</h2>
               <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                {items.map((it) => (
-                  <div
-                    key={it.id}
-                    id={`reference-${it.id}`}
-                    className="scroll-mt-24 rounded-2xl target:ring-2 target:ring-blue-400/80 target:ring-offset-2 target:ring-offset-white dark:target:ring-offset-zinc-950"
-                  >
+                {filteredItems.map((it) => (
+                  <div key={it.id} id={`reference-${it.id}`} className="scroll-mt-24">
                     <ReferenceCard
                       item={it}
                       like={likes[it.id]}
                       onLike={toggle}
+                      selected={selectedId === it.id}
                     />
                   </div>
                 ))}

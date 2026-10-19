@@ -104,7 +104,7 @@ function CompanyProfileBlock({ profile }: { profile: ReferenceCompanyProfile }) 
 
   if (rows.length === 0) return null;
   return (
-    <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 rounded-xl border border-cyan-200/70 bg-cyan-50/40 px-4 py-3 text-xs sm:grid-cols-2 dark:border-cyan-900/60 dark:bg-cyan-950/20">
+    <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 rounded-xl border border-zinc-200 bg-white/60 px-4 py-3 text-xs sm:grid-cols-2 dark:border-zinc-800 dark:bg-zinc-900/40">
       {rows.map((row) => (
         <div key={row.label} className="flex gap-2">
           <dt className="w-20 shrink-0 text-zinc-400 dark:text-zinc-500">{row.label}</dt>
@@ -149,7 +149,7 @@ export default async function ReferenceDetailPage({
   const admin = await isAdmin();
   if (!admin && !item.isPublic) notFound();
 
-  const sourceLabel = item.source || hostnameOf(item.url) || "";
+  const sourceLabel = hostnameOf(item.url) || (item.source && item.source !== "手动添加" ? item.source : "");
   const renderedHtml = item.bodyMarkdown ? renderMarkdown(item.bodyMarkdown) : "";
   const canDownload = item.license !== "link-only" && item.attachment != null;
 

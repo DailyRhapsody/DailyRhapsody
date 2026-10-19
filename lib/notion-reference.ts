@@ -44,6 +44,7 @@ import { assertNotionFetchAllowed, isNotionFetchAllowed, runWithRefreshLock } fr
 import { mediaProxyPath, mediaVersion } from "@/lib/notion-media";
 import { canonicalReferenceId } from "@/lib/reference-ids";
 import type { ReferenceCompanyProfile } from "@/lib/reference-profile";
+import { getFetchedReferenceBody } from "@/lib/reference-body";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -70,6 +71,7 @@ export type ReferenceItem = {
   isPublic: boolean;
   kind: ReferenceKind;
   domains: string[];
+  robotTypes: string[];
   year: number | null;
   summary: string;
   license: ReferenceLicense;
@@ -240,6 +242,8 @@ function isReferenceItem(value: unknown): value is ReferenceItem {
     isReferenceKind(item.kind) &&
     Array.isArray(item.domains) &&
     item.domains.every((d) => typeof d === "string") &&
+    (item.robotTypes === undefined ||
+      (Array.isArray(item.robotTypes) && item.robotTypes.every((t) => typeof t === "string"))) &&
     (item.year === null || typeof item.year === "number") &&
     typeof item.summary === "string" &&
     isReferenceLicense(item.license) &&
@@ -511,6 +515,12 @@ function extractDomains(page: PageObjectResponse): string[] {
   return [];
 }
 
+function extractRobotTypes(page: PageObjectResponse): string[] {
+  const prop = page.properties["RobotType"];
+  if (prop?.type === "multi_select") return prop.multi_select.map((t) => t.name);
+  return [];
+}
+
 function extractYear(page: PageObjectResponse): number | null {
   const prop = page.properties["Year"];
   if (prop?.type !== "number") return null;
@@ -589,6 +599,7 @@ function mapPageToItem(page: PageObjectResponse, bodyMarkdown?: string): Referen
     isPublic: extractIsPublic(page),
     kind: extractKind(page),
     domains: extractDomains(page),
+    robotTypes: extractRobotTypes(page),
     year: extractYear(page),
     summary: extractSummary(page),
     license: extractLicense(page),
@@ -767,7 +778,8 @@ export async function getCachedReferenceItem(id: string): Promise<ReferenceItem 
 export async function getReferenceItem(id: string): Promise<ReferenceItem | null> {
   const pageId = canonicalReferenceId(id);
   const cachedFull = await getCachedItem(pageId);
-  if (cachedFull && cachedFull.bodyMarkdown != null) return cachedFull;
+  // 旧缓存可能只有元数据、正文为空；空正文要继续走原文抓取，不能直接返回。
+  if (cachedFull && cachedFull.bodyMarkdown?.trim()) return cachedFull;
 
   try {
     const client = getClient();
@@ -779,10 +791,25 @@ export async function getReferenceItem(id: string): Promise<ReferenceItem | null
 
     // proxyMedia：正文图输出稳定 /api/media/b/… 路径，签名过期不会裂图。
     // 归属由 recordReferenceMedia 记录，/api/media 鉴权时再查本条目的公开性。
-    const body = await extractBodyMarkdown(pageId, { proxyMedia: true });
-    const item = mapPageToItem(page as PageObjectResponse, body ?? "");
-    // 正文没抓到（限流、预算用完）不写 24h 缓存，下次请求再抓
-    if (body !== null) await setCachedItem(item);
+    const notionBody = await extractBodyMarkdown(pageId, { proxyMedia: true });
+    const item = mapPageToItem(page as PageObjectResponse, notionBody ?? "");
+
+    // 手动收藏的 Reference 大多没有 Notion page body：按需抓原文正文。
+    // 抓不到时也展示摘要，页面不再只剩“正文为空”。
+    let hasCachedBody = Boolean(notionBody?.trim());
+    if (!hasCachedBody) {
+      const fetched = await getFetchedReferenceBody(pageId, item.url);
+      if (fetched?.trim()) {
+        item.bodyMarkdown = fetched;
+        hasCachedBody = true;
+      }
+    }
+    if (!item.bodyMarkdown?.trim() && item.summary) {
+      item.bodyMarkdown = `## 资料摘要\n\n${item.summary}\n\n> 原站未返回可提取正文，以上为本站摘要。`;
+    }
+
+    // 真实正文才写 24h item 缓存；摘要兜底不缓存，下次请求继续尝试抓原文。
+    if (hasCachedBody) await setCachedItem(item);
     return item;
   } catch {
     // Notion 限流/超时/预算耗尽时，已知条目不能当作 404：它已在 sitemap 里，
