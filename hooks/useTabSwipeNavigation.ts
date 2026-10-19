@@ -4,9 +4,10 @@ import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 
 /** 一旦累计到这个 deltaX 就立刻切 tab —— 不再等 wheel 停下 */
 const WHEEL_TRIGGER_DELTA = 40;
-/** 触发之后的「同方向冷却期」——这段时间内同方向 wheel 事件全部丢弃（压 trackpad 惯性）。
- *  反方向 wheel 不受限，能立刻触发下一次切，保证「左滑紧跟右滑」的连击手感。 */
-const WHEEL_SAME_DIR_COOLDOWN_MS = 300;
+/** 触发后，等横向 wheel 安静这么久才允许下一次切。
+ *  trackpad 松手后惯性会继续吐 deltaX；只靠固定 300ms 冷却时，
+ *  一次轻扫可能在惯性尾声再切一格（0→1→2），手感像“滑一下跳两张卡”。 */
+const WHEEL_GESTURE_IDLE_MS = 280;
 const TOUCH_AXIS_LOCK_DELTA = 10;
 const TOUCH_TRIGGER_DELTA = 50;
 
@@ -51,10 +52,10 @@ export function useTabSwipeNavigation(
 
   useEffect(() => {
     let wheelAccum = 0;
-    /** 上次触发 setTab 的时间戳（performance.now 刻度） */
-    let lastTriggerAt = 0;
-    /** 上次触发的方向（+1 右 / -1 左 / 0 从未触发过），用来识别「反方向新手势」 */
-    let lastTriggerDir: 1 | -1 | 0 = 0;
+
+    /** 触发过一次切换后，等横向 wheel 安静下来才解锁，避免惯性再切一格 */
+    let wheelLocked = false;
+    let wheelUnlockTimer: ReturnType<typeof setTimeout> | null = null;
 
     function onWheel(e: WheelEvent) {
       // AI-Persona 面板里的横滚、卡片条自身的横滚都留给它们自己
@@ -63,22 +64,20 @@ export function useTabSwipeNavigation(
       if (!(Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 2)) return;
       e.preventDefault();
 
-      const now = performance.now();
-      const curSign = e.deltaX > 0 ? 1 : -1;
-      const sameDirCooldown =
-        lastTriggerDir !== 0 &&
-        curSign === lastTriggerDir &&
-        now - lastTriggerAt < WHEEL_SAME_DIR_COOLDOWN_MS;
+      // 每次横向 wheel 都把解锁计时往后推；手指/惯性真正停下后 280ms 才允许下一次切换。
+      if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer);
+      wheelUnlockTimer = setTimeout(() => {
+        wheelLocked = false;
+        wheelAccum = 0;
+      }, WHEEL_GESTURE_IDLE_MS);
 
-      // 同方向冷却期：丢弃这笔 delta，把累计清零——
-      // trackpad 松手后还会吐一串同向惯性，不压它就会连切两格
-      if (sameDirCooldown) {
+      if (wheelLocked) {
         wheelAccum = 0;
         return;
       }
 
       // 反方向事件意味着用户明确开了新手势，把之前同方向残留的 accum 清掉再算
-      if (wheelAccum !== 0 && Math.sign(wheelAccum) !== curSign) {
+      if (wheelAccum !== 0 && Math.sign(wheelAccum) !== Math.sign(e.deltaX)) {
         wheelAccum = 0;
       }
 
@@ -93,8 +92,7 @@ export function useTabSwipeNavigation(
         setTab((prev) =>
           direction > 0 ? Math.min(prev + 1, max) : Math.max(prev - 1, min),
         );
-        lastTriggerAt = now;
-        lastTriggerDir = direction;
+        wheelLocked = true;
         wheelAccum = 0;
       }
     }
@@ -140,6 +138,7 @@ export function useTabSwipeNavigation(
     document.documentElement.style.overscrollBehaviorX = "none";
 
     return () => {
+      if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer);
       document.removeEventListener("wheel", onWheel);
       document.removeEventListener("touchstart", onTouchStart);
       document.removeEventListener("touchmove", onTouchMove);
