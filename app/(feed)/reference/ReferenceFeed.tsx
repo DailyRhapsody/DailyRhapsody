@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { ReferenceCard } from "@/components/ReferenceCard";
 import type { ReferenceListItem } from "@/hooks/useReference";
 import { useReferenceLikes } from "@/hooks/useReferenceLikes";
@@ -51,6 +52,19 @@ export default function ReferenceFeed({
   onTagClick: (tag: string) => void;
 }) {
   const { likes, toggle } = useReferenceLikes(items.map((it) => it.id));
+  const focusedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("focus");
+    if (!id || focusedRef.current === id) return;
+    const el = document.getElementById(`reference-${id}`);
+    if (!el) return;
+    focusedRef.current = id;
+    const frame = requestAnimationFrame(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [items]);
 
   return (
     <>
@@ -109,7 +123,11 @@ export default function ReferenceFeed({
               <h2 className="sr-only">资料列表</h2>
               <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
                 {items.map((it) => (
-                  <div key={it.id} id={`reference-${it.id}`} className="scroll-mt-24">
+                  <div
+                    key={it.id}
+                    id={`reference-${it.id}`}
+                    className="scroll-mt-24 rounded-2xl target:ring-2 target:ring-blue-400/80 target:ring-offset-2 target:ring-offset-white dark:target:ring-offset-zinc-950"
+                  >
                     <ReferenceCard
                       item={it}
                       like={likes[it.id]}

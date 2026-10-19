@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   createContext,
@@ -176,17 +177,19 @@ export default function FeedShell({
               </div>
             </button>
 
-            <button
-              type="button"
-              onClick={() => navigateTab(2)}
-              aria-current={active === 2 ? "page" : undefined}
-              aria-label={`参考资料，共 ${stats.referenceTotal} 条`}
-              className={`flex h-[148px] w-[168px] shrink-0 flex-col items-start justify-center rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm transition-apple dark:border-zinc-700 dark:bg-zinc-800/80 ${
+            <div
+              className={`relative flex h-[148px] w-[168px] shrink-0 flex-col items-start justify-center rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm transition-apple dark:border-zinc-700 dark:bg-zinc-800/80 ${
                 active === 2 ? ACTIVE : INACTIVE
               }`}
             >
+              <Link
+                href="/reference"
+                aria-current={active === 2 ? "page" : undefined}
+                aria-label={`参考资料，共 ${stats.referenceTotal} 条`}
+                className="absolute inset-0 z-0 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+              />
               {stats.referenceTop.length > 0 ? (
-                <ol className="flex w-full flex-col gap-1.5">
+                <ol className="pointer-events-none relative z-10 flex w-full flex-col gap-1.5">
                   {stats.referenceTop.slice(0, 5).map((item, i) => (
                     <li key={item.id} className="flex min-w-0 items-baseline gap-1.5 text-left">
                       <span
@@ -198,9 +201,12 @@ export default function FeedShell({
                       >
                         {i + 1}
                       </span>
-                      <span className="min-w-0 truncate text-[0.72rem] leading-4 text-zinc-700 dark:text-zinc-300">
+                      <Link
+                        href={`/reference?focus=${encodeURIComponent(item.id)}#reference-${item.id}`}
+                        className="pointer-events-auto min-w-0 truncate rounded text-[0.72rem] leading-4 text-zinc-700 transition-colors hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 dark:text-zinc-300 dark:hover:text-blue-300"
+                      >
                         {item.title}
-                      </span>
+                      </Link>
                     </li>
                   ))}
                 </ol>
@@ -209,7 +215,7 @@ export default function FeedShell({
                   暂无资料
                 </p>
               )}
-            </button>
+            </div>
           </div>
         </div>
         {children}
