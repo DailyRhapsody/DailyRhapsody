@@ -22,7 +22,7 @@ export type FeedStats = {
   dates: string[];
   momentsThumbs: { src: string; isVideo: boolean }[];
   referenceTotal: number;
-  referenceTop: { id: string; name: string }[];
+  referenceTop: { id: string; title: string }[];
 };
 
 type FeedStatsContextValue = {
@@ -181,16 +181,25 @@ export default function FeedShell({
               onClick={() => navigateTab(2)}
               aria-current={active === 2 ? "page" : undefined}
               aria-label={`参考资料，共 ${stats.referenceTotal} 条`}
-              className={`flex h-[148px] w-[168px] shrink-0 flex-col justify-center rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm transition-apple dark:border-zinc-700 dark:bg-zinc-800/80 ${
+              className={`flex h-[148px] w-[168px] shrink-0 flex-col items-start justify-center rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm transition-apple dark:border-zinc-700 dark:bg-zinc-800/80 ${
                 active === 2 ? ACTIVE : INACTIVE
               }`}
             >
               {stats.referenceTop.length > 0 ? (
                 <ol className="flex w-full flex-col gap-1.5">
-                  {stats.referenceTop.slice(0, 5).map((item) => (
-                    <li key={item.id} className="min-w-0">
-                      <span className="block truncate text-[0.72rem] leading-4 text-zinc-700 dark:text-zinc-300">
-                        {item.name}
+                  {stats.referenceTop.slice(0, 5).map((item, i) => (
+                    <li key={item.id} className="flex min-w-0 items-baseline gap-1.5 text-left">
+                      <span
+                        className={`w-3 shrink-0 text-right text-[10px] font-semibold tabular-nums ${
+                          i < 3
+                            ? "text-rose-500 dark:text-rose-400"
+                            : "text-zinc-400 dark:text-zinc-500"
+                        }`}
+                      >
+                        {i + 1}
+                      </span>
+                      <span className="min-w-0 truncate text-[0.72rem] leading-4 text-zinc-700 dark:text-zinc-300">
+                        {item.title}
                       </span>
                     </li>
                   ))}

@@ -99,6 +99,7 @@ export function ReferenceCard({
   onLike?: (id: string) => void;
 }) {
   const meta = KIND_META[item.kind] ?? KIND_META.external;
+  const displayName = item.titleZh?.trim() || item.name || "(无标题)";
   const sourceLabel = item.source || hostnameOf(item.url) || "";
   const hasCover = Boolean(item.coverPath);
   const [coverFailed, setCoverFailed] = useState(false);
@@ -112,7 +113,7 @@ export function ReferenceCard({
       <Link
         href={`/reference/${item.id}`}
         className="relative block aspect-[16/10] overflow-hidden bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:bg-zinc-800"
-        aria-label={item.name || "参考条目"}
+        aria-label={displayName || "参考条目"}
       >
         {showCover && item.coverKind === "file" ? (
           <Image
@@ -168,7 +169,7 @@ export function ReferenceCard({
             href={`/reference/${item.id}`}
             className="line-clamp-2 rounded transition-colors hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 dark:hover:text-blue-300"
           >
-            {item.name || "(无标题)"}
+            {displayName}
           </Link>
         </h3>
 

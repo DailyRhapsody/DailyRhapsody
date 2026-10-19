@@ -69,7 +69,7 @@ export default async function FeedLayout({
   }
 
   let referenceTotal = 0;
-  let referenceTop: { id: string; name: string }[] = [];
+  let referenceTop: { id: string; title: string }[] = [];
   try {
     const items = await getCachedReferenceItems();
     const publicItems = (items ?? []).filter((item) => item.isPublic);
