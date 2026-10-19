@@ -3,14 +3,8 @@
 import Link from "next/link";
 import type { ReferenceListItem } from "@/hooks/useReference";
 import type { ReferenceLikeState } from "@/hooks/useReferenceLikes";
-
-const KIND_LABELS: Record<ReferenceListItem["kind"], string> = {
-  external: "外部资料",
-  commentary: "行业评论",
-  test: "实测报告",
-  interview: "访谈",
-  company: "行业档案",
-};
+import { useLang } from "@/components/LangProvider";
+import { referenceKindLabel } from "@/lib/reference-taxonomy";
 
 function hostnameOf(url: string): string {
   try {
@@ -107,7 +101,8 @@ export function ReferenceCard({
   onSelect?: (id: string) => void;
   selected?: boolean;
 }) {
-  const displayName = item.titleZh?.trim() || item.name || "(无标题)";
+  const { t, lang } = useLang();
+  const displayName = item.titleZh?.trim() || item.name || t("reference.card.untitled");
   const sourceLabel = hostnameOf(item.url) || (item.source && item.source !== "手动添加" ? item.source : "");
   const profile = item.company;
 
@@ -128,7 +123,7 @@ export function ReferenceCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3 text-[0.68rem] text-zinc-500 dark:text-zinc-400">
             <span className="inline-flex shrink-0 items-center gap-1.5 font-medium text-zinc-600 dark:text-zinc-300">
-              {KIND_LABELS[item.kind]}
+              {referenceKindLabel(item.kind, lang)}
             </span>
             <span className="min-w-0 truncate text-right">
               {sourceLabel}
@@ -157,19 +152,19 @@ export function ReferenceCard({
         <dl className="mt-2 grid grid-cols-1 gap-1 text-[0.68rem] leading-4 text-zinc-500 dark:text-zinc-400">
           {profile.scenarios.length > 0 ? (
             <div className="flex min-w-0 gap-1.5">
-              <dt className="w-8 shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">场景</dt>
+              <dt className="shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">{t("reference.card.scenarios")}</dt>
               <dd className="truncate">{profile.scenarios.join(" · ")}</dd>
             </div>
           ) : null}
           {profile.productForms.length > 0 ? (
             <div className="flex min-w-0 gap-1.5">
-              <dt className="w-8 shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">产品</dt>
+              <dt className="shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">{t("reference.card.products")}</dt>
               <dd className="truncate">{profile.productForms.join(" · ")}</dd>
             </div>
           ) : null}
           {profile.operationCulture ? (
             <div className="flex min-w-0 gap-1.5">
-              <dt className="w-8 shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">文化</dt>
+              <dt className="shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">{t("reference.card.culture")}</dt>
               <dd className="truncate">{profile.operationCulture}</dd>
             </div>
           ) : null}
@@ -202,8 +197,8 @@ export function ReferenceCard({
             onClick={() => onSelect?.(item.id)}
             disabled={!onSelect}
             aria-pressed={selected}
-            aria-label={selected ? "取消选中此资料" : "选中此资料"}
-            title={selected ? "取消选中" : "选中"}
+            aria-label={selected ? t("reference.card.unselect") : t("reference.card.select")}
+            title={selected ? t("reference.selected.clear") : t("reference.card.select")}
             className={`inline-flex items-center gap-1 rounded-full px-1.5 py-1 transition-apple focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
               selected
                 ? "text-zinc-900 dark:text-zinc-100"
@@ -211,7 +206,7 @@ export function ReferenceCard({
             }`}
           >
             <TargetIcon filled={selected} />
-            <span className="sr-only">{selected ? "取消选中" : "选中"}</span>
+            <span className="sr-only">{selected ? t("reference.selected.clear") : t("reference.card.select")}</span>
           </button>
           <button
             type="button"
@@ -220,8 +215,8 @@ export function ReferenceCard({
             aria-pressed={Boolean(like?.liked)}
             aria-label={
               like?.liked
-                ? `取消点赞，当前 ${like?.count ?? 0} 人觉得有用`
-                : `点赞，当前 ${like?.count ?? 0} 人觉得有用`
+                ? t("reference.card.unlikeAria", { n: like?.count ?? 0 })
+                : t("reference.card.likeAria", { n: like?.count ?? 0 })
             }
             className={`inline-flex items-center gap-1 rounded-full px-1.5 py-1 transition-apple focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
               like?.liked
@@ -234,10 +229,10 @@ export function ReferenceCard({
           </button>
           <Link
             href={`/reference/${item.id}`}
-            aria-label="阅读全文"
+            aria-label={t("reference.card.readFull")}
             className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-zinc-500 transition-colors hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:text-zinc-100"
           >
-            阅读
+            {t("reference.card.read")}
             <ArrowIcon />
           </Link>
         </div>

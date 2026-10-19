@@ -6,6 +6,8 @@ import {
   type ReferenceItem,
 } from "@/lib/notion-reference";
 import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
+import { getLang } from "@/lib/i18n-server";
+import { applyReferenceEn, getReferenceEnMap } from "@/lib/reference-i18n";
 
 // SWR 后台重拉（waitUntil）跑在本次函数调用里，受 maxDuration 约束；与 /api/diaries 对齐，
 // 让全量刷新能在截断前写进缓存。
@@ -75,7 +77,12 @@ export async function GET(req: Request) {
     });
   }
   const total = filtered.length;
-  const sliced = filtered.slice(offset, offset + limit);
+  let sliced = filtered.slice(offset, offset + limit);
+  const lang = await getLang();
+  if (lang === "en") {
+    const translations = await getReferenceEnMap();
+    sliced = sliced.map((item) => applyReferenceEn(item, translations.get(item.id)));
+  }
   const hasMore = offset + sliced.length < total;
 
   const body: {

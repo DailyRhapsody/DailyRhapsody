@@ -6,6 +6,7 @@ import { ReferenceCard } from "@/components/ReferenceCard";
 import { ReferenceFilters } from "@/components/reference/ReferenceFilters";
 import type { ReferenceListItem } from "@/hooks/useReference";
 import { useReferenceLikes } from "@/hooks/useReferenceLikes";
+import { useLang } from "@/components/LangProvider";
 import { filterReferenceItems, type FilterLogic, type FilterRule } from "@/lib/reference-filters";
 import {
   SORT_FIELDS,
@@ -63,6 +64,7 @@ export default function ReferenceFeed({
   onTagClick: (tag: string) => void;
 }) {
   const { likes, toggle } = useReferenceLikes(items.map((it) => it.id));
+  const { t } = useLang();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -142,7 +144,7 @@ export default function ReferenceFeed({
 
   return (
     <>
-      <h1 className="sr-only">Reference · 机器人行业资料库</h1>
+      <h1 className="sr-only">{t("reference.title")}</h1>
 
       {tagCounts.length > 0 && (
         <section className="mb-5 rounded-xl border border-zinc-200 bg-white/60 px-4 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/40">
@@ -165,13 +167,13 @@ export default function ReferenceFeed({
           </div>
           {selectedTag && (
             <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-              当前标签：{selectedTag}（共 {total} 条）
+              {t("reference.tag.current", { tag: selectedTag, total })}
               <button
                 type="button"
                 onClick={() => onTagClick(selectedTag)}
                 className="ml-2 rounded underline transition-apple hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
               >
-                取消
+                {t("common.cancel")}
               </button>
             </p>
           )}
@@ -204,8 +206,8 @@ export default function ReferenceFeed({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索标题、摘要、来源、标签或公司"
-            aria-label="搜索资料"
+            placeholder={t("reference.search.placeholder")}
+            aria-label={t("reference.search.label")}
             className="h-9 w-full rounded-full border border-zinc-200 bg-white/70 pl-9 pr-8 text-xs text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200 dark:placeholder:text-zinc-500"
           />
           {query && (
@@ -221,23 +223,23 @@ export default function ReferenceFeed({
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          <span className="text-zinc-400 dark:text-zinc-500">排序</span>
+          <span className="text-zinc-400 dark:text-zinc-500">{t("reference.sort.label")}</span>
           <select
             value={sorts[0]?.field ?? ""}
             onChange={(e) => updateSort(0, e.target.value as SortField | "")}
-            aria-label="主排序字段"
+            aria-label={t("reference.sort.primary")}
             className="h-8 cursor-pointer rounded-full border border-zinc-200 bg-white/70 px-2 text-xs text-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200"
           >
-            <option value="">默认顺序</option>
+            <option value="">{t("reference.sort.default")}</option>
             {SORT_FIELDS.map((field) => (
-              <option key={field.key} value={field.key}>{field.label}</option>
+              <option key={field.key} value={field.key}>{t(`sort.${field.key}`)}</option>
             ))}
           </select>
           {sorts[0] && (
             <button
               type="button"
               onClick={() => updateSort(0, sorts[0].field, sorts[0].dir === "asc" ? "desc" : "asc")}
-              aria-label={sorts[0].dir === "asc" ? "当前升序，点击改为降序" : "当前降序，点击改为升序"}
+              aria-label={sorts[0].dir === "asc" ? t("reference.sort.asc") : t("reference.sort.desc")}
               className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 bg-white/70 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300 dark:hover:text-zinc-100"
             >
               {sorts[0].dir === "asc" ? "↑" : "↓"}
@@ -252,7 +254,7 @@ export default function ReferenceFeed({
               }}
               className="h-8 rounded-full border border-dashed border-zinc-300 px-2.5 text-zinc-500 transition-colors hover:border-zinc-400 hover:text-zinc-800 dark:border-zinc-600 dark:text-zinc-400 dark:hover:text-zinc-200"
             >
-              ＋次级
+              {t("reference.sort.addSecondary")}
             </button>
           )}
           {sorts[1] && (
@@ -260,17 +262,17 @@ export default function ReferenceFeed({
               <select
                 value={sorts[1].field}
                 onChange={(e) => updateSort(1, e.target.value as SortField | "")}
-                aria-label="次级排序字段"
+                aria-label={t("reference.sort.secondary")}
                 className="h-8 cursor-pointer rounded-full border border-zinc-200 bg-white/70 px-2 text-xs text-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200"
               >
                 {SORT_FIELDS.filter((f) => f.key !== sorts[0]?.field).map((field) => (
-                  <option key={field.key} value={field.key}>{field.label}</option>
+                  <option key={field.key} value={field.key}>{t(`sort.${field.key}`)}</option>
                 ))}
               </select>
               <button
                 type="button"
                 onClick={() => updateSort(1, sorts[1].field, sorts[1].dir === "asc" ? "desc" : "asc")}
-                aria-label={sorts[1].dir === "asc" ? "次级升序，点击改为降序" : "次级降序，点击改为升序"}
+                aria-label={sorts[1].dir === "asc" ? t("reference.sort.asc") : t("reference.sort.desc")}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 bg-white/70 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300 dark:hover:text-zinc-100"
               >
                 {sorts[1].dir === "asc" ? "↑" : "↓"}
@@ -283,14 +285,17 @@ export default function ReferenceFeed({
       {selectedId && (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-full border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-300">
           <span className="truncate">
-            已选中：{selectedItem ? selectedItem.titleZh?.trim() || selectedItem.name : "该资料不在当前列表"}
+            {t("reference.selected.label")}
+            {selectedItem
+              ? selectedItem.titleZh?.trim() || selectedItem.name
+              : t("reference.selected.missing")}
           </span>
           <button
             type="button"
             onClick={() => toggleSelect(selectedId)}
             className="shrink-0 rounded-full px-2 py-0.5 text-zinc-500 underline decoration-zinc-300 underline-offset-2 transition-colors hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:text-zinc-100"
           >
-            取消选中
+            {t("reference.selected.clear")}
           </button>
         </div>
       )}
@@ -301,17 +306,19 @@ export default function ReferenceFeed({
         <>
           {loading && items.length > 0 && (
             <p className="mb-2 px-1 text-[0.7rem] text-zinc-400 dark:text-zinc-500" role="status">
-              更新中…
+              {t("reference.updating")}
             </p>
           )}
           {!loading && items.length === 0 && (
             <p className="px-3 py-8 text-sm text-zinc-500 dark:text-zinc-400">
-              暂无资料。等作者从 Notion 添加入库后，这里会自动出现。
+              {t("reference.empty.noItems")}
             </p>
           )}
           {!loading && items.length > 0 && visibleItems.length === 0 && (
             <p className="px-3 py-8 text-sm text-zinc-500 dark:text-zinc-400">
-              {query.trim() || rules.length > 0 ? "没有符合当前搜索与筛选条件的资料。" : "没有符合当前条件的资料。"}
+              {query.trim() || rules.length > 0
+                ? t("reference.empty.noMatch")
+                : t("reference.empty.noFilterMatch")}
             </p>
           )}
           {visibleItems.length > 0 && (
