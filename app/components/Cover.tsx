@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { BrandName } from "@/components/BrandName";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -107,7 +108,10 @@ export default function Cover() {
       {/* 标题 + 导航 */}
       <div className="relative z-10 flex flex-col items-center px-4 text-white">
         <h1 className="text-center text-5xl font-semibold tracking-tight drop-shadow-lg sm:text-7xl md:text-8xl">
-          DailyRhapsody
+          <BrandName
+            name="DailyRhapsody"
+            markClassName="text-[0.22em] text-white/65"
+          />
         </h1>
         <p className="mt-4 text-sm tracking-[0.2em] opacity-90 sm:text-base">
           I think, therefore I am.
