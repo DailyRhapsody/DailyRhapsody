@@ -31,5 +31,23 @@ export const REFERENCE_DOMAINS = [
   "数据与评测",
 ] as const;
 
+/** 机器人本体/应用类型；Reference 列表和筛选共用。 */
+export const REFERENCE_ROBOT_TYPES = [
+  "工业机器人",
+  "移动机器人",
+  "仓储物流",
+  "清洁机器人",
+  "陪伴机器人",
+  "人形机器人",
+  "四足机器人",
+  "服务机器人",
+  "医疗机器人",
+  "农业机器人",
+  "安防机器人",
+  "特种机器人",
+  "教育机器人",
+  "自动驾驶",
+] as const;
+
 export type ReferenceKindLabel = keyof typeof REFERENCE_KIND_LABELS;
 export type ReferenceLicenseLabel = keyof typeof REFERENCE_LICENSE_LABELS;

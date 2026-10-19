@@ -35,7 +35,7 @@ export const metadata: Metadata = {
   },
 };
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 200;
 
 function tagCountsOf(items: ReferenceItem[]): { name: string; value: number }[] {
   const counts = new Map<string, number>();

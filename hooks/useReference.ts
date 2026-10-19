@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import type { ReferenceCompanyProfile } from "@/lib/reference-profile";
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 200;
 
 export type ReferenceListItem = {
   id: string;
@@ -17,6 +17,7 @@ export type ReferenceListItem = {
   isPublic: boolean;
   kind: "external" | "commentary" | "test" | "interview" | "company";
   domains: string[];
+  robotTypes?: string[];
   year: number | null;
   summary: string;
   license: "own" | "authorized" | "public" | "link-only";
