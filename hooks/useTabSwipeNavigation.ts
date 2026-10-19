@@ -53,9 +53,19 @@ export function useTabSwipeNavigation(
   useEffect(() => {
     let wheelAccum = 0;
 
-    /** 触发过一次切换后，等横向 wheel 安静下来才解锁，避免惯性再切一格 */
+    /** 触发过一次切换后，等横向 wheel 安静下来才解锁；同向惯性丢弃，反向手势立即放行 */
     let wheelLocked = false;
+    let lockedDir: 1 | -1 = 1;
     let wheelUnlockTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function armUnlock() {
+      if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer);
+      wheelUnlockTimer = setTimeout(() => {
+        wheelLocked = false;
+        lockedDir = 1;
+        wheelAccum = 0;
+      }, WHEEL_GESTURE_IDLE_MS);
+    }
 
     function onWheel(e: WheelEvent) {
       // AI-Persona 面板里的横滚、卡片条自身的横滚都留给它们自己
@@ -64,20 +74,22 @@ export function useTabSwipeNavigation(
       if (!(Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 2)) return;
       e.preventDefault();
 
-      // 每次横向 wheel 都把解锁计时往后推；手指/惯性真正停下后 280ms 才允许下一次切换。
-      if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer);
-      wheelUnlockTimer = setTimeout(() => {
-        wheelLocked = false;
-        wheelAccum = 0;
-      }, WHEEL_GESTURE_IDLE_MS);
+      const direction: 1 | -1 = e.deltaX > 0 ? 1 : -1;
 
-      if (wheelLocked) {
+      // 触发后的同向惯性直接丢弃；反向事件是用户明确开了新手势，立即解除锁。
+      if (wheelLocked && direction === lockedDir) {
+        armUnlock();
         wheelAccum = 0;
         return;
       }
+      if (wheelLocked) {
+        wheelLocked = false;
+        wheelAccum = 0;
+      }
+      armUnlock();
 
       // 反方向事件意味着用户明确开了新手势，把之前同方向残留的 accum 清掉再算
-      if (wheelAccum !== 0 && Math.sign(wheelAccum) !== Math.sign(e.deltaX)) {
+      if (wheelAccum !== 0 && Math.sign(wheelAccum) !== direction) {
         wheelAccum = 0;
       }
 
@@ -88,11 +100,11 @@ export function useTabSwipeNavigation(
 
       wheelAccum += e.deltaX;
       if (Math.abs(wheelAccum) >= WHEEL_TRIGGER_DELTA) {
-        const direction: 1 | -1 = wheelAccum > 0 ? 1 : -1;
         setTab((prev) =>
           direction > 0 ? Math.min(prev + 1, max) : Math.max(prev - 1, min),
         );
         wheelLocked = true;
+        lockedDir = direction;
         wheelAccum = 0;
       }
     }
