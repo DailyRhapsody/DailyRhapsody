@@ -25,7 +25,58 @@ export type ReadingBook = {
   minutes: number;
   /** 有声内容条目走 albumInfo，只读 book.title 会渲染空白 */
   album?: boolean;
+  /** 以下字段只给详情页用，卡片屏不读；接口缺哪个就没有哪个 */
+  author?: string;
+  cover?: string;
+  /** 微信读书 deepLink，点击直达该书 */
+  link?: string;
+  /** 接口给的书目标签，常见「笔记最多」「单日阅读最久」 */
+  tags?: string[];
 };
+
+/** readStat 的一项，原文保留（计数可能是「1.7万条」，不做数值化） */
+export type ReadingCounter = { label: string; value: string };
+
+/** 偏好分类一项。minutes 为 0 的默认占位在解析阶段已滤掉 */
+export type ReadingCategory = {
+  name: string;
+  /** 父分类，与分类同名时省略 */
+  parent?: string;
+  minutes: number;
+  books: number;
+};
+
+/** 偏好作者一项。books 是读过该作者的书本数，minutes 由格式化字符串解析 */
+export type ReadingAuthor = { name: string; books: number; minutes: number };
+
+/** 偏好出版社／版权方一项，接口只给本数，没有时长 */
+export type ReadingPublisher = { name: string; books: number };
+
+/** 文字阅读与听书的时长构成。readRate 为接口口径的文字阅读占比（百分数） */
+export type ReadingSplit = {
+  readMinutes: number;
+  listenMinutes: number;
+  readRate: number;
+};
+
+/** 勋章。date 为获得日期（YYYY-MM-DD，上海时区），rankText 形如「第41456位获得此勋章的书友」 */
+export type ReadingMedal = { text: string; date?: string; rankText?: string };
+
+/**
+ * 偏好书籍卡（overall 的 preferBooks）。接口给 12 类，含「我的最爱」「近期偏爱」
+ * 「思考最多」「读到深夜」等，reason 是接口自带的推荐理由。
+ */
+export type ReadingPreferBook = {
+  label: string;
+  title?: string;
+  author?: string;
+  cover?: string;
+  reason?: string;
+  link?: string;
+};
+
+/** 年度阅读时长。overall 的 readTimes 按年分桶，键是当年起点时间戳 */
+export type ReadingYear = { year: number; minutes: number };
 
 /** 偏好行，label 是「分类／作者／出版社」这类中文标签 */
 export type ReadingPreference = { label: string; value: string };
@@ -66,8 +117,21 @@ export type ReadingStats = {
   daily: number[];
   /** 本月读得最多的书或听书。接口按 5 分钟下限过滤，当月读得少时可能只有一条 */
   books: ReadingBook[];
-  /** 本月统计摘要，如「读过 1 本 · 阅读 4 天」，取自 readStat；书目少时用它填满该屏 */
+  /**
+   * 本月统计摘要，只保留「阅读」与「笔记」两项（如「本月阅读 9天 · 笔记 20条」）。
+   * 「读过／读完」不再进摘要：用户明确不要；完整四项仍保留在 monthStat 里供详情页展示。
+   */
   summary: string;
+  /** 本月 readStat 全部四项，原文保留（读过／读完／阅读／笔记） */
+  monthStat: ReadingCounter[];
+  /** 本月自然日均时长（分钟），接口 dayAverageReadTime 秒转分钟；分母是已过自然日 */
+  monthAverageMinutes?: number;
+  /** 与上一周期日均的对比比例，-0.203 表示下降约 20.3%；接口不可算时不返回 */
+  monthCompare?: number;
+  /** 本月偏好分类（已滤掉 0 值占位，按时长降序） */
+  monthCategories: ReadingCategory[];
+  /** 本月偏好文案，如「偏好阅读社会小说」 */
+  monthCategoryWord?: string;
   /**
    * 累计口径三项，取自 overall 周期（首屏「累计总览」用）。
    * overall 缺失或字段异常时整体不出现 —— 首屏随之下线，不显示半截数据；
@@ -102,14 +166,39 @@ export type ReadingStats = {
   hourly: number[];
   /** 接口给的时段文案，如「偏好夜间阅读」 */
   hourlyWord: string;
+  /** 累计 readStat 原文四项（「笔记」可能是「1.7万条」，保持原样） */
+  totalStat: ReadingCounter[];
+  /** 累计读得最多的书／听书，接口最多 10 条 */
+  totalBooks: ReadingBook[];
+  /** 累计按年阅读时长，overall 的 readTimes 按年分桶 */
+  years: ReadingYear[];
+  /** 累计分类分布，接口最多 8 条 */
+  totalCategories: ReadingCategory[];
+  totalCategoryWord?: string;
+  /** 累计偏好作者，最多 10 条；authorCount 是符合统计条件的作者总数 */
+  authors: ReadingAuthor[];
+  authorCount?: number;
+  /** 累计偏好出版社（已合并 preferPublisher 与 preferCp，同名取较大本数） */
+  publishers: ReadingPublisher[];
+  /** 文字阅读与听书构成，接口不足 1 小时或占比过高时不返回 */
+  split?: ReadingSplit;
+  /** 累计勋章，接口给全量（实测 30 枚），按获得时间降序 */
+  medals: ReadingMedal[];
+  /** 累计偏好书籍卡 12 类（我的最爱／近期偏爱／思考最多…） */
+  preferBooks: ReadingPreferBook[];
+  /** 注册时间（秒），详情页用来算「陪伴天数」 */
+  registeredAt?: number;
   refreshedAt: number;
 };
 
+// v10：详情页上线，ReadingStats 补齐接口能给出的明细（readStat 四项、分类分布、
+// 年度分桶、作者／出版社、文字与听书构成、勋章、偏好书籍卡、注册时间），
+// 缓存形状随之扩展；v9 的旧结构会被判为不可用并回源重建。
 // v9：首屏改为「累计总览」（累计时长／读过本数／阅读天数，取自 overall 周期），
 // 原「本月时长」屏顺位第二；ReadingStats 随之增加 totalMinutes / booksRead / totalDays。
 // 与 Notion 侧同一约定：回包结构一变就推进版本号，否则旧结构会留在缓存里 ——
 // 新字段读不到、卡片少一屏，而且看起来像接口没返回数据。
-const CACHE_KEY = "dr:weread:monthly:v9";
+const CACHE_KEY = "dr:weread:monthly:v10";
 /** 与 Notion 侧同策略：硬 TTL 48h，对每日一次的 Cron 留出一整天余量 */
 const CACHE_HARD_TTL_S = 48 * 60 * 60;
 /** 独立超时预算。Cron 共享 300s 预算，微信读书失败可读上一份缓存，是最适合牺牲的一段 */
@@ -342,25 +431,224 @@ function parseBooks(raw: unknown): ReadingBook[] {
     if (!title) continue;
     const minutes =
       toMinutes(it.readTime) ?? parseFormattedDuration(it.readTime) ?? 0;
-    out.push({ title, minutes, album: Boolean(album) });
+    // 详情页用的附加字段：作者、封面、深链与标签。接口缺哪个就没有哪个。
+    const author = str(book?.author) || str((album as Record<string, unknown> | undefined)?.author);
+    const cover = str(book?.cover) || str((album as Record<string, unknown> | undefined)?.cover);
+    const link = str(book?.deepLink) || str((album as Record<string, unknown> | undefined)?.deepLink);
+    const tags = Array.isArray(it.tags)
+      ? it.tags.filter((t): t is string => typeof t === "string" && t.trim() !== "")
+      : [];
+    out.push({
+      title,
+      minutes,
+      album: Boolean(album),
+      ...(author ? { author } : {}),
+      ...(cover ? { cover } : {}),
+      ...(link ? { link } : {}),
+      ...(tags.length ? { tags } : {}),
+    });
   }
   return out;
 }
 
 /**
- * 本月统计摘要。monthly 的 readStat 是 [{stat:'读过',counts:'1本'}, ...]，
- * 拼成一行短句；书目只有一两条时用它把第二屏填满。
+ * 本月统计摘要：只保留「阅读」与「笔记」两项。
+ * 「读过／读完」作为书目视角的计数，用户明确不要出现在卡片摘要里；
+ * 完整四项仍保留在 monthStat 中，供详情页逐项展示。
+ * 前缀「本月」用于与首屏「累计总览」区分。零值仍按原口径过滤（如「笔记 0条」）。
  */
 function parseSummary(monthly: Record<string, unknown>): string {
-  const items = Array.isArray(monthly.readStat) ? monthly.readStat : [];
-  return items
-    .filter((x): x is Record<string, unknown> => typeof x === "object" && x !== null)
-    .map((x) => [x.stat, x.counts] as const)
-    .filter(([stat, counts]) => typeof stat === "string" && typeof counts === "string")
-    // 「读完 0 本」「笔记 0 条」这类零值不展示，避免摘要里全是 0
-    .filter(([, counts]) => !/^0\D/.test(counts as string))
-    .map(([stat, counts]) => `${stat} ${counts}`)
+  const body = parseCounters(monthly.readStat)
+    .filter((x) => x.label === "阅读" || x.label === "笔记")
+    .filter((x) => !/^0\D/.test(x.value))
+    .map((x) => `${x.label} ${x.value}`)
     .join(" · ");
+  return body ? `本月${body}` : "";
+}
+
+/** readStat → 结构化计数，原文保留（「1.7万条」不做数值化） */
+function parseCounters(raw: unknown): ReadingCounter[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((x): x is Record<string, unknown> => typeof x === "object" && x !== null)
+    .map((x) => ({ label: str(x.stat), value: str(x.counts) }))
+    .filter((x) => x.label && x.value);
+}
+
+/**
+ * 偏好分类。接口会补默认分类占位（readingTime 为 0），这里整条滤掉，
+ * 否则详情页会出现 0 分钟的「个人成长／心理」这类空行。
+ * 接口给的都是顶层分类，父分类与自身同名时不再重复写出。
+ */
+function parseCategories(raw: unknown): ReadingCategory[] {
+  const out: ReadingCategory[] = [];
+  for (const item of Array.isArray(raw) ? raw : []) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const it = item as Record<string, unknown>;
+    const name = str(it.categoryTitle);
+    const minutes = toMinutes(it.readingTime) ?? 0;
+    if (!name || minutes <= 0) continue;
+    const parent = str(it.parentCategoryTitle);
+    const books = Number(it.readingCount);
+    out.push({
+      name,
+      ...(parent && parent !== name ? { parent } : {}),
+      minutes,
+      books: Number.isFinite(books) && books > 0 ? books : 0,
+    });
+  }
+  return out.sort((a, b) => b.minutes - a.minutes);
+}
+
+/** readTimes 的分桶键时间戳按上海时区取年，同一年的分桶合并 */
+function parseYears(raw: unknown): ReadingYear[] {
+  if (!raw || typeof raw !== "object") return [];
+  const byYear = new Map<number, number>();
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const ts = Number(key);
+    if (!Number.isFinite(ts) || ts <= 0) continue;
+    const year = Number(new Intl.DateTimeFormat("en-CA", {
+      timeZone: TIME_ZONE,
+      year: "numeric",
+    }).format(new Date(ts * 1000)));
+    if (!Number.isFinite(year)) continue;
+    const minutes =
+      typeof value === "number"
+        ? toMinutes(value)
+        : toMinutes((value as { readTime?: unknown } | null)?.readTime);
+    if (minutes === null || minutes <= 0) continue;
+    byYear.set(year, (byYear.get(year) ?? 0) + minutes);
+  }
+  return [...byYear.entries()]
+    .map(([year, minutes]) => ({ year, minutes }))
+    .sort((a, b) => a.year - b.year);
+}
+
+/**
+ * 偏好作者。readTime 是「21小时45分钟」这类格式化字符串（与 totalReadTime 口径相反），
+ * 已是数字时按秒处理；解析不出时长为 0，仍保留条目（本数本身有信息量）。
+ */
+function parseAuthors(raw: unknown): ReadingAuthor[] {
+  const out: ReadingAuthor[] = [];
+  for (const item of Array.isArray(raw) ? raw : []) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const it = item as Record<string, unknown>;
+    const name = str(it.name);
+    if (!name) continue;
+    const rawTime = it.readTime;
+    const minutes =
+      (typeof rawTime === "number" ? toMinutes(rawTime) : null) ??
+      parseFormattedDuration(rawTime) ??
+      0;
+    const books = Number(it.count);
+    out.push({
+      name,
+      books: Number.isFinite(books) && books > 0 ? books : 0,
+      minutes: minutes > 0 ? minutes : 0,
+    });
+  }
+  // 详情层的条形长度按时长画，排序也必须按时长，否则「条越短名次越靠前」会被误读。
+  // 接口原始顺序按本数，与卡片云图「作者 · 按累计阅读时长」的口径也不一致。
+  return out.sort((a, b) => b.minutes - a.minutes || b.books - a.books);
+}
+
+/**
+ * 偏好出版社。preferPublisher 与 preferCp 是同一批社的两个口径，
+ * 同名取较大本数（与云图合并策略一致），按本数降序。
+ */
+function parsePublishers(overall: Record<string, unknown> | null): ReadingPublisher[] {
+  const byName = new Map<string, number>();
+  const add = (name: string, count: number) => {
+    if (!name || !Number.isFinite(count) || count <= 0) return;
+    const key = name.toLocaleLowerCase("zh-Hans-CN");
+    const prev = byName.get(key);
+    if (prev === undefined || count > prev) byName.set(key, count);
+  };
+  for (const item of Array.isArray(overall?.preferPublisher) ? overall!.preferPublisher : []) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const it = item as Record<string, unknown>;
+    add(str(it.name), Number(it.count));
+  }
+  for (const item of Array.isArray(overall?.preferCp) ? overall!.preferCp : []) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const it = item as Record<string, unknown>;
+    add(itemName(it), Number(it.count));
+  }
+  return [...byName.entries()]
+    .map(([name, books]) => ({ name, books }))
+    .sort((a, b) => b.books - a.books || a.name.localeCompare(b.name, "zh-Hans-CN"));
+}
+
+/**
+ * 文字阅读与听书构成。三项必须同时可算才返回：只给其中一项会画出一根读不出含义的半条。
+ * 接口在总时长不足 1 小时或文字占比过高时不返回 readRate。
+ */
+function parseSplit(overall: Record<string, unknown> | null): ReadingSplit | undefined {
+  if (!overall) return undefined;
+  const readMinutes = toMinutes(overall.wrReadTime);
+  const listenMinutes = toMinutes(overall.wrListenTime);
+  const rate = Number(overall.readRate);
+  if (readMinutes === null || readMinutes <= 0) return undefined;
+  if (listenMinutes === null || listenMinutes < 0) return undefined;
+  if (!Number.isFinite(rate) || rate <= 0 || rate > 100) return undefined;
+  return { readMinutes, listenMinutes, readRate: Math.round(rate) };
+}
+
+/** 勋章。ctime 是获得时间，按日期降到最近在前；缺失的排末尾 */
+function parseMedals(raw: unknown): ReadingMedal[] {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const out: ReadingMedal[] = [];
+  for (const item of Array.isArray(raw) ? raw : []) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const it = item as Record<string, unknown>;
+    const text = str(it.displayText) || str(it.hint);
+    if (!text) continue;
+    const ctime = Number(it.ctime);
+    const date =
+      Number.isFinite(ctime) && ctime > 0
+        ? fmt.format(new Date(ctime * 1000))
+        : undefined;
+    const rankText = str(it.rankText);
+    out.push({ text, ...(date ? { date } : {}), ...(rankText ? { rankText } : {}) });
+  }
+  return out.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+}
+
+/**
+ * 偏好书籍卡。接口的 12 类里前几类只给 type/title，不给书 —— 没有书名的整条跳过，
+ * 避免详情页出现一条只有「我的最爱」却没有书目的空卡。
+ */
+function parsePreferBooks(raw: unknown): ReadingPreferBook[] {
+  const out: ReadingPreferBook[] = [];
+  for (const item of Array.isArray(raw) ? raw : []) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const it = item as Record<string, unknown>;
+    const info =
+      typeof it.bookInfo === "object" && it.bookInfo !== null && !Array.isArray(it.bookInfo)
+        ? (it.bookInfo as Record<string, unknown>)
+        : undefined;
+    const label = str(it.title);
+    const title = str(info?.title);
+    if (!label || !title) continue;
+    const author = str(info?.author);
+    const cover = str(info?.cover);
+    const reason = str(it.reason);
+    const link = str(info?.deepLink);
+    out.push({
+      label,
+      title,
+      ...(author ? { author } : {}),
+      ...(cover ? { cover } : {}),
+      ...(reason ? { reason } : {}),
+      ...(link ? { link } : {}),
+    });
+  }
+  return out;
 }
 
 /**
@@ -640,6 +928,14 @@ export function buildReadingStats(
   const { month, elapsedDays } = shanghaiMonthProgress();
   const daily = normalizeDaily(monthly.readTimes, month, elapsedDays);
 
+  const monthCategories = parseCategories(monthly.preferCategory);
+  const monthStat = parseCounters(monthly.readStat);
+  const average = toMinutes(monthly.dayAverageReadTime);
+  const compare = Number(monthly.compare);
+  const registeredAt = Number(overall?.registTime);
+  const authorCount = Number(overall?.authorCount);
+  const split = parseSplit(overall);
+
   return {
     month,
     monthMinutes,
@@ -647,11 +943,29 @@ export function buildReadingStats(
     daily,
     books: parseBooks(monthly.readLongest),
     summary: parseSummary(monthly),
+    monthStat,
+    ...(average !== null && average > 0 ? { monthAverageMinutes: average } : {}),
+    // compare 是「与上期日均的比值」，接口只在可算时返回。超出 (-1, 100) 视为脏数据
+    ...(Number.isFinite(compare) && compare > -1 && compare < 100 ? { monthCompare: compare } : {}),
+    monthCategories,
+    ...(str(monthly.preferCategoryWord) ? { monthCategoryWord: str(monthly.preferCategoryWord) } : {}),
     preferences: parsePreferences(overall),
     authorClouds: parseAuthorClouds(overall),
     publisherClouds: parsePublisherClouds(overall),
     ...parseHourly(overall),
     ...parseTotals(overall),
+    totalStat: parseCounters(overall?.readStat),
+    totalBooks: parseBooks(overall?.readLongest),
+    years: parseYears(overall?.readTimes),
+    totalCategories: parseCategories(overall?.preferCategory),
+    ...(str(overall?.preferCategoryWord) ? { totalCategoryWord: str(overall?.preferCategoryWord) } : {}),
+    authors: parseAuthors(overall?.preferAuthor),
+    ...(Number.isFinite(authorCount) && authorCount > 0 ? { authorCount: Math.round(authorCount) } : {}),
+    publishers: parsePublishers(overall),
+    ...(split ? { split } : {}),
+    medals: parseMedals(overall?.medals),
+    preferBooks: parsePreferBooks(overall?.preferBooks),
+    ...(Number.isFinite(registeredAt) && registeredAt > 0 ? { registeredAt } : {}),
     refreshedAt: Date.now(),
   };
 }
@@ -671,11 +985,22 @@ export function isUsableCachedStats(value: unknown): value is ReadingStats {
     // 与构建器同口径：buildReadingStats 在总时长 <= 0 时返回 null，缓存也不该接受这种值
     typeof v.monthMinutes === "number" &&
     v.monthMinutes > 0 &&
+    typeof v.summary === "string" &&
     Array.isArray(v.daily) &&
     Array.isArray(v.books) &&
     Array.isArray(v.authorClouds) &&
     Array.isArray(v.publisherClouds) &&
     Array.isArray(v.hourly) &&
+    // 详情页会直接遍历这几组，缺任一项就会在渲染时抛 TypeError，因此一并校验
+    Array.isArray(v.monthStat) &&
+    Array.isArray(v.monthCategories) &&
+    Array.isArray(v.totalStat) &&
+    Array.isArray(v.totalBooks) &&
+    Array.isArray(v.totalCategories) &&
+    Array.isArray(v.authors) &&
+    Array.isArray(v.publishers) &&
+    Array.isArray(v.medals) &&
+    Array.isArray(v.preferBooks) &&
     // 累计三项是可选字段（overall 缺失时不存在）；存在时必须是正数，
     // 免得脏缓存让首屏渲染出 NaNh 或「读过 undefined 本」
     (v.totalMinutes === undefined || (typeof v.totalMinutes === "number" && v.totalMinutes > 0)) &&

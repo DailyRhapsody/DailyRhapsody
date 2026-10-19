@@ -167,7 +167,7 @@ test("书目只取本月榜，累计榜不参与书目", () => {
   assert.deepEqual(s.books.map((b) => b.title), ["本月"]);
 });
 
-test("摘要拼成一行，并过滤掉零值项", () => {
+test("摘要只保留阅读与笔记，加本月前缀，并过滤零值项", () => {
   const s = buildReadingStats({
     totalReadTime: 11685,
     readStat: [
@@ -177,7 +177,27 @@ test("摘要拼成一行，并过滤掉零值项", () => {
       { stat: "笔记", counts: "0条" },
     ],
   }, null);
-  assert.equal(s.summary, "读过 1本 · 阅读 4天");
+  assert.equal(s.summary, "本月阅读 4天", "读过／读完不进摘要，零值笔记被过滤");
+});
+
+test("摘要按用户口径输出「本月阅读 9天 · 笔记 20条」", () => {
+  const s = buildReadingStats({
+    totalReadTime: 47958,
+    readStat: [
+      { stat: "读过", counts: "2本" },
+      { stat: "读完", counts: "1本" },
+      { stat: "阅读", counts: "9天" },
+      { stat: "笔记", counts: "20条" },
+    ],
+  }, null);
+  assert.equal(s.summary, "本月阅读 9天 · 笔记 20条");
+  // 完整四项仍保留，供详情页展示
+  assert.deepEqual(s.monthStat.map((x) => `${x.label}|${x.value}`), [
+    "读过|2本",
+    "读完|1本",
+    "阅读|9天",
+    "笔记|20条",
+  ]);
 });
 
 test("摘要字段异常时为空串，不抛异常", () => {
@@ -187,6 +207,185 @@ test("摘要字段异常时为空串，不抛异常", () => {
     buildReadingStats({ totalReadTime: 600, readStat: [null, 42, {}] }, null).summary,
     "",
   );
+});
+
+// ---------------------------------------------------------------------------
+// 详情层字段：接口能给出的明细都进缓存，缺的宁可不出现
+// ---------------------------------------------------------------------------
+
+test("本月日均按秒转分钟，compare 直接给比值", () => {
+  const s = buildReadingStats(
+    { totalReadTime: 47958, dayAverageReadTime: 2397, compare: -0.203302545 },
+    null,
+  );
+  assert.equal(s.monthAverageMinutes, 40);
+  assert.equal(s.monthCompare, -0.203302545);
+});
+
+test("日均或环比异常时不带字段，不渲染 0 或 NaN", () => {
+  const s = buildReadingStats({ totalReadTime: 600, dayAverageReadTime: -5, compare: 1e9 }, null);
+  assert.equal("monthAverageMinutes" in s, false);
+  assert.equal("monthCompare" in s, false);
+});
+
+test("本月分类滤掉 0 值占位，按时长降序，父分类同名不重复写", () => {
+  const s = buildReadingStats(
+    {
+      totalReadTime: 600,
+      preferCategory: [
+        { categoryTitle: "经济理财", parentCategoryTitle: "经济理财", readingTime: 600, readingCount: 2 },
+        { categoryTitle: "社会小说", parentCategoryTitle: "精品小说", readingTime: 1800, readingCount: 1 },
+        { categoryTitle: "个人成长", parentCategoryTitle: "个人成长", readingTime: 0, readingCount: 0 },
+      ],
+    },
+    null,
+  );
+  assert.deepEqual(s.monthCategories, [
+    { name: "社会小说", parent: "精品小说", minutes: 30, books: 1 },
+    { name: "经济理财", minutes: 10, books: 2 },
+  ]);
+});
+
+test("年度分桶按上海时区取年，同一年合并", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    readTimes: {
+      1514736000: 600, // 2018-01-01 00:00 CST
+      1767196800: 1200, // 2026-01-01 00:00 CST
+      [1767196800 + 86400]: 60, // 2026-01-02，同年
+    },
+  });
+  assert.deepEqual(s.years, [
+    { year: 2018, minutes: 10 },
+    { year: 2026, minutes: 21 },
+  ]);
+});
+
+test("偏好作者保留本数与格式化时长，按阅读时长降序（与条形长度同口径）", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    preferAuthor: [
+      { name: "苏杰", count: 4, readTime: "21小时45分钟" },
+      { name: "尤瓦尔·赫拉利", count: 3, readTime: "46小时50分钟" },
+    ],
+  });
+  assert.deepEqual(s.authors, [
+    { name: "尤瓦尔·赫拉利", books: 3, minutes: 2810 },
+    { name: "苏杰", books: 4, minutes: 1305 },
+  ]);
+});
+
+test("出版社合并 preferPublisher 与 preferCp，同名取较大本数", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    preferPublisher: [
+      { name: "中信出版集团", count: 31 },
+      { name: "电子工业出版社", count: 17 },
+    ],
+    preferCp: [
+      { count: 32, copyrightInfo: { name: "中信出版集团" } },
+      { count: 9, copyrightInfo: { name: "机械工业出版社" } },
+    ],
+  });
+  assert.deepEqual(s.publishers, [
+    { name: "中信出版集团", books: 32 },
+    { name: "电子工业出版社", books: 17 },
+    { name: "机械工业出版社", books: 9 },
+  ]);
+});
+
+test("文字与听书构成三项齐全才出现", () => {
+  const ok = buildReadingStats({ totalReadTime: 600 }, {
+    readRate: 56,
+    wrReadTime: 2430214,
+    wrListenTime: 1841031,
+  });
+  assert.deepEqual(ok.split, { readMinutes: 40504, listenMinutes: 30684, readRate: 56 });
+  assert.equal(
+    "split" in buildReadingStats({ totalReadTime: 600 }, { wrReadTime: 3600 }),
+    false,
+    "缺 readRate 时整组不出现",
+  );
+});
+
+test("勋章按获得日期降序，ctime 转上海时区日期", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    medals: [
+      { ctime: 1757370025, displayText: "阅读 1000 小时", rankText: "第1722107位获得此勋章的书友" },
+      { ctime: 1694341784, displayText: "阅读 1000 天" },
+      { displayText: "无日期" },
+    ],
+  });
+  assert.deepEqual(s.medals, [
+    { text: "阅读 1000 小时", date: "2025-09-09", rankText: "第1722107位获得此勋章的书友" },
+    { text: "阅读 1000 天", date: "2023-09-10" },
+    { text: "无日期" },
+  ]);
+});
+
+test("偏好书籍卡跳过没有书名的类型", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    preferBooks: [
+      { type: 13, title: "我的最爱" },
+      {
+        type: 13,
+        title: "我的最爱",
+        bookInfo: { title: "人类简史", author: "尤瓦尔·赫拉利", deepLink: "https://weread.qq.com/x" },
+        reason: "阅读了41天",
+      },
+    ],
+  });
+  assert.deepEqual(s.preferBooks, [
+    {
+      label: "我的最爱",
+      title: "人类简史",
+      author: "尤瓦尔·赫拉利",
+      reason: "阅读了41天",
+      link: "https://weread.qq.com/x",
+    },
+  ]);
+});
+
+test("书目带上详情字段：作者、封面、深链、标签，空标签被丢掉", () => {
+  const s = buildReadingStats(
+    {
+      totalReadTime: 600,
+      readLongest: [
+        {
+          book: {
+            title: "背叛",
+            author: "豆豆",
+            cover: "https://cdn.weread.qq.com/x",
+            deepLink: "https://weread.qq.com/y",
+          },
+          readTime: 46425,
+          tags: ["单日阅读最久", ""],
+        },
+      ],
+    },
+    null,
+  );
+  assert.deepEqual(s.books, [
+    {
+      title: "背叛",
+      minutes: 774,
+      album: false,
+      author: "豆豆",
+      cover: "https://cdn.weread.qq.com/x",
+      link: "https://weread.qq.com/y",
+      tags: ["单日阅读最久"],
+    },
+  ]);
+});
+
+test("累计计数保留原文，「1.7万条」不做数值化", () => {
+  const s = buildReadingStats({ totalReadTime: 600 }, {
+    readStat: [
+      { stat: "读过", counts: "404本" },
+      { stat: "笔记", counts: "1.7万条" },
+    ],
+  });
+  assert.deepEqual(s.totalStat, [
+    { label: "读过", value: "404本" },
+    { label: "笔记", value: "1.7万条" },
+  ]);
 });
 
 // ---------------------------------------------------------------------------
@@ -527,6 +726,9 @@ test("缓存形状校验与构建器同口径，不误杀合法缓存", () => {
   assert.equal(isUsableCachedStats(good), true, "正常对象必须通过");
   assert.equal(isUsableCachedStats({ ...good, authorClouds: undefined }), false, "缺云图数组的旧结构必须拒");
   assert.equal(isUsableCachedStats({ ...good, publisherClouds: null }), false);
+  assert.equal(isUsableCachedStats({ ...good, monthStat: undefined }), false, "详情层缺 readStat 的旧结构必须拒");
+  assert.equal(isUsableCachedStats({ ...good, medals: null }), false);
+  assert.equal(isUsableCachedStats({ ...good, preferBooks: undefined }), false);
   assert.equal(isUsableCachedStats({ ...good, monthMinutes: 0 }), false, "与构建器一致：总时长为 0 不接受");
   assert.equal(isUsableCachedStats({ ...good, monthMinutes: -1 }), false);
   // 空数组是合法状态（当月没读到书、时段未达阈值），不能因此回源

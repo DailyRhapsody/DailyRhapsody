@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ReadingCloudScreen } from "@/components/entries/ReadingCloudScreen";
+import { ReadingDetailSheet } from "@/components/entries/ReadingDetailSheet";
 import type { ReadingStats } from "@/lib/weread";
 
 /**
@@ -24,6 +25,10 @@ import type { ReadingStats } from "@/lib/weread";
  * 云图屏的词字号是唯一例外（云图靠字号表达权重），区间与依据见 ReadingCloudScreen。
  *
  * 交互：自动轮播 5s；悬停、聚焦、页面不可见、减少动态效果时暂停；左右方向键手动切屏。
+ * 单击卡片（或键盘回车／空格）打开全量详情层（ReadingDetailSheet）：接口能给出的
+ * 本月与累计数据都在那里展开。左右键在卡片上仍是切屏、在详情层里切换本月／累计，
+ * 两处都不占用卡片条的横滑手势。
+ * 触屏横滑超过 8px 视为滚动卡片条，不打开详情，避免手机上一滑就弹层。
  * 不放分页圆点（用户明确不要），屏序号只写进无障碍名称。不做卡内横滑切页，
  * 横向手势留给卡片条自身的滚动。
  */
@@ -283,8 +288,13 @@ export function ReadingStatsCard({ stats }: { stats: ReadingStats | null }) {
   const panels = screens.length;
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [open, setOpen] = useState(false);
   const reduced = useReducedMotion();
   const boxRef = useRef<HTMLDivElement>(null);
+  /** 详情层的入口按钮。关闭后焦点要还到这里，键盘用户不必重新 Tab 一遍 */
+  const actionRef = useRef<HTMLButtonElement>(null);
+  /** 按下位置，用于区分「单击」与「横向滚动卡片条」 */
+  const tap = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (reduced || paused || panels < 2) return;
@@ -309,43 +319,90 @@ export function ReadingStatsCard({ stats }: { stats: ReadingStats | null }) {
   const current = Math.min(index, panels - 1);
 
   return (
-    <div
-      ref={boxRef}
-      role="group"
-      aria-roledescription="轮播卡片"
-      // 没有可见的分页指示，屏序号放进无障碍名称；读数屏变化时读屏能跟着播报
-      aria-label={`微信读书阅读数据：${screens[current].label}，第 ${current + 1} 屏，共 ${panels} 屏`}
-      tabIndex={0}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
-      onKeyDown={(e) => {
-        if (e.key === "ArrowRight") {
-          e.preventDefault();
-          setPaused(true);
-          go(1);
-        } else if (e.key === "ArrowLeft") {
-          e.preventDefault();
-          setPaused(true);
-          go(-1);
-        }
-      }}
-      className="relative flex h-[148px] w-[168px] shrink-0 flex-col rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm outline-none transition-apple focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/80 dark:focus-visible:ring-zinc-500"
-    >
-      <div className="relative min-h-0 flex-1 overflow-hidden">
-        {screens.map((s, i) => (
-          <div
-            key={s.key}
-            aria-hidden={i !== current}
-            className={`absolute inset-0 transition-apple ${
-              i === current ? "opacity-100" : "pointer-events-none opacity-0"
-            }`}
+    <>
+      <div
+        ref={boxRef}
+        role="group"
+        aria-roledescription="轮播卡片"
+        // 没有可见的分页指示，屏序号放进无障碍名称；读数屏变化时读屏能跟着播报
+        aria-label={`微信读书阅读数据：${screens[current].label}，第 ${current + 1} 屏，共 ${panels} 屏`}
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
+        onFocus={() => setPaused(true)}
+        onBlur={() => setPaused(false)}
+        onKeyDown={(e) => {
+          // 左右键仍只负责切屏：入口按钮上按下方向键时，事件从这里接收。
+          // 回车与空格由入口按钮自身的 click 处理，因此不在这里重复拦截。
+          if (e.key === "ArrowRight") {
+            e.preventDefault();
+            setPaused(true);
+            go(1);
+          } else if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            setPaused(true);
+            go(-1);
+          }
+        }}
+        className="group relative flex h-[148px] w-[168px] shrink-0 flex-col rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm outline-none transition-apple focus-within:ring-2 focus-within:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/80 dark:focus-within:ring-zinc-500"
+      >
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          {screens.map((s, i) => (
+            <div
+              key={s.key}
+              aria-hidden={i !== current}
+              className={`absolute inset-0 transition-apple ${
+                i === current ? "opacity-100" : "pointer-events-none opacity-0"
+              }`}
+            >
+              {s.node}
+            </div>
+          ))}
+        </div>
+
+        {/*
+         * 整卡单击入口。放在最上层，卡片内容不再接收指针事件；
+         * 悬停暂停由父级的 mouseenter 负责，不受这层影响。
+         */}
+        <button
+          ref={actionRef}
+          type="button"
+          aria-label="查看微信读书全部阅读数据"
+          title="查看全部阅读数据"
+          onPointerDown={(e) => {
+            tap.current = { x: e.clientX, y: e.clientY };
+          }}
+          onClick={(e) => {
+            const start = tap.current;
+            tap.current = null;
+            // 卡片条在触屏上要横滑：位移超过 8px 当作滚动，不打开详情
+            if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) return;
+            setOpen(true);
+          }}
+          className="absolute inset-0 z-10 cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 dark:focus-visible:ring-zinc-500"
+        >
+          <svg
+            aria-hidden
+            className="pointer-events-none absolute right-2 top-2 h-3 w-3 text-zinc-400 opacity-0 transition-opacity group-hover:opacity-70 dark:text-zinc-500"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
           >
-            {s.node}
-          </div>
-        ))}
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 3H3v6M15 21h6v-6M21 3l-7 7M3 21l7-7" />
+          </svg>
+        </button>
       </div>
-    </div>
+
+      {open ? (
+        <ReadingDetailSheet
+          stats={stats}
+          onClose={() => {
+            setOpen(false);
+            // 关闭后把焦点还给入口按钮；rAF 等面板卸载后执行，避免还原时被卸载的焦点覆盖
+            requestAnimationFrame(() => actionRef.current?.focus());
+          }}
+        />
+      ) : null}
+    </>
   );
 }
