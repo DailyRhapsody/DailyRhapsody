@@ -102,7 +102,8 @@ export function ReferenceCard({
   selected?: boolean;
 }) {
   const { t, lang } = useLang();
-  const displayName = item.titleZh?.trim() || item.name || t("reference.card.untitled");
+  const preferredTitle = lang === "en" ? item.name || item.titleZh : item.titleZh || item.name;
+  const displayName = preferredTitle?.trim() || t("reference.card.untitled");
   const sourceLabel = hostnameOf(item.url) || (item.source && item.source !== "手动添加" ? item.source : "");
   const profile = item.company;
 

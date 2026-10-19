@@ -238,7 +238,7 @@ export default async function ReferenceDetailPage({
           </div>
 
           <h1 className="mt-4 text-3xl font-semibold leading-tight tracking-tight text-zinc-900 dark:text-zinc-50">
-            {item.name || "(无标题)"}
+            {(lang === "zh" ? item.titleZh?.trim() || item.name : item.name || item.titleZh?.trim()) || t(lang, "reference.card.untitled")}
           </h1>
 
           {item.summary && (
