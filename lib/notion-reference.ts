@@ -60,6 +60,8 @@ export type ReferenceAttachment =
 export type ReferenceItem = {
   id: string;
   name: string;
+  /** 从正文/摘要归纳出的中文标题；没有时退回 name */
+  titleZh: string | null;
   url: string;
   source: string;
   tags: string[];
@@ -344,6 +346,15 @@ function extractUrl(page: PageObjectResponse): string {
   return "";
 }
 
+function extractTitleZh(page: PageObjectResponse): string | null {
+  const prop = page.properties["TitleZh"];
+  if (prop?.type === "rich_text") {
+    const text = richTextToPlain(prop.rich_text).trim();
+    return text || null;
+  }
+  return null;
+}
+
 function extractSource(page: PageObjectResponse): string {
   const prop = page.properties["Source"];
   if (prop?.type === "select") return prop.select?.name ?? "";
@@ -479,6 +490,7 @@ function mapPageToItem(page: PageObjectResponse, bodyMarkdown?: string): Referen
   return {
     id: page.id,
     name: extractTitle(page),
+    titleZh: extractTitleZh(page),
     url: extractUrl(page),
     source: extractSource(page),
     tags: extractTags(page),

@@ -8,6 +8,7 @@ const PAGE_SIZE = 30;
 export type ReferenceListItem = {
   id: string;
   name: string;
+  titleZh?: string | null;
   url: string;
   source: string;
   tags: string[];
