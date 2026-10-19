@@ -1,7 +1,7 @@
 import { getCachedDiaries } from "@/lib/notion";
 import { getCachedMoments } from "@/lib/notion-moments";
 import { getCachedReferenceItems } from "@/lib/notion-reference";
-import { pickReferenceTop } from "@/lib/reference-thumbs";
+import { rankReferenceTop } from "@/lib/reference-ranking";
 import { getProfile } from "@/lib/profile-store";
 import { getReadingStats } from "@/lib/weread";
 import FeedShell, { type FeedStats } from "./FeedShell";
@@ -74,7 +74,7 @@ export default async function FeedLayout({
     const items = await getCachedReferenceItems();
     const publicItems = (items ?? []).filter((item) => item.isPublic);
     referenceTotal = publicItems.length;
-    referenceTop = pickReferenceTop(publicItems);
+    referenceTop = (await rankReferenceTop(publicItems)).map(({ id, title }) => ({ id, title }));
   } catch {
     referenceTotal = 0;
   }
