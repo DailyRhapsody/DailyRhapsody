@@ -13,6 +13,7 @@ import {
   REFERENCE_LICENSE_LABELS,
 } from "@/lib/reference-taxonomy";
 import type { ReferenceCompanyProfile } from "@/lib/reference-profile";
+import { recordReferenceView } from "@/lib/reference-ranking";
 import { renderMarkdown, markdownHeadingClass, markdownPreviewProseClass } from "@/lib/markdown";
 import { ReferenceLikeButton } from "@/components/reference/ReferenceLikeButton";
 import { ReferenceShareButton } from "@/components/reference/ReferenceShareButton";
@@ -153,6 +154,7 @@ export default async function ReferenceDetailPage({
   if (!item) notFound();
   const admin = await isAdmin();
   if (!admin && !item.isPublic) notFound();
+  if (item.isPublic) await recordReferenceView(item.id);
 
   const sourceLabel = hostnameOf(item.url) || (item.source && item.source !== "手动添加" ? item.source : "");
   const renderedHtml = item.bodyMarkdown ? renderMarkdown(item.bodyMarkdown) : "";

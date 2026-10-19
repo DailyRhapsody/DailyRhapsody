@@ -488,6 +488,13 @@ export function referenceTagCounts(items: ReferenceItem[]): { name: string; valu
 }
 
 function extractClippedAt(page: PageObjectResponse): string {
+  // 手工收藏时间优先用可编辑的 CollectedAt；旧的 ClippedAt 继续兼容。
+  const collected = page.properties["CollectedAt"];
+  if (collected?.type === "date" && collected.date?.start) {
+    return collected.date.start.length > 10
+      ? new Date(collected.date.start).toISOString()
+      : new Date(`${collected.date.start}T00:00:00Z`).toISOString();
+  }
   const prop = page.properties["ClippedAt"];
   if (prop?.type === "created_time") return prop.created_time;
   if (prop?.type === "date" && prop.date?.start) {
