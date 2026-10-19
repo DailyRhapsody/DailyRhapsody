@@ -298,7 +298,7 @@ export function PetChatPanel({
           gutter ? "h-full justify-end" : "mx-auto max-w-[640px] px-4 pb-4 sm:pb-6"
         }`}
       >
-          <div className="flex min-h-0 flex-col">
+          <div className={`flex min-h-0 flex-col ${chat.messages.length === 0 ? "hidden" : "flex-1"}`}>
             <div
               ref={listRef}
               onScroll={onScroll}
@@ -368,12 +368,14 @@ export function PetChatPanel({
           </p>
 
           {chat.messages.length === 0 && (
-            <div className={`pointer-events-none mb-4 flex flex-col items-center gap-1 text-center ${fade}`}>
-              <p className="text-sm font-semibold tracking-wide text-zinc-700 dark:text-zinc-200">
+            <div
+              className={`pointer-events-none flex min-h-[34vh] flex-1 flex-col items-center justify-center gap-2 px-4 text-center ${fade}`}
+            >
+              <p className="text-xl font-semibold tracking-wide text-zinc-700 dark:text-zinc-200">
                 滕君的 AI 数字人
               </p>
-              <p className="text-[0.7rem] text-zinc-400 dark:text-zinc-500">
-                基于他写过的内容生成，随便聊聊
+              <p className="max-w-[19rem] text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
+                基于蒸馏记忆包的 Agent 驱动
               </p>
             </div>
           )}
