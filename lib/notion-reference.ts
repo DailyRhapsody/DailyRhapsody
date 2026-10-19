@@ -43,6 +43,7 @@ import { extractBodyMarkdown, withNotionRetry } from "@/lib/notion";
 import { assertNotionFetchAllowed, isNotionFetchAllowed, runWithRefreshLock } from "@/lib/notion-quota";
 import { mediaProxyPath, mediaVersion } from "@/lib/notion-media";
 import { canonicalReferenceId } from "@/lib/reference-ids";
+import type { ReferenceCompanyProfile } from "@/lib/reference-profile";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,7 +51,7 @@ import { canonicalReferenceId } from "@/lib/reference-ids";
 
 export const REFERENCE_SCHEMA_VERSION = 2;
 
-export type ReferenceKind = "external" | "commentary" | "test" | "interview";
+export type ReferenceKind = "external" | "commentary" | "test" | "interview" | "company";
 export type ReferenceLicense = "own" | "authorized" | "public" | "link-only";
 
 export type ReferenceAttachment =
@@ -77,6 +78,8 @@ export type ReferenceItem = {
   coverPath: string | null;
   coverKind: "file" | "external" | null;
   attachment: ReferenceAttachment | null;
+  /** 公司档案：仅「行业档案」类型填写，其余条目为 null */
+  company: ReferenceCompanyProfile | null;
   bodyMarkdown?: string; // 仅详情接口才填，列表不返
 };
 
@@ -173,7 +176,13 @@ type NotionFileValue = {
 };
 
 function isReferenceKind(value: unknown): value is ReferenceKind {
-  return value === "external" || value === "commentary" || value === "test" || value === "interview";
+  return (
+    value === "external" ||
+    value === "commentary" ||
+    value === "test" ||
+    value === "interview" ||
+    value === "company"
+  );
 }
 
 function isReferenceLicense(value: unknown): value is ReferenceLicense {
@@ -187,6 +196,29 @@ function isReferenceAttachment(value: unknown): value is ReferenceAttachment | n
   if (a.kind === "file") return typeof a.name === "string";
   if (a.kind === "external") return typeof a.name === "string" && typeof a.url === "string";
   return false;
+}
+
+function isReferenceCompanyProfile(value: unknown): value is ReferenceCompanyProfile {
+  if (!value || typeof value !== "object") return false;
+  const c = value as Partial<ReferenceCompanyProfile>;
+  return (
+    typeof c.companyName === "string" &&
+    (c.headcount === null || typeof c.headcount === "number") &&
+    typeof c.operationCulture === "string" &&
+    Array.isArray(c.productForms) &&
+    c.productForms.every((x) => typeof x === "string") &&
+    Array.isArray(c.markets) &&
+    c.markets.every((x) => typeof x === "string") &&
+    Array.isArray(c.scenarios) &&
+    c.scenarios.every((x) => typeof x === "string") &&
+    Array.isArray(c.companyTags) &&
+    c.companyTags.every((x) => typeof x === "string") &&
+    typeof c.interviewStatus === "string" &&
+    Array.isArray(c.salesModes) &&
+    c.salesModes.every((x) => typeof x === "string") &&
+    typeof c.listed === "string" &&
+    typeof c.profitability === "string"
+  );
 }
 
 /**
@@ -215,6 +247,7 @@ function isReferenceItem(value: unknown): value is ReferenceItem {
     (item.coverPath === null || typeof item.coverPath === "string") &&
     (item.coverKind === null || item.coverKind === "file" || item.coverKind === "external") &&
     isReferenceAttachment(item.attachment) &&
+    (item.company === undefined || item.company === null || isReferenceCompanyProfile(item.company)) &&
     (item.bodyMarkdown === undefined || typeof item.bodyMarkdown === "string")
   );
 }
@@ -355,6 +388,63 @@ function extractTitleZh(page: PageObjectResponse): string | null {
   return null;
 }
 
+function extractTextProp(page: PageObjectResponse, name: string): string {
+  const prop = page.properties[name];
+  if (prop?.type === "rich_text") return richTextToPlain(prop.rich_text).trim();
+  if (prop?.type === "title") return richTextToPlain(prop.title).trim();
+  return "";
+}
+
+function extractMultiProp(page: PageObjectResponse, name: string): string[] {
+  const prop = page.properties[name];
+  if (prop?.type === "multi_select") return prop.multi_select.map((x) => x.name);
+  return [];
+}
+
+function extractSelectProp(page: PageObjectResponse, name: string): string {
+  const prop = page.properties[name];
+  if (prop?.type === "select") return prop.select?.name ?? "";
+  return "";
+}
+
+function extractNumberProp(page: PageObjectResponse, name: string): number | null {
+  const prop = page.properties[name];
+  if (prop?.type !== "number" || typeof prop.number !== "number" || !Number.isFinite(prop.number)) {
+    return null;
+  }
+  return Math.trunc(prop.number);
+}
+
+function extractCompany(page: PageObjectResponse): ReferenceCompanyProfile | null {
+  const companyName = extractTextProp(page, "公司名称");
+  const company: ReferenceCompanyProfile = {
+    companyName,
+    headcount: extractNumberProp(page, "业务人数"),
+    operationCulture: extractSelectProp(page, "运营文化"),
+    productForms: extractMultiProp(page, "产品形态"),
+    markets: extractMultiProp(page, "市场位置"),
+    scenarios: extractMultiProp(page, "场景定位"),
+    companyTags: extractMultiProp(page, "公司标签"),
+    interviewStatus: extractSelectProp(page, "是否通过面试"),
+    salesModes: extractMultiProp(page, "售卖形态"),
+    listed: extractSelectProp(page, "是否上市"),
+    profitability: extractSelectProp(page, "业务盈亏"),
+  };
+  const hasData =
+    company.companyName ||
+    company.headcount !== null ||
+    company.operationCulture ||
+    company.productForms.length ||
+    company.markets.length ||
+    company.scenarios.length ||
+    company.companyTags.length ||
+    company.interviewStatus ||
+    company.salesModes.length ||
+    company.listed ||
+    company.profitability;
+  return hasData ? company : null;
+}
+
 function extractSource(page: PageObjectResponse): string {
   const prop = page.properties["Source"];
   if (prop?.type === "select") return prop.select?.name ?? "";
@@ -408,6 +498,7 @@ function extractKind(page: PageObjectResponse): ReferenceKind {
   const prop = page.properties["Type"];
   const name = prop?.type === "select" ? prop.select?.name ?? "" : "";
   // 也接受英文值，方便 API 直接写入
+  if (name === "行业档案" || name === "company") return "company";
   if (name === "行业评论" || name === "commentary") return "commentary";
   if (name === "实测报告" || name === "test") return "test";
   if (name === "访谈" || name === "interview") return "interview";
@@ -505,6 +596,7 @@ function mapPageToItem(page: PageObjectResponse, bodyMarkdown?: string): Referen
     coverPath: cover?.path ?? null,
     coverKind: cover?.kind ?? null,
     attachment: extractAttachment(page),
+    company: extractCompany(page),
     ...(bodyMarkdown != null ? { bodyMarkdown } : {}),
   };
 }

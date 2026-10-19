@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import type { ReferenceCompanyProfile } from "@/lib/reference-profile";
 
 const PAGE_SIZE = 30;
 
@@ -14,7 +15,7 @@ export type ReferenceListItem = {
   tags: string[];
   clippedAt: string;
   isPublic: boolean;
-  kind: "external" | "commentary" | "test" | "interview";
+  kind: "external" | "commentary" | "test" | "interview" | "company";
   domains: string[];
   year: number | null;
   summary: string;
@@ -23,6 +24,7 @@ export type ReferenceListItem = {
   coverPath: string | null;
   coverKind: "file" | "external" | null;
   attachment: { kind: "file" | "external"; name: string; url?: string } | null;
+  company?: ReferenceCompanyProfile | null;
 };
 
 type ReferenceListResponse = {

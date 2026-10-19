@@ -8,6 +8,7 @@ export const REFERENCE_KIND_LABELS = {
   commentary: "行业评论",
   test: "实测报告",
   interview: "访谈",
+  company: "行业档案",
 } as const;
 
 export const REFERENCE_LICENSE_LABELS = {

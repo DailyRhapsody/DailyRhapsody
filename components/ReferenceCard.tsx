@@ -30,6 +30,11 @@ const KIND_META: Record<
     gradient: "from-violet-100 via-zinc-100 to-white dark:from-violet-950/60 dark:via-zinc-900 dark:to-zinc-950",
     text: "text-violet-700 dark:text-violet-300",
   },
+  company: {
+    label: "行业档案",
+    gradient: "from-cyan-100 via-zinc-100 to-white dark:from-cyan-950/60 dark:via-zinc-900 dark:to-zinc-950",
+    text: "text-cyan-700 dark:text-cyan-300",
+  },
 };
 
 function hostnameOf(url: string): string {
@@ -176,6 +181,35 @@ export function ReferenceCard({
           <p className="mt-1.5 line-clamp-3 text-[0.8rem] leading-relaxed text-zinc-600 dark:text-zinc-400">
             {item.summary}
           </p>
+        ) : null}
+
+        {item.company ? (
+          <dl className="mt-2 grid grid-cols-1 gap-1 text-[0.68rem] leading-4 text-zinc-500 dark:text-zinc-400">
+            {item.company.scenarios.length > 0 ? (
+              <div className="flex min-w-0 gap-1.5">
+                <dt className="shrink-0 text-zinc-400 dark:text-zinc-500">场景</dt>
+                <dd className="truncate">{item.company.scenarios.join(" · ")}</dd>
+              </div>
+            ) : null}
+            {item.company.productForms.length > 0 ? (
+              <div className="flex min-w-0 gap-1.5">
+                <dt className="shrink-0 text-zinc-400 dark:text-zinc-500">产品</dt>
+                <dd className="truncate">{item.company.productForms.join(" · ")}</dd>
+              </div>
+            ) : null}
+            {item.company.operationCulture ? (
+              <div className="flex min-w-0 gap-1.5">
+                <dt className="shrink-0 text-zinc-400 dark:text-zinc-500">文化</dt>
+                <dd className="truncate">{item.company.operationCulture}</dd>
+              </div>
+            ) : null}
+            {item.company.markets.length > 0 ? (
+              <div className="flex min-w-0 gap-1.5">
+                <dt className="shrink-0 text-zinc-400 dark:text-zinc-500">市场</dt>
+                <dd className="truncate">{item.company.markets.join(" · ")}</dd>
+              </div>
+            ) : null}
+          </dl>
         ) : null}
 
         {item.domains.length > 0 ? (
