@@ -13,7 +13,7 @@ export function BrandName({
       <span>{name}</span>
       <sup
         aria-label="注册商标"
-        className={`mt-[0.12em] font-medium leading-none tracking-normal text-white/70 ${markClassName}`}
+        className={`translate-x-[0.12em] translate-y-[0.22em] font-medium leading-none tracking-normal text-white/70 ${markClassName}`}
       >
         ®
       </sup>
