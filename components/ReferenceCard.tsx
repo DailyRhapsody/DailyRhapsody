@@ -84,15 +84,27 @@ function ArrowIcon() {
   );
 }
 
+/** 选中标记：实心点时表示「已选中」，空心圈表示可选中。 */
+function TargetIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
+      <circle cx="12" cy="12" r="7" />
+      {filled ? <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" /> : null}
+    </svg>
+  );
+}
+
 export function ReferenceCard({
   item,
   like,
   onLike,
+  onSelect,
   selected = false,
 }: {
   item: ReferenceListItem;
   like?: ReferenceLikeState;
   onLike?: (id: string) => void;
+  onSelect?: (id: string) => void;
   selected?: boolean;
 }) {
   const displayName = item.titleZh?.trim() || item.name || "(无标题)";
@@ -185,6 +197,22 @@ export function ReferenceCard({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5 text-[0.72rem]">
+          <button
+            type="button"
+            onClick={() => onSelect?.(item.id)}
+            disabled={!onSelect}
+            aria-pressed={selected}
+            aria-label={selected ? "取消选中此资料" : "选中此资料"}
+            title={selected ? "取消选中" : "选中"}
+            className={`inline-flex items-center gap-1 rounded-full px-1.5 py-1 transition-apple focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
+              selected
+                ? "text-zinc-900 dark:text-zinc-100"
+                : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+            }`}
+          >
+            <TargetIcon filled={selected} />
+            <span className="sr-only">{selected ? "取消选中" : "选中"}</span>
+          </button>
           <button
             type="button"
             onClick={() => onLike?.(item.id)}

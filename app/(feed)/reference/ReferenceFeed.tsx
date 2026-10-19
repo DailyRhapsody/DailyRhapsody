@@ -1,12 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ReferenceCard } from "@/components/ReferenceCard";
 import { ReferenceFilters } from "@/components/reference/ReferenceFilters";
 import type { ReferenceListItem } from "@/hooks/useReference";
 import { useReferenceLikes } from "@/hooks/useReferenceLikes";
 import { filterReferenceItems, type FilterLogic, type FilterRule } from "@/lib/reference-filters";
+import {
+  SORT_FIELDS,
+  matchesQuery,
+  parseSortKeys,
+  serializeSortKeys,
+  sortReferenceItems,
+  type SortField,
+  type SortKey,
+} from "@/lib/reference-sort";
 
 function SkeletonGrid() {
   return (
@@ -55,13 +64,66 @@ export default function ReferenceFeed({
 }) {
   const { likes, toggle } = useReferenceLikes(items.map((it) => it.id));
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const selectedId = searchParams.get("focus");
+  const selectedItem = useMemo(
+    () => (selectedId ? items.find((it) => it.id === selectedId) ?? null : null),
+    [items, selectedId],
+  );
+  /** 点卡片上的圆圈切换选中：再点一次清除 focus，排行榜带进来的选中也能这样撤销。 */
+  const toggleSelect = (id: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (params.get("focus") === id) {
+      params.delete("focus");
+    } else {
+      params.set("focus", id);
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
   const [rules, setRules] = useState<FilterRule[]>([]);
   const [logic, setLogic] = useState<FilterLogic>("and");
   const filteredItems = useMemo(
     () => filterReferenceItems(items, rules, logic),
     [items, rules, logic],
   );
+  const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
+  const [sorts, setSorts] = useState<SortKey[]>(() => parseSortKeys(searchParams.get("sort")));
+  const visibleItems = useMemo(() => {
+    const matched = filteredItems.filter((it) => matchesQuery(it, query));
+    return sorts.length > 0 ? sortReferenceItems(matched, sorts) : matched;
+  }, [filteredItems, query, sorts]);
+
+  // 搜索词与排序写回 URL（300ms 防抖），刷新/分享能还原同一视图。
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      const trimmed = query.trim();
+      if (trimmed) params.set("q", trimmed);
+      else params.delete("q");
+      const serialized = serializeSortKeys(sorts);
+      if (serialized) params.set("sort", serialized);
+      else params.delete("sort");
+      const next = params.toString();
+      if (next === searchParams.toString()) return;
+      router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+    }, 300);
+    return () => clearTimeout(timer);
+    // searchParams 只读取当前值，不放进依赖，避免自身写回触发循环。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, sorts]);
+
+  const updateSort = (index: number, field: SortField | "", dir?: "asc" | "desc") => {
+    setSorts((prev) => {
+      if (!field) return prev.slice(0, index);
+      const next = [...prev];
+      const existing = next[index];
+      next[index] = { field, dir: dir ?? existing?.dir ?? "desc" };
+      // 两个键不能相同：主键换成已有次键时，把次键让出去。
+      return next.filter((key, i) => next.findIndex((k) => k.field === key.field) === i && i <= 1);
+    });
+  };
   const focusedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -76,7 +138,7 @@ export default function ReferenceFeed({
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [selectedId, filteredItems.length]);
+  }, [selectedId, visibleItems.length]);
 
   return (
     <>
@@ -120,10 +182,118 @@ export default function ReferenceFeed({
         items={items}
         rules={rules}
         logic={logic}
-        resultCount={filteredItems.length}
+        resultCount={visibleItems.length}
         onRulesChange={setRules}
         onLogicChange={setLogic}
       />
+
+      <section className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[13rem] flex-1">
+          <svg
+            className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.8}
+            aria-hidden
+          >
+            <circle cx="11" cy="11" r="6.5" />
+            <path strokeLinecap="round" d="m16 16 3.5 3.5" />
+          </svg>
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索标题、摘要、来源、标签或公司"
+            aria-label="搜索资料"
+            className="h-9 w-full rounded-full border border-zinc-200 bg-white/70 pl-9 pr-8 text-xs text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200 dark:placeholder:text-zinc-500"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="清空搜索"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-zinc-400 transition-colors hover:text-zinc-700 dark:hover:text-zinc-200"
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-zinc-400 dark:text-zinc-500">排序</span>
+          <select
+            value={sorts[0]?.field ?? ""}
+            onChange={(e) => updateSort(0, e.target.value as SortField | "")}
+            aria-label="主排序字段"
+            className="h-8 cursor-pointer rounded-full border border-zinc-200 bg-white/70 px-2 text-xs text-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200"
+          >
+            <option value="">默认顺序</option>
+            {SORT_FIELDS.map((field) => (
+              <option key={field.key} value={field.key}>{field.label}</option>
+            ))}
+          </select>
+          {sorts[0] && (
+            <button
+              type="button"
+              onClick={() => updateSort(0, sorts[0].field, sorts[0].dir === "asc" ? "desc" : "asc")}
+              aria-label={sorts[0].dir === "asc" ? "当前升序，点击改为降序" : "当前降序，点击改为升序"}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 bg-white/70 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300 dark:hover:text-zinc-100"
+            >
+              {sorts[0].dir === "asc" ? "↑" : "↓"}
+            </button>
+          )}
+          {sorts.length === 1 && (
+            <button
+              type="button"
+              onClick={() => {
+                const fallback = SORT_FIELDS.find((f) => f.key !== sorts[0].field);
+                if (fallback) updateSort(1, fallback.key, "asc");
+              }}
+              className="h-8 rounded-full border border-dashed border-zinc-300 px-2.5 text-zinc-500 transition-colors hover:border-zinc-400 hover:text-zinc-800 dark:border-zinc-600 dark:text-zinc-400 dark:hover:text-zinc-200"
+            >
+              ＋次级
+            </button>
+          )}
+          {sorts[1] && (
+            <>
+              <select
+                value={sorts[1].field}
+                onChange={(e) => updateSort(1, e.target.value as SortField | "")}
+                aria-label="次级排序字段"
+                className="h-8 cursor-pointer rounded-full border border-zinc-200 bg-white/70 px-2 text-xs text-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200"
+              >
+                {SORT_FIELDS.filter((f) => f.key !== sorts[0]?.field).map((field) => (
+                  <option key={field.key} value={field.key}>{field.label}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => updateSort(1, sorts[1].field, sorts[1].dir === "asc" ? "desc" : "asc")}
+                aria-label={sorts[1].dir === "asc" ? "次级升序，点击改为降序" : "次级降序，点击改为升序"}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 bg-white/70 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300 dark:hover:text-zinc-100"
+              >
+                {sorts[1].dir === "asc" ? "↑" : "↓"}
+              </button>
+            </>
+          )}
+        </div>
+      </section>
+
+      {selectedId && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-full border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-300">
+          <span className="truncate">
+            已选中：{selectedItem ? selectedItem.titleZh?.trim() || selectedItem.name : "该资料不在当前列表"}
+          </span>
+          <button
+            type="button"
+            onClick={() => toggleSelect(selectedId)}
+            className="shrink-0 rounded-full px-2 py-0.5 text-zinc-500 underline decoration-zinc-300 underline-offset-2 transition-colors hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:text-zinc-100"
+          >
+            取消选中
+          </button>
+        </div>
+      )}
 
       {loading && items.length === 0 ? (
         <SkeletonGrid />
@@ -139,21 +309,22 @@ export default function ReferenceFeed({
               暂无资料。等作者从 Notion 添加入库后，这里会自动出现。
             </p>
           )}
-          {!loading && items.length > 0 && filteredItems.length === 0 && (
+          {!loading && items.length > 0 && visibleItems.length === 0 && (
             <p className="px-3 py-8 text-sm text-zinc-500 dark:text-zinc-400">
-              没有符合当前条件的资料。
+              {query.trim() || rules.length > 0 ? "没有符合当前搜索与筛选条件的资料。" : "没有符合当前条件的资料。"}
             </p>
           )}
-          {filteredItems.length > 0 && (
+          {visibleItems.length > 0 && (
             <>
               <h2 className="sr-only">资料列表</h2>
               <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                {filteredItems.map((it) => (
+                {visibleItems.map((it) => (
                   <div key={it.id} id={`reference-${it.id}`} className="scroll-mt-24">
                     <ReferenceCard
                       item={it}
                       like={likes[it.id]}
                       onLike={toggle}
+                      onSelect={toggleSelect}
                       selected={selectedId === it.id}
                     />
                   </div>

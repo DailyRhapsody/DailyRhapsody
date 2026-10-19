@@ -17,7 +17,6 @@ import { recordReferenceView } from "@/lib/reference-ranking";
 import { renderMarkdown, markdownHeadingClass, markdownPreviewProseClass } from "@/lib/markdown";
 import { ReferenceLikeButton } from "@/components/reference/ReferenceLikeButton";
 import { ReferenceShareButton } from "@/components/reference/ReferenceShareButton";
-import { ReferenceComments } from "@/components/reference/ReferenceComments";
 
 export const dynamic = "force-dynamic";
 
@@ -128,8 +127,7 @@ function InfoBlock({ item }: { item: ReferenceItem }) {
   if (item.year) rows.push({ label: "年份", value: String(item.year) });
   if (item.domains.length > 0) rows.push({ label: "领域", value: item.domains.join(" · ") });
   if (item.source) rows.push({ label: "来源", value: item.source });
-  rows.push({ label: "许可", value: REFERENCE_LICENSE_LABELS[item.license] });
-  if (item.copyright) rows.push({ label: "版权", value: item.copyright });
+  // 许可与版权只在页尾出现一次，避免同一条信息在页内重复两遍。
 
   return (
     <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
@@ -301,28 +299,36 @@ export default async function ReferenceDetailPage({
           </p>
         )}
 
-        <ReferenceComments threadId={item.id} />
-
-        <footer className="mt-12 border-t border-zinc-200 pt-4 text-[0.7rem] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-          {item.copyright ? (
-            <p>版权：{item.copyright}</p>
-          ) : (
-            <p>本文为外部内容收藏，版权归原作者所有。</p>
-          )}
-          <p className="mt-1">许可状态：{REFERENCE_LICENSE_LABELS[item.license]}。</p>
-          {item.url && (
-            <p className="mt-1">
-              原文链接：
+        <footer className="mt-12 border-t border-zinc-200 pt-5 dark:border-zinc-800">
+          <div className="flex flex-wrap items-center justify-between gap-4 text-xs">
+            <div className="flex min-w-0 items-center gap-3">
+              <span
+                aria-hidden
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-zinc-100 text-[0.7rem] font-semibold uppercase text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+              >
+                {(sourceLabel || item.name || "R").slice(0, 1)}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-zinc-700 dark:text-zinc-300">
+                  {sourceLabel || "外部来源"}
+                </p>
+                <p className="mt-0.5 text-zinc-400 dark:text-zinc-500">
+                  {REFERENCE_LICENSE_LABELS[item.license]} ·{" "}
+                  {item.copyright ? item.copyright : "版权归原作者"}
+                </p>
+              </div>
+            </div>
+            {item.url && (
               <a
                 href={item.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="break-all text-blue-600 underline hover:text-blue-700 dark:text-blue-400"
+                className="shrink-0 rounded-full border border-zinc-200 px-3 py-1 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-100"
               >
-                {item.url}
+                原文 ↗
               </a>
-            </p>
-          )}
+            )}
+          </div>
         </footer>
       </main>
     </div>
