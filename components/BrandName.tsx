@@ -2,18 +2,18 @@
 export function BrandName({
   name,
   className,
-  markClassName = "text-[0.45em]",
+  markClassName = "text-[0.95em]",
 }: {
   name: string;
   className?: string;
   markClassName?: string;
 }) {
   return (
-    <span className={className}>
-      {name}
+    <span className={`inline-flex items-start gap-1.5 ${className ?? ""}`}>
+      <span>{name}</span>
       <sup
         aria-label="注册商标"
-        className={`ml-[0.18em] align-super font-medium tracking-normal text-white/70 ${markClassName}`}
+        className={`mt-[0.12em] font-medium leading-none tracking-normal text-white/70 ${markClassName}`}
       >
         ®
       </sup>

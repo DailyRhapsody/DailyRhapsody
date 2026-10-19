@@ -110,7 +110,7 @@ export default function Cover() {
         <h1 className="text-center text-5xl font-semibold tracking-tight drop-shadow-lg sm:text-7xl md:text-8xl">
           <BrandName
             name="DailyRhapsody"
-            markClassName="text-[0.22em] text-white/65"
+            markClassName="text-[0.45em] text-white/65"
           />
         </h1>
         <p className="mt-4 text-sm tracking-[0.2em] opacity-90 sm:text-base">
