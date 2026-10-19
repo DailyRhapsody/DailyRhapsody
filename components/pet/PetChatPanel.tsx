@@ -367,6 +367,17 @@ export function PetChatPanel({
             {chat.streaming ? "" : last?.role === "assistant" && last.content ? "已回复" : ""}
           </p>
 
+          {chat.messages.length === 0 && (
+            <div className={`pointer-events-none mb-4 flex flex-col items-center gap-1 text-center ${fade}`}>
+              <p className="text-sm font-semibold tracking-wide text-zinc-700 dark:text-zinc-200">
+                滕君的 AI 数字人
+              </p>
+              <p className="text-[0.7rem] text-zinc-400 dark:text-zinc-500">
+                基于他写过的内容生成，随便聊聊
+              </p>
+            </div>
+          )}
+
           {/* 输入胶囊：半透明，不做白底框 */}
           <div
             className={`pointer-events-auto mt-2 flex items-end gap-2 rounded-[22px] bg-white/25 py-2 pl-4 pr-2 focus-within:bg-white/40 dark:bg-white/[0.08] dark:focus-within:bg-white/[0.14] ${fade}`}
@@ -379,7 +390,7 @@ export function PetChatPanel({
               onKeyDown={onKeyDown}
               maxLength={2000}
               disabled={notReady}
-              placeholder={notReady ? "还在准备中" : "问问滕君的数字人"}
+              placeholder={notReady ? "还在准备中" : "随便聊聊"}
               aria-label="输入消息"
               // 全局 :focus-visible 轮廓不在 layer 里，工具类盖不过
               style={{ outline: "none" }}
