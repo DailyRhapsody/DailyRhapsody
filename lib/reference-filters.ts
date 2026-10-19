@@ -39,22 +39,22 @@ export type FilterRule = {
   value: string;
 };
 
-export const FILTER_FIELDS: { key: FilterField; label: string; type: "select" | "multi" | "text" | "number" }[] = [
-  { key: "kind", label: "类型", type: "select" },
-  { key: "robotType", label: "机器人类型", type: "multi" },
-  { key: "domain", label: "领域", type: "multi" },
-  { key: "tag", label: "标签", type: "multi" },
-  { key: "source", label: "来源", type: "select" },
-  { key: "year", label: "年份", type: "number" },
-  { key: "companyName", label: "公司名称", type: "text" },
-  { key: "scenario", label: "场景定位", type: "multi" },
-  { key: "productForm", label: "产品形态", type: "multi" },
-  { key: "culture", label: "运营文化", type: "select" },
-  { key: "market", label: "市场位置", type: "multi" },
-  { key: "companyTag", label: "公司标签", type: "multi" },
-  { key: "salesMode", label: "售卖形态", type: "multi" },
-  { key: "listed", label: "是否上市", type: "select" },
-  { key: "profitability", label: "业务盈亏", type: "select" },
+export const FILTER_FIELDS: { key: FilterField; label: string; labelEn: string; type: "select" | "multi" | "text" | "number" }[] = [
+  { key: "kind", label: "类型", labelEn: "Type", type: "select" },
+  { key: "robotType", label: "机器人类型", labelEn: "Robot type", type: "multi" },
+  { key: "domain", label: "领域", labelEn: "Domain", type: "multi" },
+  { key: "tag", label: "标签", labelEn: "Tag", type: "multi" },
+  { key: "source", label: "来源", labelEn: "Source", type: "select" },
+  { key: "year", label: "年份", labelEn: "Year", type: "number" },
+  { key: "companyName", label: "公司名称", labelEn: "Company", type: "text" },
+  { key: "scenario", label: "场景定位", labelEn: "Use case", type: "multi" },
+  { key: "productForm", label: "产品形态", labelEn: "Product form", type: "multi" },
+  { key: "culture", label: "运营文化", labelEn: "Culture", type: "select" },
+  { key: "market", label: "市场位置", labelEn: "Market", type: "multi" },
+  { key: "companyTag", label: "公司标签", labelEn: "Company tag", type: "multi" },
+  { key: "salesMode", label: "售卖形态", labelEn: "Sales model", type: "multi" },
+  { key: "listed", label: "是否上市", labelEn: "Listed", type: "select" },
+  { key: "profitability", label: "业务盈亏", labelEn: "P&L", type: "select" },
 ];
 
 export const FILTER_OPERATOR_LABELS: Record<FilterOperator, string> = {
@@ -70,6 +70,30 @@ export const FILTER_OPERATOR_LABELS: Record<FilterOperator, string> = {
   lt: "小于",
   lte: "小于等于",
 };
+
+export const FILTER_OPERATOR_LABELS_EN: Record<FilterOperator, string> = {
+  is: "is",
+  is_not: "is not",
+  contains: "contains",
+  does_not_contain: "does not contain",
+  is_empty: "is empty",
+  is_not_empty: "is not empty",
+  equals: "equals",
+  gt: "greater than",
+  gte: "greater or equal",
+  lt: "less than",
+  lte: "less or equal",
+};
+
+export function filterFieldLabel(field: FilterField, lang: "zh" | "en"): string {
+  const entry = FILTER_FIELDS.find((f) => f.key === field);
+  if (!entry) return field;
+  return lang === "en" ? entry.labelEn : entry.label;
+}
+
+export function filterOperatorLabel(operator: FilterOperator, lang: "zh" | "en"): string {
+  return lang === "en" ? FILTER_OPERATOR_LABELS_EN[operator] : FILTER_OPERATOR_LABELS[operator];
+}
 
 export function operatorsFor(type: "select" | "multi" | "text" | "number"): FilterOperator[] {
   if (type === "number") return ["equals", "gt", "gte", "lt", "lte", "is_empty", "is_not_empty"];

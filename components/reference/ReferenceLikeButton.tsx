@@ -1,9 +1,11 @@
 "use client";
 
 import { useReferenceLikes } from "@/hooks/useReferenceLikes";
+import { useLang } from "@/components/LangProvider";
 
 /** 详情页点赞按钮：文案用「有用」，比「点赞」更贴行业资料场景 */
 export function ReferenceLikeButton({ id }: { id: string }) {
+  const { t } = useLang();
   const { likes, toggle } = useReferenceLikes([id]);
   const state = likes[id] ?? { count: 0, liked: false };
 
@@ -32,7 +34,7 @@ export function ReferenceLikeButton({ id }: { id: string }) {
           d="M12 20.25s-7.5-4.6-7.5-10.1A4.15 4.15 0 0 1 12 7.3a4.15 4.15 0 0 1 7.5 2.85c0 5.5-7.5 10.1-7.5 10.1Z"
         />
       </svg>
-      <span>有用</span>
+      <span>{t("reference.detail.useful")}</span>
       <span className="tabular-nums opacity-70">{state.count}</span>
     </button>
   );

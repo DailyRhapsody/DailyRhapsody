@@ -18,6 +18,36 @@ export const REFERENCE_LICENSE_LABELS = {
   "link-only": "仅链接",
 } as const;
 
+/** 英文字段与中文一一对应；用于 ?lang=en 的界面。 */
+export const REFERENCE_KIND_LABELS_EN = {
+  external: "External",
+  commentary: "Commentary",
+  test: "Hands-on",
+  interview: "Interview",
+  company: "Company profile",
+} as const;
+
+export const REFERENCE_LICENSE_LABELS_EN = {
+  own: "Original",
+  authorized: "Authorized",
+  public: "Public license",
+  "link-only": "Link only",
+} as const;
+
+export function referenceKindLabel(
+  kind: keyof typeof REFERENCE_KIND_LABELS,
+  lang: "zh" | "en",
+): string {
+  return lang === "en" ? REFERENCE_KIND_LABELS_EN[kind] : REFERENCE_KIND_LABELS[kind];
+}
+
+export function referenceLicenseLabel(
+  license: keyof typeof REFERENCE_LICENSE_LABELS,
+  lang: "zh" | "en",
+): string {
+  return lang === "en" ? REFERENCE_LICENSE_LABELS_EN[license] : REFERENCE_LICENSE_LABELS[license];
+}
+
 /** 机器人行业的功能层切分；形态（人形/四足/双臂）放 Tag，不占 Domain */
 export const REFERENCE_DOMAINS = [
   "导航定位",

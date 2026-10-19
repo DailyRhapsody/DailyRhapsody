@@ -9,9 +9,11 @@ import {
   type ReferenceItem,
 } from "@/lib/notion-reference";
 import {
-  REFERENCE_KIND_LABELS,
-  REFERENCE_LICENSE_LABELS,
+  referenceKindLabel,
+  referenceLicenseLabel,
 } from "@/lib/reference-taxonomy";
+import { getLang } from "@/lib/i18n-server";
+import { t, type Lang } from "@/lib/i18n";
 import type { ReferenceCompanyProfile } from "@/lib/reference-profile";
 import { recordReferenceView } from "@/lib/reference-ranking";
 import { renderMarkdown, markdownHeadingClass, markdownPreviewProseClass } from "@/lib/markdown";
@@ -87,31 +89,31 @@ export async function generateMetadata({
   };
 }
 
-function CompanyProfileBlock({ profile }: { profile: ReferenceCompanyProfile }) {
+function CompanyProfileBlock({ profile, lang }: { profile: ReferenceCompanyProfile; lang: Lang }) {
   const rows: { label: string; value: string }[] = [
-    { label: "公司名称", value: profile.companyName },
-    { label: "业务人数", value: profile.headcount != null ? String(profile.headcount) : "" },
-    { label: "场景定位", value: profile.scenarios.join(" · ") },
-    { label: "产品形态", value: profile.productForms.join(" · ") },
-    { label: "运营文化", value: profile.operationCulture },
-    { label: "市场位置", value: profile.markets.join(" · ") },
-    { label: "公司标签", value: profile.companyTags.join(" · ") },
-    { label: "售卖形态", value: profile.salesModes.join(" · ") },
-    { label: "是否上市", value: profile.listed },
-    { label: "业务盈亏", value: profile.profitability },
-    { label: "是否通过面试", value: profile.interviewStatus },
+    { label: t(lang, "company.name"), value: profile.companyName },
+    { label: t(lang, "company.headcount"), value: profile.headcount != null ? String(profile.headcount) : "" },
+    { label: t(lang, "company.scenarios"), value: profile.scenarios.join(" · ") },
+    { label: t(lang, "company.products"), value: profile.productForms.join(" · ") },
+    { label: t(lang, "company.culture"), value: profile.operationCulture },
+    { label: t(lang, "company.markets"), value: profile.markets.join(" · ") },
+    { label: t(lang, "company.tags"), value: profile.companyTags.join(" · ") },
+    { label: t(lang, "company.sales"), value: profile.salesModes.join(" · ") },
+    { label: t(lang, "company.listed"), value: profile.listed },
+    { label: t(lang, "company.profitability"), value: profile.profitability },
+    { label: t(lang, "company.interview"), value: profile.interviewStatus },
   ].filter((row) => row.value);
 
   if (rows.length === 0) return null;
   return (
     <section className="mt-6 border-t border-zinc-200 pt-5 dark:border-zinc-800">
       <h2 className="text-[0.68rem] font-medium uppercase tracking-[0.18em] text-zinc-400 dark:text-zinc-500">
-        公司档案
+        {t(lang, "company.heading")}
       </h2>
       <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2 text-xs sm:grid-cols-2">
         {rows.map((row) => (
           <div key={row.label} className="flex min-w-0 gap-3">
-            <dt className="w-[4.5rem] shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">{row.label}</dt>
+            <dt className="min-w-[4.5rem] shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">{row.label}</dt>
             <dd className="min-w-0 break-words text-zinc-700 dark:text-zinc-300">{row.value}</dd>
           </div>
         ))}
@@ -120,13 +122,14 @@ function CompanyProfileBlock({ profile }: { profile: ReferenceCompanyProfile }) 
   );
 }
 
-function InfoBlock({ item }: { item: ReferenceItem }) {
+function InfoBlock({ item, lang }: { item: ReferenceItem; lang: Lang }) {
   const rows: { label: string; value: string }[] = [
-    { label: "类型", value: REFERENCE_KIND_LABELS[item.kind] },
+    { label: t(lang, "reference.detail.kind"), value: referenceKindLabel(item.kind, lang) },
   ];
-  if (item.year) rows.push({ label: "年份", value: String(item.year) });
-  if (item.domains.length > 0) rows.push({ label: "领域", value: item.domains.join(" · ") });
-  if (item.source) rows.push({ label: "来源", value: item.source });
+  if (item.year) rows.push({ label: t(lang, "reference.detail.year"), value: String(item.year) });
+  if (item.domains.length > 0)
+    rows.push({ label: t(lang, "reference.detail.domains"), value: item.domains.join(" · ") });
+  if (item.source) rows.push({ label: t(lang, "reference.detail.source"), value: item.source });
   // 许可与版权只在页尾出现一次，避免同一条信息在页内重复两遍。
 
   return (
@@ -153,6 +156,7 @@ export default async function ReferenceDetailPage({
   const admin = await isAdmin();
   if (!admin && !item.isPublic) notFound();
   if (item.isPublic) await recordReferenceView(item.id);
+  const lang = await getLang();
 
   const sourceLabel = hostnameOf(item.url) || (item.source && item.source !== "手动添加" ? item.source : "");
   const renderedHtml = item.bodyMarkdown ? renderMarkdown(item.bodyMarkdown) : "";
@@ -207,7 +211,7 @@ export default async function ReferenceDetailPage({
               rel="noopener noreferrer"
               className="rounded-full border border-zinc-300 px-3 py-1.5 text-zinc-700 transition-colors hover:border-zinc-400 hover:bg-white/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
             >
-              跳到原文 ↗
+              {t(lang, "reference.detail.jump")} ↗
             </a>
           )}
         </div>
@@ -217,7 +221,7 @@ export default async function ReferenceDetailPage({
         <header className="mb-6">
           <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
             <span className="rounded-full border border-zinc-200 bg-white/70 px-2 py-0.5 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300">
-              {REFERENCE_KIND_LABELS[item.kind]}
+              {referenceKindLabel(item.kind, lang)}
             </span>
             {sourceLabel && (
               <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
@@ -238,8 +242,8 @@ export default async function ReferenceDetailPage({
             </p>
           )}
 
-          <InfoBlock item={item} />
-          {item.company ? <CompanyProfileBlock profile={item.company} /> : null}
+          <InfoBlock item={item} lang={lang} />
+          {item.company ? <CompanyProfileBlock profile={item.company} lang={lang} /> : null}
 
           {item.tags.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -269,7 +273,7 @@ export default async function ReferenceDetailPage({
           </div>
           {canDownload && (
             <p className="mt-2 text-[0.7rem] text-zinc-400 dark:text-zinc-500">
-              PDF 会在浏览器中打开，可用浏览器自带的下载按钮另存。版权见下方说明。
+              {t(lang, "reference.detail.pdfNote")}
             </p>
           )}
         </header>
@@ -292,7 +296,7 @@ export default async function ReferenceDetailPage({
                   rel="noopener noreferrer"
                   className="text-blue-600 underline hover:text-blue-700 dark:text-blue-400"
                 >
-                  跳到原文阅读 ↗
+                  {t(lang, "reference.detail.jumpRead")} ↗
                 </a>
               </>
             )}
@@ -310,11 +314,11 @@ export default async function ReferenceDetailPage({
               </span>
               <div className="min-w-0">
                 <p className="truncate text-zinc-700 dark:text-zinc-300">
-                  {sourceLabel || "外部来源"}
+                  {sourceLabel || t(lang, "reference.detail.sourceUnknown")}
                 </p>
                 <p className="mt-0.5 text-zinc-400 dark:text-zinc-500">
-                  {REFERENCE_LICENSE_LABELS[item.license]} ·{" "}
-                  {item.copyright ? item.copyright : "版权归原作者"}
+                  {referenceLicenseLabel(item.license, lang)} ·{" "}
+                  {item.copyright ? item.copyright : t(lang, "reference.detail.rights")}
                 </p>
               </div>
             </div>
@@ -325,7 +329,7 @@ export default async function ReferenceDetailPage({
                 rel="noopener noreferrer"
                 className="shrink-0 rounded-full border border-zinc-200 px-3 py-1 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-100"
               >
-                原文 ↗
+                {t(lang, "reference.detail.original")} ↗
               </a>
             )}
           </div>

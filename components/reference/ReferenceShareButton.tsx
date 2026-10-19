@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useLang } from "@/components/LangProvider";
 
 /** 复制链接 / 系统分享。Web Share 不可用时退到剪贴板，再失败退到 prompt。 */
 export function ReferenceShareButton({ title, text }: { title: string; text?: string }) {
+  const { t } = useLang();
   const [done, setDone] = useState(false);
 
   async function share() {
@@ -22,7 +24,7 @@ export function ReferenceShareButton({ title, text }: { title: string; text?: st
       setDone(true);
       window.setTimeout(() => setDone(false), 2000);
     } catch {
-      window.prompt("复制链接分享：", url);
+      window.prompt(t("reference.detail.copyPrompt"), url);
     }
   }
 
@@ -39,7 +41,7 @@ export function ReferenceShareButton({ title, text }: { title: string; text?: st
           d="M8.7 10.7 15.3 7M8.7 13.3l6.6 3.7M6 8.8a2.7 2.7 0 1 1 0 5.4 2.7 2.7 0 0 1 0-5.4Zm12-4a2.7 2.7 0 1 1 0 5.4 2.7 2.7 0 0 1 0-5.4Zm0 10.6a2.7 2.7 0 1 1 0 5.4 2.7 2.7 0 0 1 0-5.4Z"
         />
       </svg>
-      <span aria-live="polite">{done ? "已复制" : "分享"}</span>
+      <span aria-live="polite">{done ? t("reference.detail.copied") : t("reference.detail.share")}</span>
     </button>
   );
 }

@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AnalyticsCollector } from "@/components/AnalyticsCollector";
 import { GateClient } from "@/components/GateClient";
+import { LangProvider } from "@/components/LangProvider";
 import { PetLauncher } from "@/components/pet/PetLauncher";
+import { getLang } from "@/lib/i18n-server";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -36,17 +38,18 @@ export const metadata: Metadata = {
 // 不增加上游 API 调用。
 export const dynamic = "force-dynamic";
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const lang = await getLang();
   return (
-    <html lang="en" data-scroll-behavior="smooth">
+    <html lang={lang === "zh" ? "zh-CN" : "en"} data-scroll-behavior="smooth">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <LangProvider lang={lang}>{children}</LangProvider>
         <GateClient />
         <AnalyticsCollector />
         <PetLauncher />
