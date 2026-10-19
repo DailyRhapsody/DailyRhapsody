@@ -33,7 +33,7 @@ export function MomentsVideoCell({
 
   if (activated && compact) {
     return (
-      <div className="relative h-full w-full overflow-hidden rounded-lg bg-zinc-900">
+      <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-zinc-900">
         <video
           ref={videoRef}
           src={src}
