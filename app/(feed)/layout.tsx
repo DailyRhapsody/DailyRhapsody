@@ -2,6 +2,8 @@ import { getCachedDiaries } from "@/lib/notion";
 import { getCachedMoments } from "@/lib/notion-moments";
 import { getCachedReferenceItems } from "@/lib/notion-reference";
 import { rankReferenceTop } from "@/lib/reference-ranking";
+import { getLang } from "@/lib/i18n-server";
+import { applyReferenceEn, getReferenceEnMap } from "@/lib/reference-i18n";
 import { getProfile } from "@/lib/profile-store";
 import { getReadingStats } from "@/lib/weread";
 import FeedShell, { type FeedStats } from "./FeedShell";
@@ -74,7 +76,19 @@ export default async function FeedLayout({
     const items = await getCachedReferenceItems();
     const publicItems = (items ?? []).filter((item) => item.isPublic);
     referenceTotal = publicItems.length;
-    referenceTop = (await rankReferenceTop(publicItems)).map(({ id, title }) => ({ id, title }));
+    const lang = await getLang();
+    const translations = lang === "en" ? await getReferenceEnMap() : null;
+    const localized = translations
+      ? publicItems.map((item) => applyReferenceEn(item, translations.get(item.id)))
+      : publicItems;
+    const ranked = await rankReferenceTop(localized);
+    referenceTop = ranked.map(({ id }) => {
+      const item = localized.find((candidate) => candidate.id === id);
+      return {
+        id,
+        title: (lang === "en" ? item?.name : item?.titleZh?.trim() || item?.name) || "",
+      };
+    });
   } catch {
     referenceTotal = 0;
   }

@@ -19,8 +19,9 @@ import {
 } from "@/lib/reference-sort";
 
 function SkeletonGrid() {
+  const { t } = useLang();
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3" role="status" aria-label="资料加载中">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3" role="status" aria-label={t("reference.list.loading")}>
       {Array.from({ length: 6 }).map((_, i) => (
         <div
           key={i}
@@ -235,7 +236,7 @@ export default function ReferenceFeed({
             <button
               type="button"
               onClick={() => setQuery("")}
-              aria-label="清空搜索"
+              aria-label={t("reference.search.clear")}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-zinc-400 transition-colors hover:text-zinc-700 dark:hover:text-zinc-200"
             >
               ×
@@ -346,7 +347,7 @@ export default function ReferenceFeed({
           )}
           {visibleItems.length > 0 && (
             <>
-              <h2 className="sr-only">资料列表</h2>
+              <h2 className="sr-only">{t("reference.list.heading")}</h2>
               <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
                 {visibleItems.map((it) => (
                   <div key={it.id} id={`reference-${it.id}`} className="scroll-mt-24">
@@ -364,7 +365,7 @@ export default function ReferenceFeed({
           )}
           {hasMore && !loading && <div ref={sentinelRef} className="h-4" aria-hidden />}
           {loadingMore && (
-            <div className="flex justify-center py-6" role="status" aria-label="加载中">
+            <div className="flex justify-center py-6" role="status" aria-label={t("reference.loadingMore")}>
               <svg
                 className="h-6 w-6 animate-spin text-zinc-400 dark:text-zinc-500"
                 viewBox="0 0 24 24"

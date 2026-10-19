@@ -31,12 +31,18 @@ const messages: Record<string, { zh: string; en: string }> = {
 
   // Reference 列表
   "reference.title": { zh: "Reference · 机器人行业资料库", en: "Reference · Robotics research library" },
+  "reference.meta.description": {
+    zh: "机器人领域的行业资料、竞品调研、实测报告与访谈，按类型、领域与机构归档，供同行检索与引用。",
+    en: "Robotics industry research, competitive analyses, hands-on reports, and interviews, organized by type, domain, and organization.",
+  },
   "reference.search.placeholder": {
     zh: "搜索标题、摘要、来源、标签或公司",
     en: "Search titles, summaries, sources, tags, or companies",
   },
   "reference.search.label": { zh: "搜索资料", en: "Search references" },
   "reference.search.clear": { zh: "清空搜索", en: "Clear search" },
+  "reference.list.heading": { zh: "资料列表", en: "Reference list" },
+  "reference.list.loading": { zh: "资料加载中", en: "Loading references" },
   "reference.sort.label": { zh: "排序", en: "Sort" },
   "reference.sort.default": { zh: "默认顺序", en: "Default order" },
   "reference.sort.primary": { zh: "主排序字段", en: "Primary sort field" },
@@ -79,6 +85,9 @@ const messages: Record<string, { zh: string; en: string }> = {
   "reference.detail.jump": { zh: "跳到原文", en: "Open source" },
   "reference.detail.jumpRead": { zh: "跳到原文阅读", en: "Read at the source" },
   "reference.detail.kind": { zh: "类型", en: "Type" },
+  "reference.detail.collected": { zh: "收集于", en: "Collected" },
+  "reference.detail.download": { zh: "下载附件", en: "Download attachment" },
+  "reference.detail.listHeading": { zh: "资料列表", en: "Reference list" },
   "reference.detail.year": { zh: "年份", en: "Year" },
   "reference.detail.domains": { zh: "领域", en: "Domains" },
   "reference.detail.source": { zh: "来源", en: "Source" },
