@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 /** 动态视频懒加载：默认只渲染缩略图占位 + 播放图标，
  *  避免 iOS Safari 在 mount `<video>` + 加载元数据时抢占音频会话，
@@ -17,6 +17,56 @@ export function MomentsVideoCell({
   compact?: boolean;
 }) {
   const [activated, setActivated] = useState(false);
+  const [playing, setPlaying] = useState(true);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const togglePlay = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      void video.play().then(() => setPlaying(true)).catch(() => {});
+    } else {
+      video.pause();
+      setPlaying(false);
+    }
+  };
+
+  if (activated && compact) {
+    return (
+      <div className="relative h-full w-full overflow-hidden rounded-lg bg-zinc-900">
+        <video
+          ref={videoRef}
+          src={src}
+          poster={posterUrl}
+          className="h-full w-full object-cover"
+          playsInline
+          autoPlay
+          muted
+          preload="metadata"
+          onClick={togglePlay}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+        />
+        <button
+          type="button"
+          onClick={togglePlay}
+          aria-label={playing ? "暂停视频" : "播放视频"}
+          className="absolute bottom-2 left-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm transition-apple hover:bg-black/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+        >
+          {playing ? (
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+              <path d="M7 5h4v14H7zM13 5h4v14h-4z" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          )}
+        </button>
+      </div>
+    );
+  }
+
   if (activated) {
     return (
       <video
@@ -35,6 +85,7 @@ export function MomentsVideoCell({
       />
     );
   }
+
   return (
     <button
       type="button"
