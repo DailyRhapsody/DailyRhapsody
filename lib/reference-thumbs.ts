@@ -35,3 +35,22 @@ export function pickReferenceThumbs(
   }
   return out;
 }
+
+/** 顶部参考卡的文字榜单：按当前入库顺序取前几条，标题去重。 */
+export function pickReferenceTop(
+  items: { id: string; name: string; url: string }[],
+  max = 6,
+): { id: string; name: string }[] {
+  const seen = new Set<string>();
+  const out: { id: string; name: string }[] = [];
+  for (const item of items) {
+    const key = item.url || item.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const name = item.name.trim();
+    if (!name) continue;
+    out.push({ id: item.id, name });
+    if (out.length >= max) break;
+  }
+  return out;
+}

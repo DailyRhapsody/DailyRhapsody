@@ -22,7 +22,7 @@ export type FeedStats = {
   dates: string[];
   momentsThumbs: { src: string; isVideo: boolean }[];
   referenceTotal: number;
-  referenceThumbs: { src: string; isVideo: boolean }[];
+  referenceTop: { id: string; name: string }[];
 };
 
 type FeedStatsContextValue = {
@@ -180,39 +180,33 @@ export default function FeedShell({
               type="button"
               onClick={() => navigateTab(2)}
               aria-current={active === 2 ? "page" : undefined}
-              aria-label="参考"
-              className={`inline-grid h-[148px] w-[168px] shrink-0 rounded-xl border border-zinc-200 bg-white/80 p-2.5 shadow-sm transition-apple dark:border-zinc-700 dark:bg-zinc-800/80 ${
+              aria-label={`参考排行榜，共 ${stats.referenceTotal} 条`}
+              className={`flex h-[148px] w-[216px] shrink-0 flex-col justify-center rounded-xl border border-zinc-200 bg-white/80 p-2.5 shadow-sm transition-apple dark:border-zinc-700 dark:bg-zinc-800/80 ${
                 active === 2 ? ACTIVE : INACTIVE
               }`}
             >
-              <div className="grid h-full w-full grid-cols-2 grid-rows-2 gap-2">
-                {Array.from({ length: 4 }).map((_, i) => {
-                  const item = stats.referenceThumbs[i];
-                  return (
-                    <div
-                      key={item ? `${item.src}-${i}` : `ref-ph-${i}`}
-                      className="relative overflow-hidden rounded-[8px] bg-zinc-100 ring-1 ring-zinc-200/70 dark:bg-zinc-700/60 dark:ring-zinc-600/60"
-                    >
-                      {item ? (
-                        item.isVideo ? (
-                          <video
-                            src={item.src}
-                            muted
-                            playsInline
-                            preload="metadata"
-                            className="absolute inset-0 h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div
-                            className="absolute inset-0 bg-cover bg-center"
-                            style={{ backgroundImage: `url("${item.src.replace(/"/g, "%22")}")` }}
-                          />
-                        )
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
+              {stats.referenceTop.length > 0 ? (
+                <ol className="flex w-full flex-col gap-1">
+                  {stats.referenceTop.slice(0, 6).map((item, i) => (
+                    <li key={item.id} className="flex min-w-0 items-baseline gap-2">
+                      <span
+                        className={`w-3 shrink-0 text-right text-[10px] font-semibold tabular-nums ${
+                          i < 3 ? "text-rose-500 dark:text-rose-400" : "text-zinc-400 dark:text-zinc-500"
+                        }`}
+                      >
+                        {i + 1}
+                      </span>
+                      <span className="min-w-0 truncate text-[12px] leading-4 text-zinc-700 dark:text-zinc-300">
+                        {item.name}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="px-1 text-[12px] leading-4 text-zinc-400 dark:text-zinc-500">
+                  暂无资料
+                </p>
+              )}
             </button>
           </div>
         </div>

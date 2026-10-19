@@ -17,7 +17,7 @@ import type { MomentsTimelineRow } from "@/components/entries/types";
 import { useReference, type ReferenceListItem } from "@/hooks/useReference";
 import { usePublishFeedStats } from "../FeedShell";
 import ReferenceFeed from "../reference/ReferenceFeed";
-import { pickReferenceThumbs } from "@/lib/reference-thumbs";
+import { pickReferenceTop } from "@/lib/reference-thumbs";
 import { useProfile, type Profile } from "@/hooks/useProfile";
 import { useAdminSession } from "@/hooks/useAdminSession";
 import { useMoments } from "@/hooks/useMoments";
@@ -138,8 +138,8 @@ export default function EntriesPageClient({
   const momentRows = useMemo(() => momentTimelineRows(momentsOutline), [momentsOutline]);
   const referenceRows = useMemo(() => referenceTimelineRows(referenceItems), [referenceItems]);
   const referenceIds = useMemo(() => referenceItems.map((r) => r.id), [referenceItems]);
-  const referenceThumbs = useMemo(
-    () => pickReferenceThumbs(referenceItems),
+  const referenceTop = useMemo(
+    () => pickReferenceTop(referenceItems),
     [referenceItems],
   );
   // 与 MomentsTab 的渲染条件一致：没有图片/视频的动态不渲染，也不参与高亮定位
@@ -181,10 +181,10 @@ export default function EntriesPageClient({
         },
   );
   usePublishFeedStats(
-    referenceTotal > 0 || referenceThumbs.length > 0
+    referenceTotal > 0 || referenceTop.length > 0
       ? {
           ...(referenceTotal > 0 ? { referenceTotal } : {}),
-          ...(referenceThumbs.length > 0 ? { referenceThumbs } : {}),
+          ...(referenceTop.length > 0 ? { referenceTop } : {}),
         }
       : {},
   );
