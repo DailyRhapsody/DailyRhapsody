@@ -20,7 +20,7 @@ const BODY_TTL_S = 7 * 24 * 60 * 60;
 const FAIL_TTL_S = 60 * 60;
 const MAX_HTML_BYTES = 1_600_000;
 const MAX_MARKDOWN_CHARS = 12_000;
-const FETCH_TIMEOUT_MS = 12_000;
+const FETCH_TIMEOUT_MS = 7_000;
 
 let _redis: Redis | null | undefined;
 
