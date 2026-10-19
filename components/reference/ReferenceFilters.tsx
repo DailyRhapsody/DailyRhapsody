@@ -183,7 +183,7 @@ export function ReferenceFilters({
 
       {/* 右端一组：结果数 / 清除 / 排序 / 搜索。sm 以上固定在同一行最右且不收缩，
           窄屏（手机）整组独占一行、搜索框铺满。 */}
-      <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2 sm:ml-auto sm:w-auto sm:shrink-0">
+      <div className="ml-auto flex shrink-0 flex-wrap items-center gap-x-2 gap-y-2">
         {rules.length > 0 ? (
           <>
             <span className="text-xs text-zinc-400 dark:text-zinc-500">
