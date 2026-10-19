@@ -72,10 +72,11 @@ export function MomentsTab({
               <p className="mb-2 text-[13px] leading-none text-zinc-400 dark:text-zinc-500">
                 {formatMomentDate(m.createdAt)}
               </p>
-              <div className="overflow-hidden rounded bg-black">
+              <div className="grid grid-cols-3 gap-2">
                 <MomentsVideoCell
                   src={sorted[0].url}
                   posterUrl={sorted[0].thumbUrl || undefined}
+                  compact
                 />
               </div>
             </article>
