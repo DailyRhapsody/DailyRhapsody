@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { BrandName } from "@/components/BrandName";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
@@ -381,7 +380,7 @@ export default function StickyProfileHeader({
               aria-label="首页"
             >
               <p className="whitespace-nowrap text-base font-bold leading-tight text-white">
-                <BrandName name={profile?.name ?? "DailyRhapsody"} />
+                {profile?.name ?? "DailyRhapsody"}
               </p>
             </Link>
           </div>
@@ -414,7 +413,7 @@ export default function StickyProfileHeader({
                 className="inline-flex w-fit self-start"
               >
                 <p className="whitespace-nowrap text-lg font-bold text-white">
-                  <BrandName name={profile?.name ?? "DailyRhapsody"} />
+                  {profile?.name ?? "DailyRhapsody"}
                 </p>
               </Link>
               {hasSignature && (
