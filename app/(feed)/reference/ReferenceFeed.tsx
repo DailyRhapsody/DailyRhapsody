@@ -107,7 +107,7 @@ export default function ReferenceFeed({
           {items.length > 0 && (
             <>
               <h2 className="sr-only">资料列表</h2>
-              <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
                 {items.map((it) => (
                   <div key={it.id} id={`reference-${it.id}`} className="scroll-mt-24">
                     <ReferenceCard
