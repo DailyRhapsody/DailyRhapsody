@@ -128,6 +128,11 @@ async function getRedis() {
   return _redis;
 }
 
+/** 供同库其它模块（如 reference-i18n）复用同一个 Redis 连接与凭据解析。 */
+export async function getReferenceRedis() {
+  return getRedis();
+}
+
 // v2：字段结构变了。旧键刻意不复用，部署后第一次读取自动重建。
 const LIST_CACHE_KEY = "notion:reference:items:v2";
 const ITEM_CACHE_PREFIX = "notion:reference:item:v2:";

@@ -2,6 +2,7 @@
 // 渲染时按当前语言合并。原文（标题、正文）不翻译，避免机器翻译破坏专有名词。
 
 import type { ReferenceCompanyProfile } from "@/lib/reference-profile";
+import { getReferenceRedis } from "@/lib/notion-reference";
 
 export const REFERENCE_EN_KEY = "dr:reference:en:v1";
 
@@ -10,42 +11,35 @@ export type ReferenceEnFields = {
   company?: Partial<ReferenceCompanyProfile>;
 };
 
-function redisConfig() {
-  const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-  const token =
-    process.env.UPSTASH_REDIS_REST_TOKEN ??
-    process.env.KV_REST_API_READ_ONLY_TOKEN ??
-    process.env.KV_REST_API_TOKEN;
-  return url && token ? { url, token } : null;
-}
-
-/** 一次取回整张翻译表：条目数在千级以内，整表读比逐条读省往返。 */
+/**
+ * 一次取回整张翻译表：条目数在千级以内，整表读比逐条读省往返。
+ * 复用 notion-reference 的 Redis 客户端，凭据解析与缓存层完全一致，
+ * 避免自己拼 KV_REST_API_* / UPSTASH_* 时两套变量指向不同实例。
+ */
 export async function getReferenceEnMap(): Promise<Map<string, ReferenceEnFields>> {
-  const config = redisConfig();
-  if (!config) return new Map();
+  const redis = await getReferenceRedis();
+  if (!redis) return new Map();
+  const map = new Map<string, ReferenceEnFields>();
   try {
-    const res = await fetch(`${config.url}/hgetall/${REFERENCE_EN_KEY}`, {
-      headers: { Authorization: `Bearer ${config.token}` },
-      cache: "no-store",
-    });
-    if (!res.ok) return new Map();
-    const body = (await res.json()) as { result?: (string | null)[] | null };
-    const flat = body.result ?? [];
-    const map = new Map<string, ReferenceEnFields>();
-    for (let i = 0; i < flat.length; i += 2) {
-      const id = flat[i];
-      const raw = flat[i + 1];
-      if (!id || !raw) continue;
-      try {
-        map.set(id, JSON.parse(raw) as ReferenceEnFields);
-      } catch {
-        // 单条脏数据不影响其它条目
+    const raw = await redis.hgetall<Record<string, ReferenceEnFields | string>>(REFERENCE_EN_KEY);
+    if (!raw) return map;
+    for (const [id, value] of Object.entries(raw)) {
+      if (!value) continue;
+      if (typeof value === "string") {
+        try {
+          map.set(id, JSON.parse(value) as ReferenceEnFields);
+        } catch {
+          // 单条脏数据不影响其它条目
+        }
+      } else {
+        map.set(id, value);
       }
     }
-    return map;
   } catch {
-    return new Map();
+    return map;
   }
+  if (map.size === 0) console.warn("[reference-i18n] translation map is empty");
+  return map;
 }
 
 type TranslatableItem = {
