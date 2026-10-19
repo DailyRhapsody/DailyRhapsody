@@ -65,7 +65,7 @@ export default function ReferenceFeed({
   onTagClick: (tag: string) => void;
 }) {
   const { likes, toggle } = useReferenceLikes(items.map((it) => it.id));
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -309,7 +309,9 @@ export default function ReferenceFeed({
           <span className="truncate">
             {t("reference.selected.label")}
             {selectedItem
-              ? selectedItem.titleZh?.trim() || selectedItem.name
+              ? (lang === "zh"
+                  ? selectedItem.titleZh?.trim() || selectedItem.name
+                  : selectedItem.name || selectedItem.titleZh?.trim())
               : t("reference.selected.missing")}
           </span>
           <button
