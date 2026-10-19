@@ -8,10 +8,7 @@ import {
   isReferenceConfigured,
   type ReferenceItem,
 } from "@/lib/notion-reference";
-import {
-  referenceKindLabel,
-  referenceLicenseLabel,
-} from "@/lib/reference-taxonomy";
+import { referenceLicenseLabel } from "@/lib/reference-taxonomy";
 import { getLang } from "@/lib/i18n-server";
 import { applyReferenceEn, getReferenceEnMap } from "@/lib/reference-i18n";
 import { t, type Lang } from "@/lib/i18n";
@@ -46,12 +43,14 @@ function hostnameOf(url: string): string {
   }
 }
 
+/** 中文页优先内容标题；英文页优先原文名，缺失时回落到中文标题。 */
+function displayTitle(item: ReferenceItem, lang: Lang): string {
+  if (lang === "zh") return item.titleZh?.trim() || item.name || "";
+  return item.name || item.titleZh?.trim() || "";
+}
+
 function descriptionOf(item: ReferenceItem): string {
-  return (
-    item.summary ||
-    item.copyright ||
-    `DailyRhapsody Reference 收录：${item.name || "未命名条目"}`
-  );
+  return item.summary || item.copyright || "DailyRhapsody Reference";
 }
 
 export async function generateMetadata({
@@ -70,75 +69,59 @@ export async function generateMetadata({
     return { title: "Reference | DailyRhapsody", robots: { index: false, follow: false } };
   }
 
-  const description = descriptionOf(item);
+  const lang = await getLang();
+  const translated =
+    lang === "en"
+      ? applyReferenceEn(item, (await getReferenceEnMap()).get(item.id))
+      : item;
+  const title = displayTitle(translated, lang) || "Reference";
+  const description = descriptionOf(translated);
+
   return {
-    title: `${item.name || "Reference"} · Reference | DailyRhapsody`,
+    title: `${title} · Reference | DailyRhapsody`,
     description,
     alternates: { canonical: `/reference/${item.id}` },
     openGraph: {
-      title: item.name || "Reference",
+      title,
       description,
       type: "article",
-      locale: "zh_CN",
+      locale: lang === "en" ? "en_US" : "zh_CN",
       siteName: "DailyRhapsody",
     },
     twitter: {
       card: "summary_large_image",
-      title: item.name || "Reference",
+      title,
       description,
     },
   };
 }
 
-function CompanyProfileBlock({ profile, lang }: { profile: ReferenceCompanyProfile; lang: Lang }) {
-  const rows: { label: string; value: string }[] = [
-    { label: t(lang, "company.name"), value: profile.companyName },
-    { label: t(lang, "company.headcount"), value: profile.headcount != null ? String(profile.headcount) : "" },
+/**
+ * 只保留判断「这家公司是谁、做什么」必需的字段。
+ * 产品线、技术、创始人、资本与竞争等信息放在正文档案里，避免页头堆成表格。
+ */
+function CompanyFacts({ profile, lang }: { profile: ReferenceCompanyProfile; lang: Lang }) {
+  const facts: { label: string; value: string }[] = [
+    {
+      label: t(lang, "company.headcount"),
+      value: profile.headcount != null ? String(profile.headcount) : "",
+    },
     { label: t(lang, "company.scenarios"), value: profile.scenarios.join(" · ") },
     { label: t(lang, "company.products"), value: profile.productForms.join(" · ") },
-    { label: t(lang, "company.culture"), value: profile.operationCulture },
     { label: t(lang, "company.markets"), value: profile.markets.join(" · ") },
-    { label: t(lang, "company.tags"), value: profile.companyTags.join(" · ") },
-    { label: t(lang, "company.sales"), value: profile.salesModes.join(" · ") },
-    { label: t(lang, "company.listed"), value: profile.listed },
-    { label: t(lang, "company.profitability"), value: profile.profitability },
-    { label: t(lang, "company.interview"), value: profile.interviewStatus },
-  ].filter((row) => row.value);
+  ].filter((fact) => fact.value);
 
-  if (rows.length === 0) return null;
-  return (
-    <section className="mt-6 border-t border-zinc-200 pt-5 dark:border-zinc-800">
-      <h2 className="text-[0.68rem] font-medium uppercase tracking-[0.18em] text-zinc-400 dark:text-zinc-500">
-        {t(lang, "company.heading")}
-      </h2>
-      <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2 text-xs sm:grid-cols-2">
-        {rows.map((row) => (
-          <div key={row.label} className="flex min-w-0 gap-3">
-            <dt className="min-w-[4.5rem] shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">{row.label}</dt>
-            <dd className="min-w-0 break-words text-zinc-700 dark:text-zinc-300">{row.value}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
-  );
-}
-
-function InfoBlock({ item, lang }: { item: ReferenceItem; lang: Lang }) {
-  const rows: { label: string; value: string }[] = [
-    { label: t(lang, "reference.detail.kind"), value: referenceKindLabel(item.kind, lang) },
-  ];
-  if (item.year) rows.push({ label: t(lang, "reference.detail.year"), value: String(item.year) });
-  if (item.domains.length > 0)
-    rows.push({ label: t(lang, "reference.detail.domains"), value: item.domains.join(" · ") });
-  if (item.source) rows.push({ label: t(lang, "reference.detail.source"), value: item.source });
-  // 许可与版权只在页尾出现一次，避免同一条信息在页内重复两遍。
+  if (facts.length === 0) return null;
 
   return (
-    <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
-      {rows.map((row) => (
-        <div key={row.label} className="flex min-w-0 gap-1.5">
-          <dt className="shrink-0 text-zinc-400 dark:text-zinc-500">{row.label}</dt>
-          <dd className="min-w-0 break-words text-zinc-700 dark:text-zinc-300">{row.value}</dd>
+    <dl
+      aria-label={t(lang, "company.heading")}
+      className="mt-5 grid grid-cols-1 gap-x-8 gap-y-1.5 border-t border-zinc-200 pt-4 text-xs sm:grid-cols-2 dark:border-zinc-800"
+    >
+      {facts.map((fact) => (
+        <div key={fact.label} className="flex min-w-0 gap-2">
+          <dt className="shrink-0 text-zinc-400 dark:text-zinc-500">{fact.label}</dt>
+          <dd className="min-w-0 break-words text-zinc-700 dark:text-zinc-300">{fact.value}</dd>
         </div>
       ))}
     </dl>
@@ -163,6 +146,7 @@ export default async function ReferenceDetailPage({
     item = applyReferenceEn(item, translations.get(item.id));
   }
 
+  const title = displayTitle(item, lang);
   const sourceLabel = hostnameOf(item.url) || (item.source && item.source !== "手动添加" ? item.source : "");
   const renderedHtml = item.bodyMarkdown ? renderMarkdown(item.bodyMarkdown) : "";
   const canDownload = item.license !== "link-only" && item.attachment != null;
@@ -171,7 +155,7 @@ export default async function ReferenceDetailPage({
     ? {
         "@context": "https://schema.org",
         "@type": item.kind === "test" ? "Report" : "Article",
-        headline: item.name,
+        headline: title,
         description: item.summary || undefined,
         url: `${siteUrl}/reference/${item.id}`,
         ...(item.coverPath
@@ -182,7 +166,7 @@ export default async function ReferenceDetailPage({
                   : `${siteUrl}${item.coverPath}`,
             }
           : {}),
-        inLanguage: "zh-CN",
+        inLanguage: lang === "en" ? "en" : "zh-CN",
         isPartOf: {
           "@type": "CollectionPage",
           name: "DailyRhapsody Reference",
@@ -192,7 +176,7 @@ export default async function ReferenceDetailPage({
     : null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-100 to-white font-sans text-zinc-900 dark:from-black dark:via-zinc-950 dark:to-black dark:text-zinc-50">
+    <div className="min-h-screen bg-white font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
       {jsonLd && (
         <script
           type="application/ld+json"
@@ -200,21 +184,21 @@ export default async function ReferenceDetailPage({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }}
         />
       )}
-      {/* 顶部固定 bar：返回 + 跳原文 */}
-      <div className="sticky top-0 z-30 border-b border-zinc-200 bg-white/80 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/80">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3 text-sm">
+
+      <div className="sticky top-0 z-30 border-b border-zinc-200/80 bg-white/85 backdrop-blur-md dark:border-zinc-800/80 dark:bg-zinc-950/85">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-5 py-3 text-sm">
           <Link
             href="/reference"
-            className="rounded text-zinc-700 hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-300 dark:hover:text-zinc-50"
+            className="rounded text-zinc-600 transition-colors hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:text-zinc-50"
           >
-            ← Reference
+            ← {t(lang, "reference.detail.back")}
           </Link>
           {item.url && (
             <a
               href={item.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-full border border-zinc-300 px-3 py-1.5 text-zinc-700 transition-colors hover:border-zinc-400 hover:bg-white/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              className="text-zinc-500 transition-colors hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:text-zinc-100"
             >
               {t(lang, "reference.detail.jump")} ↗
             </a>
@@ -222,23 +206,13 @@ export default async function ReferenceDetailPage({
         </div>
       </div>
 
-      <main className="mx-auto max-w-3xl px-4 py-8">
-        <header className="mb-6">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-            <span className="rounded-full border border-zinc-200 bg-white/70 px-2 py-0.5 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300">
-              {referenceKindLabel(item.kind, lang)}
-            </span>
-            {sourceLabel && (
-              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-                {sourceLabel}
-              </span>
-            )}
-            <span className="opacity-70">·</span>
-            <span>收藏于 {formatDate(item.clippedAt)}</span>
-          </div>
-
-          <h1 className="mt-4 text-3xl font-semibold leading-tight tracking-tight text-zinc-900 dark:text-zinc-50">
-            {item.name || "(无标题)"}
+      <main className="mx-auto max-w-3xl px-5 py-8 sm:py-10">
+        <header>
+          <p className="text-xs text-zinc-400 dark:text-zinc-500">
+            {t(lang, "reference.detail.collected")} {formatDate(item.clippedAt)}
+          </p>
+          <h1 className="mt-2 text-3xl font-semibold leading-[1.2] tracking-tight text-zinc-900 sm:text-[2.1rem] dark:text-zinc-50">
+            {title || t(lang, "reference.card.untitled")}
           </h1>
 
           {item.summary && (
@@ -247,51 +221,32 @@ export default async function ReferenceDetailPage({
             </p>
           )}
 
-          <InfoBlock item={item} lang={lang} />
-          {item.company ? <CompanyProfileBlock profile={item.company} lang={lang} /> : null}
+          {item.company ? <CompanyFacts profile={item.company} lang={lang} /> : null}
 
-          {item.tags.length > 0 && (
-            <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              {item.tags.map((t) => (
-                <span
-                  key={t}
-                  className="rounded-full border border-zinc-200 px-2 py-0.5 text-[0.7rem] text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
-                >
-                  {t}
-                </span>
-              ))}
-            </div>
-          )}
-
-          <div className="mt-5 flex flex-wrap items-center gap-2">
+          <div className="mt-5 flex flex-wrap items-center gap-3">
             {canDownload && (
               <a
                 href={`/api/download/reference/${item.id}`}
                 className="inline-flex items-center gap-1.5 rounded-full bg-zinc-900 px-3 py-1.5 text-sm text-white transition-apple hover:bg-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
               >
-                下载附件
+                {t(lang, "reference.detail.download")}
                 {item.attachment?.kind === "external" ? " ↗" : ""}
               </a>
             )}
             <ReferenceLikeButton id={item.id} />
-            <ReferenceShareButton title={item.name || "Reference"} text={item.summary} />
+            <ReferenceShareButton title={title || "Reference"} text={item.summary} />
           </div>
-          {canDownload && (
-            <p className="mt-2 text-[0.7rem] text-zinc-400 dark:text-zinc-500">
-              {t(lang, "reference.detail.pdfNote")}
-            </p>
-          )}
         </header>
 
         {renderedHtml ? (
-          // 收藏详情是长文阅读页：与博客展开态同一套标题层级，块间距也要显式给
-          // （这里没有 EntrySummary 的 space-y 包裹）。
-          <article className={`${markdownPreviewProseClass} ${markdownHeadingClass} mt-10 border-t border-zinc-200 pt-8 text-[0.95rem] leading-relaxed dark:border-zinc-800`}>
+          <article
+            className={`${markdownPreviewProseClass} ${markdownHeadingClass} mt-8 border-t border-zinc-200 pt-7 text-[0.95rem] leading-relaxed dark:border-zinc-800`}
+          >
             <div className="space-y-[1.15em]" dangerouslySetInnerHTML={{ __html: renderedHtml }} />
           </article>
         ) : (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            正文为空。
+          <p className="mt-8 border-t border-zinc-200 pt-6 text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+            {t(lang, "reference.detail.emptyBody")}
             {item.url && (
               <>
                 {" "}
@@ -308,36 +263,10 @@ export default async function ReferenceDetailPage({
           </p>
         )}
 
-        <footer className="mt-12 border-t border-zinc-200 pt-5 dark:border-zinc-800">
-          <div className="flex flex-wrap items-center justify-between gap-4 text-xs">
-            <div className="flex min-w-0 items-center gap-3">
-              <span
-                aria-hidden
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-zinc-100 text-[0.7rem] font-semibold uppercase text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-              >
-                {(sourceLabel || item.name || "R").slice(0, 1)}
-              </span>
-              <div className="min-w-0">
-                <p className="truncate text-zinc-700 dark:text-zinc-300">
-                  {sourceLabel || t(lang, "reference.detail.sourceUnknown")}
-                </p>
-                <p className="mt-0.5 text-zinc-400 dark:text-zinc-500">
-                  {referenceLicenseLabel(item.license, lang)} ·{" "}
-                  {item.copyright ? item.copyright : t(lang, "reference.detail.rights")}
-                </p>
-              </div>
-            </div>
-            {item.url && (
-              <a
-                href={item.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="shrink-0 rounded-full border border-zinc-200 px-3 py-1 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-100"
-              >
-                {t(lang, "reference.detail.original")} ↗
-              </a>
-            )}
-          </div>
+        <footer className="mt-10 border-t border-zinc-200 pt-4 text-[0.7rem] leading-relaxed text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
+          {sourceLabel && <span>{sourceLabel} · </span>}
+          <span>{referenceLicenseLabel(item.license, lang)}</span>
+          {item.copyright ? <span> · {item.copyright}</span> : null}
         </footer>
       </main>
     </div>
