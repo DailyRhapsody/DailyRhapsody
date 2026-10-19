@@ -207,7 +207,10 @@ export function ReferenceCard({
             }`}
           >
             <TargetIcon filled={selected} />
-            <span className="sr-only">{selected ? t("reference.selected.clear") : t("reference.card.select")}</span>
+            <span className="hidden text-[0.68rem] sm:inline">
+              {selected ? t("reference.selected.clear") : t("reference.card.select")}
+            </span>
+            <span className="sr-only sm:hidden">{selected ? t("reference.selected.clear") : t("reference.card.select")}</span>
           </button>
           <button
             type="button"
