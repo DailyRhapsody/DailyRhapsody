@@ -73,16 +73,25 @@ export default function ReferenceFeed({
     () => (selectedId ? items.find((it) => it.id === selectedId) ?? null : null),
     [items, selectedId],
   );
-  /** 点卡片上的圆圈切换选中：再点一次清除 focus，排行榜带进来的选中也能这样撤销。 */
-  const toggleSelect = (id: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (params.get("focus") === id) {
-      params.delete("focus");
-    } else {
-      params.set("focus", id);
-    }
+  const focusedRef = useRef<string | null>(null);
+
+  /** 写 URL 时读实时 location.search，避免用渲染时的旧快照覆盖掉刚写入的 focus/q。 */
+  const replaceParams = (mutate: (params: URLSearchParams) => void) => {
+    const params = new URLSearchParams(window.location.search);
+    mutate(params);
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+
+  /** 点卡片上的圆圈切换选中：再点一次清除 focus，排行榜带进来的选中也能这样撤销。 */
+  const toggleSelect = (id: string) => {
+    const willSelect = selectedId !== id;
+    // 点击选中不滚动：先把 ref 对齐，scroll effect 认为「已经处理过」。
+    focusedRef.current = willSelect ? id : null;
+    replaceParams((params) => {
+      if (willSelect) params.set("focus", id);
+      else params.delete("focus");
+    });
   };
   const [rules, setRules] = useState<FilterRule[]>([]);
   const [logic, setLogic] = useState<FilterLogic>("and");
@@ -90,54 +99,66 @@ export default function ReferenceFeed({
     () => filterReferenceItems(items, rules, logic),
     [items, rules, logic],
   );
-  const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
-  const [sorts, setSorts] = useState<SortKey[]>(() => parseSortKeys(searchParams.get("sort")));
+  const qParam = searchParams.get("q") ?? "";
+  const sortParam = searchParams.get("sort") ?? "";
+  const [query, setQuery] = useState(qParam);
+  const [sorts, setSorts] = useState<SortKey[]>(() => parseSortKeys(sortParam));
   const visibleItems = useMemo(() => {
     const matched = filteredItems.filter((it) => matchesQuery(it, query));
     return sorts.length > 0 ? sortReferenceItems(matched, sorts) : matched;
   }, [filteredItems, query, sorts]);
 
+  // URL 是唯一真源：排行榜/统计卡的软导航会改 URL 而不重挂组件，这里把搜索与排序回灌。
+  useEffect(() => {
+    setQuery(qParam);
+    setSorts(parseSortKeys(sortParam));
+  }, [qParam, sortParam]);
+
   // 搜索词与排序写回 URL（300ms 防抖），刷新/分享能还原同一视图。
   useEffect(() => {
     const timer = setTimeout(() => {
-      const params = new URLSearchParams(searchParams.toString());
-      const trimmed = query.trim();
-      if (trimmed) params.set("q", trimmed);
-      else params.delete("q");
-      const serialized = serializeSortKeys(sorts);
-      if (serialized) params.set("sort", serialized);
-      else params.delete("sort");
-      const next = params.toString();
-      if (next === searchParams.toString()) return;
-      router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+      replaceParams((params) => {
+        const trimmed = query.trim();
+        if (trimmed) params.set("q", trimmed);
+        else params.delete("q");
+        const serialized = serializeSortKeys(sorts);
+        if (serialized) params.set("sort", serialized);
+        else params.delete("sort");
+      });
     }, 300);
     return () => clearTimeout(timer);
-    // searchParams 只读取当前值，不放进依赖，避免自身写回触发循环。
+    // replaceParams 每次渲染都是新函数，放进依赖会让定时器反复重建。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, sorts]);
 
   const updateSort = (index: number, field: SortField | "", dir?: "asc" | "desc") => {
     setSorts((prev) => {
-      if (!field) return prev.slice(0, index);
-      const next = [...prev];
-      const existing = next[index];
-      next[index] = { field, dir: dir ?? existing?.dir ?? "desc" };
-      // 两个键不能相同：主键换成已有次键时，把次键让出去。
-      return next.filter((key, i) => next.findIndex((k) => k.field === key.field) === i && i <= 1);
+      if (!field) return index === 0 ? [] : prev.slice(0, 1);
+      const entry: SortKey = { field, dir: dir ?? prev[index]?.dir ?? "desc" };
+      const others = prev.filter((_, i) => i !== index);
+      const merged = index === 0 ? [entry, ...others] : [others[0], entry].filter(Boolean);
+      // 两个键不能相同：主键换成原次键时相当于互换，原主键退到次级。
+      return merged
+        .filter((key, i, arr) => arr.findIndex((k) => k.field === key.field) === i)
+        .slice(0, 2) as SortKey[];
     });
   };
-  const focusedRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!selectedId) {
       focusedRef.current = null;
       return;
     }
+    // 已经处理过这个选中项：搜索/筛选/分页导致列表长度变化时不要再把人拉回去。
+    if (focusedRef.current === selectedId) return;
     const el = document.getElementById(`reference-${selectedId}`);
     if (!el) return;
     focusedRef.current = selectedId;
+    const rect = el.getBoundingClientRect();
+    if (rect.top >= 0 && rect.bottom <= window.innerHeight) return; // 已经完整可见
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const frame = requestAnimationFrame(() => {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
     });
     return () => cancelAnimationFrame(frame);
   }, [selectedId, visibleItems.length]);
