@@ -202,6 +202,8 @@ export default function ReferenceFeed({
         </section>
       )}
 
+      {/* 工具条只有一行：左边筛选（含 chip），右边排序 + 搜索，与 Notion 一致。
+          搜索 / 排序不要再单独占一行 —— 用户已就此纠正过，视为布局回退。 */}
       <ReferenceFilters
         items={items}
         rules={rules}
@@ -209,100 +211,101 @@ export default function ReferenceFeed({
         resultCount={visibleItems.length}
         onRulesChange={setRules}
         onLogicChange={setLogic}
-      />
-
-      <section className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[13rem] flex-1">
-          <svg
-            className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.8}
-            aria-hidden
-          >
-            <circle cx="11" cy="11" r="6.5" />
-            <path strokeLinecap="round" d="m16 16 3.5 3.5" />
-          </svg>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("reference.search.placeholder")}
-            aria-label={t("reference.search.label")}
-            className="h-9 w-full rounded-full border border-zinc-200 bg-white/70 pl-9 pr-8 text-xs text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200 dark:placeholder:text-zinc-500"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              aria-label={t("reference.search.clear")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-zinc-400 transition-colors hover:text-zinc-700 dark:hover:text-zinc-200"
-            >
-              ×
-            </button>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          <span className="text-zinc-400 dark:text-zinc-500">{t("reference.sort.label")}</span>
-          <select
-            value={sorts[0]?.field ?? ""}
-            onChange={(e) => updateSort(0, e.target.value as SortField | "")}
-            aria-label={t("reference.sort.primary")}
-            className="h-8 cursor-pointer rounded-full border border-zinc-200 bg-white/70 px-2 text-xs text-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200"
-          >
-            <option value="">{t("reference.sort.default")}</option>
-            {SORT_FIELDS.map((field) => (
-              <option key={field.key} value={field.key}>{t(`sort.${field.key}`)}</option>
-            ))}
-          </select>
-          {sorts[0] && (
-            <button
-              type="button"
-              onClick={() => updateSort(0, sorts[0].field, sorts[0].dir === "asc" ? "desc" : "asc")}
-              aria-label={sorts[0].dir === "asc" ? t("reference.sort.asc") : t("reference.sort.desc")}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 bg-white/70 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300 dark:hover:text-zinc-100"
-            >
-              {sorts[0].dir === "asc" ? "↑" : "↓"}
-            </button>
-          )}
-          {sorts.length === 1 && (
-            <button
-              type="button"
-              onClick={() => {
-                const fallback = SORT_FIELDS.find((f) => f.key !== sorts[0].field);
-                if (fallback) updateSort(1, fallback.key, "asc");
-              }}
-              className="h-8 rounded-full border border-dashed border-zinc-300 px-2.5 text-zinc-500 transition-colors hover:border-zinc-400 hover:text-zinc-800 dark:border-zinc-600 dark:text-zinc-400 dark:hover:text-zinc-200"
-            >
-              {t("reference.sort.addSecondary")}
-            </button>
-          )}
-          {sorts[1] && (
-            <>
+        trailing={
+          <>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="text-zinc-400 dark:text-zinc-500">{t("reference.sort.label")}</span>
               <select
-                value={sorts[1].field}
-                onChange={(e) => updateSort(1, e.target.value as SortField | "")}
-                aria-label={t("reference.sort.secondary")}
-                className="h-8 cursor-pointer rounded-full border border-zinc-200 bg-white/70 px-2 text-xs text-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200"
+                value={sorts[0]?.field ?? ""}
+                onChange={(e) => updateSort(0, e.target.value as SortField | "")}
+                aria-label={t("reference.sort.primary")}
+                className="h-8 max-w-[9rem] cursor-pointer truncate rounded-full border border-zinc-200 bg-white/70 px-2 text-xs text-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200"
               >
-                {SORT_FIELDS.filter((f) => f.key !== sorts[0]?.field).map((field) => (
+                <option value="">{t("reference.sort.default")}</option>
+                {SORT_FIELDS.map((field) => (
                   <option key={field.key} value={field.key}>{t(`sort.${field.key}`)}</option>
                 ))}
               </select>
-              <button
-                type="button"
-                onClick={() => updateSort(1, sorts[1].field, sorts[1].dir === "asc" ? "desc" : "asc")}
-                aria-label={sorts[1].dir === "asc" ? t("reference.sort.asc") : t("reference.sort.desc")}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 bg-white/70 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300 dark:hover:text-zinc-100"
+              {sorts[0] && (
+                <button
+                  type="button"
+                  onClick={() => updateSort(0, sorts[0].field, sorts[0].dir === "asc" ? "desc" : "asc")}
+                  aria-label={sorts[0].dir === "asc" ? t("reference.sort.asc") : t("reference.sort.desc")}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 bg-white/70 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300 dark:hover:text-zinc-100"
+                >
+                  {sorts[0].dir === "asc" ? "↑" : "↓"}
+                </button>
+              )}
+              {sorts.length === 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const fallback = SORT_FIELDS.find((f) => f.key !== sorts[0].field);
+                    if (fallback) updateSort(1, fallback.key, "asc");
+                  }}
+                  className="h-8 rounded-full border border-dashed border-zinc-300 px-2.5 text-zinc-500 transition-colors hover:border-zinc-400 hover:text-zinc-800 dark:border-zinc-600 dark:text-zinc-400 dark:hover:text-zinc-200"
+                >
+                  {t("reference.sort.addSecondary")}
+                </button>
+              )}
+              {sorts[1] && (
+                <>
+                  <select
+                    value={sorts[1].field}
+                    onChange={(e) => updateSort(1, e.target.value as SortField | "")}
+                    aria-label={t("reference.sort.secondary")}
+                    className="h-8 max-w-[9rem] cursor-pointer truncate rounded-full border border-zinc-200 bg-white/70 px-2 text-xs text-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200"
+                  >
+                    {SORT_FIELDS.filter((f) => f.key !== sorts[0]?.field).map((field) => (
+                      <option key={field.key} value={field.key}>{t(`sort.${field.key}`)}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => updateSort(1, sorts[1].field, sorts[1].dir === "asc" ? "desc" : "asc")}
+                    aria-label={sorts[1].dir === "asc" ? t("reference.sort.asc") : t("reference.sort.desc")}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 bg-white/70 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300 dark:hover:text-zinc-100"
+                  >
+                    {sorts[1].dir === "asc" ? "↑" : "↓"}
+                  </button>
+                </>
+              )}
+            </div>
+
+            <div className="relative w-full sm:w-[18rem]">
+              <svg
+                className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.8}
+                aria-hidden
               >
-                {sorts[1].dir === "asc" ? "↑" : "↓"}
-              </button>
-            </>
-          )}
-        </div>
-      </section>
+                <circle cx="11" cy="11" r="6.5" />
+                <path strokeLinecap="round" d="m16 16 3.5 3.5" />
+              </svg>
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t("reference.search.placeholder")}
+                aria-label={t("reference.search.label")}
+                className="h-8 w-full rounded-full border border-zinc-200 bg-white/70 pl-9 pr-8 text-xs text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200 dark:placeholder:text-zinc-500"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  aria-label={t("reference.search.clear")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-zinc-400 transition-colors hover:text-zinc-700 dark:hover:text-zinc-200"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </>
+        }
+      />
 
       {selectedId && (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-full border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-300">
