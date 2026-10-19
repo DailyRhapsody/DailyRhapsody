@@ -104,14 +104,19 @@ function CompanyProfileBlock({ profile }: { profile: ReferenceCompanyProfile }) 
 
   if (rows.length === 0) return null;
   return (
-    <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 rounded-xl border border-zinc-200 bg-white/60 px-4 py-3 text-xs sm:grid-cols-2 dark:border-zinc-800 dark:bg-zinc-900/40">
-      {rows.map((row) => (
-        <div key={row.label} className="flex gap-2">
-          <dt className="w-20 shrink-0 text-zinc-400 dark:text-zinc-500">{row.label}</dt>
-          <dd className="min-w-0 break-words text-zinc-700 dark:text-zinc-300">{row.value}</dd>
-        </div>
-      ))}
-    </dl>
+    <section className="mt-6 border-t border-zinc-200 pt-5 dark:border-zinc-800">
+      <h2 className="text-[0.68rem] font-medium uppercase tracking-[0.18em] text-zinc-400 dark:text-zinc-500">
+        公司档案
+      </h2>
+      <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2 text-xs sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.label} className="flex min-w-0 gap-3">
+            <dt className="w-[4.5rem] shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">{row.label}</dt>
+            <dd className="min-w-0 break-words text-zinc-700 dark:text-zinc-300">{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 
@@ -126,10 +131,10 @@ function InfoBlock({ item }: { item: ReferenceItem }) {
   if (item.copyright) rows.push({ label: "版权", value: item.copyright });
 
   return (
-    <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 rounded-xl border border-zinc-200 bg-white/60 px-4 py-3 text-xs sm:grid-cols-2 dark:border-zinc-800 dark:bg-zinc-900/40">
+    <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
       {rows.map((row) => (
-        <div key={row.label} className="flex gap-2">
-          <dt className="w-10 shrink-0 text-zinc-400 dark:text-zinc-500">{row.label}</dt>
+        <div key={row.label} className="flex min-w-0 gap-1.5">
+          <dt className="shrink-0 text-zinc-400 dark:text-zinc-500">{row.label}</dt>
           <dd className="min-w-0 break-words text-zinc-700 dark:text-zinc-300">{row.value}</dd>
         </div>
       ))}
@@ -200,7 +205,7 @@ export default async function ReferenceDetailPage({
               href={item.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded bg-blue-600 px-3 py-1.5 text-white shadow-sm transition-apple hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              className="rounded-full border border-zinc-300 px-3 py-1.5 text-zinc-700 transition-colors hover:border-zinc-400 hover:bg-white/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
             >
               跳到原文 ↗
             </a>
@@ -211,7 +216,7 @@ export default async function ReferenceDetailPage({
       <main className="mx-auto max-w-3xl px-4 py-8">
         <header className="mb-6">
           <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-            <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-white dark:bg-zinc-100 dark:text-zinc-900">
+            <span className="rounded-full border border-zinc-200 bg-white/70 px-2 py-0.5 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300">
               {REFERENCE_KIND_LABELS[item.kind]}
             </span>
             {sourceLabel && (
@@ -223,12 +228,12 @@ export default async function ReferenceDetailPage({
             <span>收藏于 {formatDate(item.clippedAt)}</span>
           </div>
 
-          <h1 className="mt-3 text-2xl font-bold leading-tight text-zinc-900 dark:text-zinc-50">
+          <h1 className="mt-4 text-3xl font-semibold leading-tight tracking-tight text-zinc-900 dark:text-zinc-50">
             {item.name || "(无标题)"}
           </h1>
 
           {item.summary && (
-            <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">
+            <p className="mt-3 max-w-2xl text-[0.95rem] leading-relaxed text-zinc-600 dark:text-zinc-300">
               {item.summary}
             </p>
           )}
@@ -272,7 +277,7 @@ export default async function ReferenceDetailPage({
         {renderedHtml ? (
           // 收藏详情是长文阅读页：与博客展开态同一套标题层级，块间距也要显式给
           // （这里没有 EntrySummary 的 space-y 包裹）。
-          <article className={`${markdownPreviewProseClass} ${markdownHeadingClass} text-[0.95rem] leading-relaxed`}>
+          <article className={`${markdownPreviewProseClass} ${markdownHeadingClass} mt-10 border-t border-zinc-200 pt-8 text-[0.95rem] leading-relaxed dark:border-zinc-800`}>
             <div className="space-y-[1.15em]" dangerouslySetInnerHTML={{ __html: renderedHtml }} />
           </article>
         ) : (

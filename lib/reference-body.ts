@@ -14,8 +14,8 @@ import { load } from "cheerio";
 import { Redis } from "@upstash/redis";
 import { isProbablyPrivateOrLocalIp } from "@/lib/client-ip";
 
-const BODY_CACHE_PREFIX = "dr:ref:body:v1:";
-const BODY_FAIL_PREFIX = "dr:ref:body:fail:v1:";
+const BODY_CACHE_PREFIX = "dr:ref:body:v2:";
+const BODY_FAIL_PREFIX = "dr:ref:body:fail:v2:";
 const BODY_TTL_S = 7 * 24 * 60 * 60;
 const FAIL_TTL_S = 60 * 60;
 const MAX_HTML_BYTES = 1_600_000;
@@ -103,6 +103,20 @@ async function readGithubReadme(url: URL): Promise<string | null> {
   return null;
 }
 
+/** 商品页/反爬页常见的模板噪声，不适合作为正文展示。 */
+function looksLikeBoilerplate(markdown: string): boolean {
+  const signals = [
+    "Image Unavailable",
+    "To view this video download Flash Player",
+    "Enable JavaScript",
+    "Access Denied",
+    "Page Not Found",
+    "Be among the first to access new innovations",
+    "This product has limited quantities",
+  ];
+  return signals.some((signal) => markdown.includes(signal));
+}
+
 function cleanText(value: string): string {
   return value.replace(/\s+/g, " ").replace(/\u00a0/g, " ").trim();
 }
@@ -163,7 +177,9 @@ async function extractBody(url: string): Promise<string | null> {
     if (abstract.length > 20) return [title && `# ${title}`, abstract].filter(Boolean).join("\n\n").slice(0, MAX_MARKDOWN_CHARS);
   }
 
-  return htmlToMarkdown(page.text) || null;
+  const markdown = htmlToMarkdown(page.text);
+  if (!markdown || looksLikeBoilerplate(markdown)) return null;
+  return markdown;
 }
 
 export async function getFetchedReferenceBody(key: string, url: string): Promise<string | null> {

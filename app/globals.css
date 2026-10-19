@@ -335,8 +335,8 @@ html[data-pet-chat] .dr-life-ring-sleep-led {
 .dr-pet-panel-glow > span {
   position: absolute;
   inset: -8%;
-  opacity: 0.38;
-  filter: blur(28px);
+  opacity: 0.24;
+  filter: blur(32px);
   background: conic-gradient(
     from var(--dr-glow-angle),
     #ffd3a8,
@@ -351,7 +351,7 @@ html[data-pet-chat] .dr-life-ring-sleep-led {
 /* 暗色底下流光稍微收一点，但仍是整块面板均匀铺开。 */
 @media (prefers-color-scheme: dark) {
   .dr-pet-panel-glow > span {
-    opacity: 0.3;
+    opacity: 0.18;
   }
 }
 html[data-pet-chat="thinking"] .dr-pet-panel-glow {
