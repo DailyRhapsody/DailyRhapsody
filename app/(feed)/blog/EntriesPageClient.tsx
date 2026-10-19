@@ -17,6 +17,7 @@ import type { MomentsTimelineRow } from "@/components/entries/types";
 import { useReference, type ReferenceListItem } from "@/hooks/useReference";
 import { usePublishFeedStats } from "../FeedShell";
 import ReferenceFeed from "../reference/ReferenceFeed";
+import { pickReferenceThumbs } from "@/lib/reference-thumbs";
 import { useProfile, type Profile } from "@/hooks/useProfile";
 import { useAdminSession } from "@/hooks/useAdminSession";
 import { useMoments } from "@/hooks/useMoments";
@@ -138,12 +139,7 @@ export default function EntriesPageClient({
   const referenceRows = useMemo(() => referenceTimelineRows(referenceItems), [referenceItems]);
   const referenceIds = useMemo(() => referenceItems.map((r) => r.id), [referenceItems]);
   const referenceThumbs = useMemo(
-    () =>
-      referenceItems
-        .map((r) => r.coverPath)
-        .filter((src): src is string => Boolean(src))
-        .slice(0, 4)
-        .map((src) => ({ src, isVideo: false })),
+    () => pickReferenceThumbs(referenceItems),
     [referenceItems],
   );
   // 与 MomentsTab 的渲染条件一致：没有图片/视频的动态不渲染，也不参与高亮定位

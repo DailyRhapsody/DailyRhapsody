@@ -837,13 +837,13 @@ export const ScrollTimeline = memo(function ScrollTimeline({
       </div>
       <div
         aria-hidden
-        className={`pointer-events-none absolute left-[60px] -translate-y-1/2 whitespace-nowrap rounded-lg bg-white/80 px-2 py-1 text-[0.72rem] tabular-nums text-zinc-600 shadow-sm ring-1 ring-black/5 backdrop-blur-md transition-opacity duration-150 dark:bg-zinc-900/80 dark:text-zinc-300 dark:ring-white/10 ${
+        className={`pointer-events-none absolute left-[60px] max-w-[min(360px,calc(100vw-6rem))] -translate-y-1/2 overflow-hidden whitespace-nowrap rounded-lg bg-white/80 px-2 py-1 text-[0.72rem] tabular-nums text-zinc-600 shadow-sm ring-1 ring-black/5 backdrop-blur-md transition-opacity duration-150 dark:bg-zinc-900/80 dark:text-zinc-300 dark:ring-white/10 ${
           tip?.shown ? "opacity-100" : "opacity-0"
         }`}
         style={{ top: tip?.top ?? 0 }}
       >
-        <span className="block">{tipLine1}</span>
-        {tipLine2 && <span className="block text-zinc-500 dark:text-zinc-400">{tipLine2}</span>}
+        <span className="block truncate">{tipLine1}</span>
+        {tipLine2 && <span className="block truncate text-zinc-500 dark:text-zinc-400">{tipLine2}</span>}
       </div>
       <p className="sr-only" aria-live="polite">
         {liveMsg}
