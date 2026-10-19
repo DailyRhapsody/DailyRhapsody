@@ -324,8 +324,7 @@ html[data-pet-chat] .dr-life-ring-sleep-led {
   animation: none;
   opacity: 0;
 }
-/* 对话面板的边缘光晕：仿 Apple Intelligence 的 Siri —— 只有一层，彩色从四周往中间渐渐化开。
-   蒙版用一张从中心到边缘连续变浓的径向渐变，没有硬边，所以不会留下一圈矩形轮廓 */
+/* 对话面板的流光：整块面板内都有色彩缓慢流动，不做中心透明的椭圆蒙版。 */
 .dr-pet-panel-glow {
   position: absolute;
   inset: 0;
@@ -335,9 +334,9 @@ html[data-pet-chat] .dr-life-ring-sleep-led {
 }
 .dr-pet-panel-glow > span {
   position: absolute;
-  inset: 0;
-  opacity: 0.55;
-  filter: blur(22px);
+  inset: -8%;
+  opacity: 0.38;
+  filter: blur(28px);
   background: conic-gradient(
     from var(--dr-glow-angle),
     #ffd3a8,
@@ -347,15 +346,12 @@ html[data-pet-chat] .dr-life-ring-sleep-led {
     #bdf5ec,
     #ffd3a8
   );
-  -webkit-mask-image: radial-gradient(105% 62% at 50% 50%, transparent 0%, transparent 34%, rgba(0, 0, 0, 0.5) 72%, #000 100%);
-  mask-image: radial-gradient(105% 62% at 50% 50%, transparent 0%, transparent 34%, rgba(0, 0, 0, 0.5) 72%, #000 100%);
   animation: dr-pet-glow-spin 10s linear infinite;
 }
-/* 暗色底下保留中央柔光，避免透明蒙版露出整片黑色；浅色沿用原来的边缘光晕。 */
+/* 暗色底下流光稍微收一点，但仍是整块面板均匀铺开。 */
 @media (prefers-color-scheme: dark) {
   .dr-pet-panel-glow > span {
-    -webkit-mask-image: radial-gradient(105% 62% at 50% 50%, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0.45) 34%, rgba(0, 0, 0, 0.7) 72%, #000 100%);
-    mask-image: radial-gradient(105% 62% at 50% 50%, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0.45) 34%, rgba(0, 0, 0, 0.7) 72%, #000 100%);
+    opacity: 0.3;
   }
 }
 html[data-pet-chat="thinking"] .dr-pet-panel-glow {
