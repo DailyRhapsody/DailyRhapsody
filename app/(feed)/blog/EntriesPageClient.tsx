@@ -400,7 +400,7 @@ export default function EntriesPageClient({
             }}
             className={!hasMore && isRebounding ? "rebound-transition" : ""}
           >
-          <div className="px-4 pt-5">
+          <div className="px-4">
           {activeTopTab === 0 ? (
             <>
               {/* 标签词云：正常参与滚动 */}
