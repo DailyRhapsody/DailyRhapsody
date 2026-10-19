@@ -1,7 +1,7 @@
 import { getCachedDiaries } from "@/lib/notion";
 import { getCachedMoments } from "@/lib/notion-moments";
 import { getCachedReferenceItems } from "@/lib/notion-reference";
-import { pickReferenceThumbs } from "@/lib/reference-thumbs";
+import { pickReferenceTop } from "@/lib/reference-thumbs";
 import { getProfile } from "@/lib/profile-store";
 import { getReadingStats } from "@/lib/weread";
 import FeedShell, { type FeedStats } from "./FeedShell";
@@ -69,12 +69,12 @@ export default async function FeedLayout({
   }
 
   let referenceTotal = 0;
-  const referenceThumbs: { src: string; isVideo: boolean }[] = [];
+  let referenceTop: { id: string; name: string }[] = [];
   try {
     const items = await getCachedReferenceItems();
     const publicItems = (items ?? []).filter((item) => item.isPublic);
     referenceTotal = publicItems.length;
-    referenceThumbs.push(...pickReferenceThumbs(publicItems));
+    referenceTop = pickReferenceTop(publicItems);
   } catch {
     referenceTotal = 0;
   }
@@ -85,7 +85,7 @@ export default async function FeedLayout({
     dates,
     momentsThumbs,
     referenceTotal,
-    referenceThumbs,
+    referenceTop,
   };
 
   return (
