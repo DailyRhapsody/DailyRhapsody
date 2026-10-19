@@ -12,6 +12,7 @@ import {
   REFERENCE_KIND_LABELS,
   REFERENCE_LICENSE_LABELS,
 } from "@/lib/reference-taxonomy";
+import type { ReferenceCompanyProfile } from "@/lib/reference-profile";
 import { renderMarkdown, markdownHeadingClass, markdownPreviewProseClass } from "@/lib/markdown";
 import { ReferenceLikeButton } from "@/components/reference/ReferenceLikeButton";
 import { ReferenceShareButton } from "@/components/reference/ReferenceShareButton";
@@ -84,6 +85,34 @@ export async function generateMetadata({
       description,
     },
   };
+}
+
+function CompanyProfileBlock({ profile }: { profile: ReferenceCompanyProfile }) {
+  const rows: { label: string; value: string }[] = [
+    { label: "公司名称", value: profile.companyName },
+    { label: "业务人数", value: profile.headcount != null ? String(profile.headcount) : "" },
+    { label: "场景定位", value: profile.scenarios.join(" · ") },
+    { label: "产品形态", value: profile.productForms.join(" · ") },
+    { label: "运营文化", value: profile.operationCulture },
+    { label: "市场位置", value: profile.markets.join(" · ") },
+    { label: "公司标签", value: profile.companyTags.join(" · ") },
+    { label: "售卖形态", value: profile.salesModes.join(" · ") },
+    { label: "是否上市", value: profile.listed },
+    { label: "业务盈亏", value: profile.profitability },
+    { label: "是否通过面试", value: profile.interviewStatus },
+  ].filter((row) => row.value);
+
+  if (rows.length === 0) return null;
+  return (
+    <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 rounded-xl border border-cyan-200/70 bg-cyan-50/40 px-4 py-3 text-xs sm:grid-cols-2 dark:border-cyan-900/60 dark:bg-cyan-950/20">
+      {rows.map((row) => (
+        <div key={row.label} className="flex gap-2">
+          <dt className="w-20 shrink-0 text-zinc-400 dark:text-zinc-500">{row.label}</dt>
+          <dd className="min-w-0 break-words text-zinc-700 dark:text-zinc-300">{row.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 function InfoBlock({ item }: { item: ReferenceItem }) {
@@ -205,6 +234,7 @@ export default async function ReferenceDetailPage({
           )}
 
           <InfoBlock item={item} />
+          {item.company ? <CompanyProfileBlock profile={item.company} /> : null}
 
           {item.tags.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
