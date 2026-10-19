@@ -9,6 +9,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import FeedHeader from "./FeedHeader";
@@ -82,6 +83,41 @@ export default function FeedShell({
   const active = pathname === "/moments" ? 1 : pathname === "/reference" ? 2 : 0;
   const datesWithPosts = useMemo(() => new Set(stats.dates), [stats.dates]);
 
+  /* 顶部横向卡片在视口边缘直接裁切会显得生硬：根据滚动位置动态给左右边缘加渐隐。 */
+  const topCardsRef = useRef<HTMLDivElement>(null);
+  const [topFade, setTopFade] = useState({ left: false, right: false });
+  const updateTopFade = useCallback(() => {
+    const el = topCardsRef.current;
+    if (!el) return;
+    const next = {
+      left: el.scrollLeft > 1,
+      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 1,
+    };
+    setTopFade((prev) =>
+      prev.left === next.left && prev.right === next.right ? prev : next,
+    );
+  }, []);
+  useEffect(() => {
+    const el = topCardsRef.current;
+    if (!el) return;
+    updateTopFade();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateTopFade) : null;
+    ro?.observe(el);
+    window.addEventListener("resize", updateTopFade);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", updateTopFade);
+    };
+  }, [updateTopFade]);
+  const topMask =
+    topFade.left && topFade.right
+      ? "linear-gradient(to right, transparent 0, black 40px, black calc(100% - 40px), transparent 100%)"
+      : topFade.left
+        ? "linear-gradient(to right, transparent 0, black 40px, black 100%)"
+        : topFade.right
+          ? "linear-gradient(to right, black 0, black calc(100% - 40px), transparent 100%)"
+          : undefined;
+
   const navigateTab = useCallback(
     (target: 0 | 1 | 2) => {
       if (target === active) return;
@@ -113,7 +149,10 @@ export default function FeedShell({
         />
         <div className="mx-auto w-full max-w-4xl px-4 pt-5">
           <div
+            ref={topCardsRef}
             data-hscroll
+            onScroll={updateTopFade}
+            style={{ WebkitMaskImage: topMask, maskImage: topMask }}
             className="entries-top-cards mb-5 -mx-4 flex items-start gap-4 overflow-x-auto px-4 py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           >
             <div className="shrink-0">
