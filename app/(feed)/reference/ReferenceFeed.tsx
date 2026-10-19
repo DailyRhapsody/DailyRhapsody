@@ -57,7 +57,7 @@ export default function ReferenceFeed({
       <h1 className="sr-only">Reference · 机器人行业资料库</h1>
 
       {tagCounts.length > 0 && (
-        <section className="mb-5 rounded-2xl border border-zinc-200 bg-white/60 px-4 py-4 shadow-sm transition-apple dark:border-zinc-800 dark:bg-zinc-900/40">
+        <section className="mb-7 rounded-2xl border border-zinc-200 bg-white/60 px-4 py-4 shadow-sm transition-apple dark:border-zinc-800 dark:bg-zinc-900/40">
           <div className="flex flex-wrap items-center gap-2">
             {tagCounts.map(({ name, value }) => (
               <button

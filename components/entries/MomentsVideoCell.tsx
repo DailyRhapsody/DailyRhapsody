@@ -9,9 +9,12 @@ import { useState } from "react";
 export function MomentsVideoCell({
   src,
   posterUrl,
+  compact = false,
 }: {
   src: string;
   posterUrl?: string;
+  /** 动态流里和图片同尺寸的方格；不传时保留原来的大图模式 */
+  compact?: boolean;
 }) {
   const [activated, setActivated] = useState(false);
   if (activated) {
@@ -19,7 +22,11 @@ export function MomentsVideoCell({
       <video
         src={src}
         poster={posterUrl}
-        className="max-h-[min(70vh,520px)] w-full object-contain"
+        className={
+          compact
+            ? "h-full w-full object-contain"
+            : "max-h-[min(70vh,520px)] w-full object-contain"
+        }
         controls
         playsInline
         autoPlay
@@ -32,19 +39,24 @@ export function MomentsVideoCell({
     <button
       type="button"
       onClick={() => setActivated(true)}
-      className="relative block w-full"
+      className={compact ? "relative block aspect-square w-full overflow-hidden rounded-lg bg-zinc-900" : "relative block w-full"}
       aria-label="播放视频"
     >
       <video
         src={src}
+        poster={posterUrl}
         muted
         playsInline
         preload="metadata"
-        className="max-h-[min(70vh,520px)] w-full object-contain bg-zinc-900"
+        className={
+          compact
+            ? "h-full w-full object-cover"
+            : "max-h-[min(70vh,520px)] w-full object-contain bg-zinc-900"
+        }
       />
       <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm">
-          <svg viewBox="0 0 24 24" className="h-7 w-7 text-white" fill="currentColor" aria-hidden>
+        <span className={compact ? "flex h-10 w-10 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm" : "flex h-14 w-14 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm"}>
+          <svg viewBox="0 0 24 24" className={compact ? "h-5 w-5 text-white" : "h-7 w-7 text-white"} fill="currentColor" aria-hidden>
             <path d="M8 5v14l11-7z" />
           </svg>
         </span>
