@@ -5,11 +5,26 @@ import type { ReferenceCompanyProfile } from "@/lib/reference-profile";
 import { getReferenceRedis } from "@/lib/notion-reference";
 
 export const REFERENCE_EN_KEY = "dr:reference:en:v1";
+export const REFERENCE_BODY_EN_KEY = "dr:reference:body:en:v1";
 
 export type ReferenceEnFields = {
   summary?: string;
   company?: Partial<ReferenceCompanyProfile>;
 };
+
+/** 详情页正文英文层按条读取，避免整表把长文全塞进一次响应。 */
+export async function getReferenceBodyEn(id: string): Promise<string | undefined> {
+  const redis = await getReferenceRedis();
+  if (!redis) return undefined;
+  try {
+    const raw = await redis.hget<string>(REFERENCE_BODY_EN_KEY, id);
+    if (!raw) return undefined;
+    if (typeof raw === "string") return raw;
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * 一次取回整张翻译表：条目数在千级以内，整表读比逐条读省往返。

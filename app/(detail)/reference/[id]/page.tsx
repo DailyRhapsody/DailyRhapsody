@@ -10,7 +10,7 @@ import {
 } from "@/lib/notion-reference";
 import { referenceLicenseLabel } from "@/lib/reference-taxonomy";
 import { getLang } from "@/lib/i18n-server";
-import { applyReferenceEn, getReferenceEnMap } from "@/lib/reference-i18n";
+import { applyReferenceEn, getReferenceBodyEn, getReferenceEnMap } from "@/lib/reference-i18n";
 import { t, type Lang } from "@/lib/i18n";
 import type { ReferenceCompanyProfile } from "@/lib/reference-profile";
 import { recordReferenceView } from "@/lib/reference-ranking";
@@ -141,14 +141,17 @@ export default async function ReferenceDetailPage({
   if (!admin && !item.isPublic) notFound();
   if (item.isPublic) await recordReferenceView(item.id);
   const lang = await getLang();
+  let bodyEn: string | undefined;
   if (lang === "en") {
     const translations = await getReferenceEnMap();
     item = applyReferenceEn(item, translations.get(item.id));
+    bodyEn = await getReferenceBodyEn(item.id);
   }
 
   const title = displayTitle(item, lang);
   const sourceLabel = hostnameOf(item.url) || (item.source && item.source !== "手动添加" ? item.source : "");
-  const renderedHtml = item.bodyMarkdown ? renderMarkdown(item.bodyMarkdown) : "";
+  const bodyMarkdown = lang === "en" && bodyEn ? bodyEn : item.bodyMarkdown;
+  const renderedHtml = bodyMarkdown ? renderMarkdown(bodyMarkdown) : "";
   const canDownload = item.license !== "link-only" && item.attachment != null;
 
   const jsonLd = item.isPublic
