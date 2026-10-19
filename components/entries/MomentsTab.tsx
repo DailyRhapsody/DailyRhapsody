@@ -2,7 +2,6 @@
 
 import { type RefObject } from "react";
 import { MomentsVideoCell } from "./MomentsVideoCell";
-import { momentsGridClass } from "./utils";
 import type { MomentsTimelineRow } from "./types";
 import { getPetMode } from "@/lib/persona/config";
 
@@ -44,7 +43,7 @@ export function MomentsTab({
           {[1, 2, 3].map((k) => (
             <div key={k} className="animate-pulse space-y-3">
               <div className="h-3 w-24 rounded bg-zinc-200 dark:bg-zinc-700" />
-              <div className="grid grid-cols-3 gap-1">
+              <div className="grid grid-cols-3 gap-2">
                 <div className="aspect-square rounded bg-zinc-200 dark:bg-zinc-700" />
                 <div className="aspect-square rounded bg-zinc-200 dark:bg-zinc-700" />
                 <div className="aspect-square rounded bg-zinc-200 dark:bg-zinc-700" />
@@ -84,7 +83,6 @@ export function MomentsTab({
         }
 
         if (sorted.length === 0) return null;
-        const n = sorted.length;
         return (
           <article
             key={row.rowKey}
@@ -94,52 +92,26 @@ export function MomentsTab({
             <p className="mb-2 text-[13px] leading-none text-zinc-400 dark:text-zinc-500">
               {formatMomentDate(m.createdAt)}
             </p>
-            <div className={`grid ${momentsGridClass(n)} ${n <= 1 ? "" : "gap-0.5"}`}>
-              {sorted.map((media, idx) => {
-                // n===1：让 <img> 走自然流，按图片原始比例自撑高（封顶 72vh），
-                // 之前用 absolute + aspect-auto 会让父按钮高度坍成 0，肉眼就是一片空白。
-                // n>=2：网格强制方形（aspect-square），<img> 绝对定位填满。
-                if (n === 1) {
-                  return (
-                    <button
-                      key={`${media.url}-${idx}`}
-                      type="button"
-                      className="block w-full overflow-hidden rounded bg-zinc-100 dark:bg-zinc-800"
-                      onClick={() =>
-                        onOpenLightbox({ urls, i: idx, lbKey: `${row.rowKey}-${idx}` })
-                      }
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={media.thumbUrl || media.url}
-                        alt=""
-                        className="block h-auto max-h-[min(72vh,640px)] w-full object-contain"
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    </button>
-                  );
-                }
-                return (
-                  <button
-                    key={`${media.url}-${idx}`}
-                    type="button"
-                    className="relative aspect-square w-full overflow-hidden rounded bg-zinc-100 dark:bg-zinc-800"
-                    onClick={() =>
-                      onOpenLightbox({ urls, i: idx, lbKey: `${row.rowKey}-${idx}` })
-                    }
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={media.thumbUrl || media.url}
-                      alt=""
-                      className="absolute inset-0 h-full w-full object-cover"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  </button>
-                );
-              })}
+            <div className="grid grid-cols-3 gap-2">
+              {sorted.map((media, idx) => (
+                <button
+                  key={`${media.url}-${idx}`}
+                  type="button"
+                  className="relative aspect-square w-full overflow-hidden rounded-lg bg-zinc-100 ring-1 ring-black/5 transition-opacity hover:opacity-90 dark:bg-zinc-800 dark:ring-white/10"
+                  onClick={() =>
+                    onOpenLightbox({ urls, i: idx, lbKey: `${row.rowKey}-${idx}` })
+                  }
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={media.thumbUrl || media.url}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </button>
+              ))}
             </div>
           </article>
         );

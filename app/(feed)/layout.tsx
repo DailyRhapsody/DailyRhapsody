@@ -1,6 +1,7 @@
 import { getCachedDiaries } from "@/lib/notion";
 import { getCachedMoments } from "@/lib/notion-moments";
 import { getCachedReferenceItems } from "@/lib/notion-reference";
+import { pickReferenceThumbs } from "@/lib/reference-thumbs";
 import { getProfile } from "@/lib/profile-store";
 import { getReadingStats } from "@/lib/weread";
 import FeedShell, { type FeedStats } from "./FeedShell";
@@ -73,11 +74,7 @@ export default async function FeedLayout({
     const items = await getCachedReferenceItems();
     const publicItems = (items ?? []).filter((item) => item.isPublic);
     referenceTotal = publicItems.length;
-    for (const item of publicItems) {
-      if (!item.coverPath) continue;
-      referenceThumbs.push({ src: item.coverPath, isVideo: false });
-      if (referenceThumbs.length >= 4) break;
-    }
+    referenceThumbs.push(...pickReferenceThumbs(publicItems));
   } catch {
     referenceTotal = 0;
   }

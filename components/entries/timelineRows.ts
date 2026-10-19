@@ -63,6 +63,12 @@ const REFERENCE_KIND_LABEL: Record<string, string> = {
   interview: "访谈",
 };
 
+/** 时间轴悬浮提示里的第二行保持博客树同款信息量，超出用省略号。 */
+function trimTimelineText(text: string, max = 54): string {
+  const chars = Array.from(text.trim());
+  return chars.length > max ? `${chars.slice(0, max).join("")}…` : text;
+}
+
 /** 参考资料的 Notion 创建时间时间轴；与博客/动态各自独立。 */
 export function referenceTimelineRows(
   outline: {
@@ -85,7 +91,7 @@ export function referenceTimelineRows(
       at: o.clippedAt,
       width: widthAt(Math.min(1, (o.summary?.length ?? 0) / 160)),
       line1: parts.join(" · "),
-      line2: o.name,
+      line2: trimTimelineText(o.name),
       label: [...parts, o.name, o.summary ?? ""].filter(Boolean).join("，"),
     };
   });
