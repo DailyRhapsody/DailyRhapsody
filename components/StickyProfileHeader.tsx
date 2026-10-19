@@ -2,9 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import AvatarLifeRing from "@/components/AvatarLifeRing";
+import {
+  HEADER_COLLAPSED_H,
+  HEADER_COLLAPSE_RANGE,
+  HEADER_EXPANDED_H,
+} from "@/lib/layout-constants";
+
+function smoothstep(edge0: number, edge1: number, x: number) {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
 
 export type StickyProfileHeaderData = {
   name: string;
@@ -29,18 +39,37 @@ export default function StickyProfileHeader({
   /** 外壳用来限制 Header 自身宽度，不要把父容器撑成内容宽度 */
   className?: string;
 }) {
-  const [scrollY, setScrollY] = useState(0);
-  const [isReturnToTopAnimating, setIsReturnToTopAnimating] = useState(false);
+  const [pillActive, setPillActive] = useState(false);
   const [bgmPlaying, setBgmPlaying] = useState(false);
   const pathname = usePathname();
   const headerRef = useRef<HTMLElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const returnToTopPhaseRef = useRef<0 | 1 | 2>(0);
+  const returnToTopPhaseRef = useRef<0 | 1>(0);
   const returnToTopRafRef = useRef<number>(0);
-  const collapsedBarRef = useRef<HTMLDivElement>(null);
-  const expandedContentRef = useRef<HTMLDivElement>(null);
 
   const hasEntriesBgm = Boolean(entriesBgmSrc?.trim());
+
+  /**
+   * 只写 CSS 变量和透明度，不碰布局属性。
+   * 头图高度固定 260px，滚动只让 sticky 元素上移；这样 0-204px 内
+   * header 底边和正文顶边天然相同，也不会触发滚动锚定反馈。
+   */
+  const applyProgress = useCallback(() => {
+    const header = headerRef.current;
+    if (!header || typeof window === "undefined") return;
+    const y = window.scrollY;
+    const p = Math.max(0, Math.min(1, y / HEADER_COLLAPSE_RANGE));
+    const expanded = 1 - smoothstep(0.45, 0.8, p);
+    const pill = smoothstep(0.72, 1, p);
+    header.style.setProperty("--hp", String(p));
+    header.style.setProperty("--hp-expanded", String(expanded));
+    header.style.setProperty("--hp-pill", String(pill));
+    setPillActive(p >= 0.72);
+  }, []);
+
+  useLayoutEffect(() => {
+    applyProgress();
+  }, [applyProgress]);
 
   /**
    * 刷新/进入页后尽量自动播放。
@@ -179,29 +208,8 @@ export default function StickyProfileHeader({
     const startY = window.scrollY;
     if (startY <= 0) return;
 
-    const HEADER_EXPANDED = 260;
-    const HEADER_COLLAPSED = 56;
-    const header = headerRef.current!;
-
     returnToTopPhaseRef.current = 1;
-
-    // Kill CSS transitions — rAF drives everything
-    header.style.transition = "none";
-    document.documentElement.style.overflowAnchor = "none";
-    // 动画不可中断，时间轴跳转看到这个标记会等它结束再滚（见 EntriesTimeline）
     document.documentElement.dataset.returnToTop = "1";
-    const collapsedEl = collapsedBarRef.current;
-    const expandedEl = expandedContentRef.current;
-    if (collapsedEl) collapsedEl.style.transition = "none";
-    if (expandedEl) {
-      expandedEl.style.transition = "none";
-      expandedEl.style.opacity = "0";
-      expandedEl.style.transform = "translateY(4px)";
-    }
-
-    flushSync(() => {
-      setIsReturnToTopAnimating(true);
-    });
 
     const scrollDuration = Math.min(
       1400,
@@ -212,159 +220,69 @@ export default function StickyProfileHeader({
     function easeInOutCubic(x: number) {
       return x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2;
     }
-    function easeOutCubic(x: number) {
-      return 1 - (1 - x) ** 3;
-    }
 
-    // Phase 1: scroll to top only (no height changes — scrollTo works reliably)
     function scrollTick(now: number) {
       if (!startT) startT = now;
       const elapsed = now - startT;
       const progress = Math.max(0, Math.min(elapsed / scrollDuration, 1));
       const eased = easeInOutCubic(progress);
 
-      window.scrollTo({ top: Math.round(startY * (1 - eased)), behavior: "instant" });
+      window.scrollTo({
+        top: Math.round(startY * (1 - eased)),
+        behavior: "instant",
+      });
+      applyProgress();
 
       if (progress < 1) {
         returnToTopRafRef.current = requestAnimationFrame(scrollTick);
-      } else {
-        window.scrollTo({ top: 0, behavior: "instant" });
-
-        // Phase 2: expand header + crossfade (no scrollTo — overflow-anchor:none prevents drift)
-        returnToTopPhaseRef.current = 2;
-        const EXPAND_MS = 400;
-        let expandStart = 0;
-
-        function expandTick(now: number) {
-          if (!expandStart) expandStart = now;
-          const elapsed = now - expandStart;
-          const p = Math.max(0, Math.min(elapsed / EXPAND_MS, 1));
-          const eased = easeOutCubic(p);
-
-          const h = HEADER_COLLAPSED + (HEADER_EXPANDED - HEADER_COLLAPSED) * eased;
-          header.style.height = `${h}px`;
-
-          // Crossfade: collapsed bar out, expanded content in
-          if (collapsedEl) {
-            collapsedEl.style.opacity = `${1 - eased}`;
-            if (eased > 0.5) collapsedEl.style.pointerEvents = "none";
-          }
-          if (expandedEl) {
-            expandedEl.style.opacity = `${eased}`;
-            expandedEl.style.transform = `translateY(${(1 - eased) * 4}px)`;
-          }
-
-          if (p < 1) {
-            returnToTopRafRef.current = requestAnimationFrame(expandTick);
-          } else {
-            header.style.height = `${HEADER_EXPANDED}px`;
-
-            flushSync(() => {
-              setScrollY(0);
-              setIsReturnToTopAnimating(false);
-            });
-
-            // Clear inline overrides — CSS classes now match final state
-            if (collapsedEl) {
-              collapsedEl.style.opacity = "";
-              collapsedEl.style.pointerEvents = "";
-              collapsedEl.style.transition = "";
-            }
-            if (expandedEl) {
-              expandedEl.style.opacity = "";
-              expandedEl.style.transform = "";
-              expandedEl.style.transition = "";
-            }
-
-            // Next frame: re-enable CSS transitions and unlock
-            returnToTopRafRef.current = requestAnimationFrame(() => {
-              window.scrollTo({ top: 0, behavior: "instant" });
-              header.style.transition = "";
-              document.documentElement.style.overflowAnchor = "";
-              delete document.documentElement.dataset.returnToTop;
-              returnToTopPhaseRef.current = 0;
-            });
-          }
-        }
-
-        returnToTopRafRef.current = requestAnimationFrame(expandTick);
+        return;
       }
+
+      window.scrollTo({ top: 0, behavior: "instant" });
+      applyProgress();
+      returnToTopPhaseRef.current = 0;
+      delete document.documentElement.dataset.returnToTop;
+      returnToTopRafRef.current = 0;
     }
 
     returnToTopRafRef.current = requestAnimationFrame(scrollTick);
-  }, []);
+  }, [applyProgress]);
 
   useEffect(() => {
     let scrollRaf = 0;
     function onScroll() {
-      if (returnToTopPhaseRef.current !== 0) return;
       if (scrollRaf) return;
       scrollRaf = requestAnimationFrame(() => {
         scrollRaf = 0;
-        setScrollY(typeof window !== "undefined" ? window.scrollY : 0);
+        applyProgress();
       });
     }
-    onScroll();
+    applyProgress();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       window.removeEventListener("scroll", onScroll);
       if (scrollRaf) cancelAnimationFrame(scrollRaf);
       if (returnToTopRafRef.current) cancelAnimationFrame(returnToTopRafRef.current);
-      // 回顶动画中途卸载（如点「首页」离开）：html 在客户端路由间保留，清掉动画留下的全局状态
       if (returnToTopPhaseRef.current !== 0) {
         returnToTopPhaseRef.current = 0;
         delete document.documentElement.dataset.returnToTop;
-        document.documentElement.style.overflowAnchor = "";
       }
     };
-  }, []);
+  }, [applyProgress]);
 
   // Header 现在常驻在 (feed) layout 上，路由切换时不再走 unmount 清理。
-  // 回顶动画会往 documentElement 写 data-return-to-top / overflow-anchor，
-  // EntriesTimeline 会等这个标记；动画中途点「参考」必须在这里立刻收尾，
-  // 否则标记会跟着新页面一直挂着。
+  // 回顶动画会往 documentElement 写 data-return-to-top，EntriesTimeline
+  // 会等这个标记；动画中途点「参考」必须在这里立刻收尾，否则标记会跟着
+  // 新页面一直挂着。
   useEffect(() => {
     if (returnToTopPhaseRef.current === 0) return;
     if (returnToTopRafRef.current) cancelAnimationFrame(returnToTopRafRef.current);
     returnToTopPhaseRef.current = 0;
     delete document.documentElement.dataset.returnToTop;
-    document.documentElement.style.overflowAnchor = "";
-    const header = headerRef.current;
-    if (header) {
-      header.style.transition = "";
-      header.style.height = "";
-    }
-    const collapsedEl = collapsedBarRef.current;
-    if (collapsedEl) {
-      collapsedEl.style.opacity = "";
-      collapsedEl.style.pointerEvents = "";
-      collapsedEl.style.transition = "";
-    }
-    const expandedEl = expandedContentRef.current;
-    if (expandedEl) {
-      expandedEl.style.opacity = "";
-      expandedEl.style.transform = "";
-      expandedEl.style.transition = "";
-    }
-    setIsReturnToTopAnimating(false);
-    setScrollY(window.scrollY);
   }, [pathname]);
 
-  const HEADER_EXPANDED = 260;
-  const HEADER_COLLAPSED = 56;
-  const threshold = HEADER_EXPANDED - HEADER_COLLAPSED;
-  const COLLAPSE_AT = threshold + 10;
-  const nearTop = scrollY < 28;
-  const isReturning = isReturnToTopAnimating;
   const signatureTrimmed = profile?.signature?.trim() ?? "";
   const hasSignature = signatureTrimmed.length > 0;
-
-  const height = isReturning
-    ? HEADER_COLLAPSED
-    : nearTop
-      ? HEADER_EXPANDED
-      : Math.max(HEADER_COLLAPSED, HEADER_EXPANDED - scrollY);
-  const isCollapsed = isReturning || scrollY >= COLLAPSE_AT;
 
   // headerBg 会被插进 CSS `url(...)`，只放行站内相对路径和 http(s)，
   // 挡掉 javascript: / data: 之类的协议注入。
@@ -416,12 +334,16 @@ export default function StickyProfileHeader({
   return (
     <header
       ref={headerRef}
-      className={`sticky top-0 z-30 w-full overflow-hidden rounded-b-2xl bg-gradient-to-b from-zinc-900 via-zinc-800 to-black transition-[height] ease-out ${
-        isReturning ? "duration-0" : "duration-300"
-      } ${className ?? ""}`}
-      style={{
-        height: `${height}px`,
-      }}
+      className={`sticky z-30 w-full overflow-hidden rounded-b-2xl bg-gradient-to-b from-zinc-900 via-zinc-800 to-black ${className ?? ""}`}
+      style={
+        {
+          top: `${-HEADER_COLLAPSE_RANGE}px`,
+          height: `${HEADER_EXPANDED_H}px`,
+          "--hp": "0",
+          "--hp-expanded": "1",
+          "--hp-pill": "0",
+        } as CSSProperties
+      }
     >
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
@@ -434,12 +356,15 @@ export default function StickyProfileHeader({
           隐藏用透明度，不用 visibility：WebKit 会冻结 visibility:hidden 元素上的动画，
           收起后小头像会停在原地不转。展开时用 inert 把它排除在焦点与读屏之外 */}
         <div
-          ref={collapsedBarRef}
-          aria-hidden={!isCollapsed}
-          inert={!isCollapsed}
-          className={`absolute inset-0 z-10 flex items-stretch justify-center px-5 transition-opacity duration-150 motion-reduce:transition-none ${
-            isCollapsed ? "opacity-100" : "pointer-events-none opacity-0"
-          }`}
+          aria-hidden={!pillActive}
+          inert={!pillActive}
+          className="absolute inset-x-0 bottom-0 z-10 flex items-stretch justify-center px-5"
+          style={{
+            height: `${HEADER_COLLAPSED_H}px`,
+            opacity: "var(--hp-pill)",
+            pointerEvents: pillActive ? "auto" : "none",
+            willChange: "opacity",
+          }}
         >
           <button
             type="button"
@@ -468,12 +393,13 @@ export default function StickyProfileHeader({
         </div>
       <div className="relative flex h-full w-full flex-col justify-center px-5">
         <div
-          ref={expandedContentRef}
-          className={`min-w-0 flex-1 transition-[transform,opacity] duration-400 ease-out ${
-            isCollapsed && !isReturning
-              ? "translate-y-1 opacity-0 pointer-events-none"
-              : "flex flex-col justify-center translate-y-0 opacity-100"
-          }`}
+          className="min-w-0 flex flex-1 flex-col justify-center"
+          style={{
+            opacity: "var(--hp-expanded)",
+            transform: "translateY(calc(var(--hp) * 8px))",
+            pointerEvents: pillActive ? "none" : undefined,
+            willChange: "opacity, transform",
+          }}
         >
           <div
             className="inline-flex w-fit max-w-full shrink-0 items-center gap-4 self-start"
