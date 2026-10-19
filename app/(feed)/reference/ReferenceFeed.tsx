@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ReferenceCard } from "@/components/ReferenceCard";
 import { ReferenceFilters } from "@/components/reference/ReferenceFilters";
 import type { ReferenceListItem } from "@/hooks/useReference";
@@ -55,7 +55,24 @@ export default function ReferenceFeed({
 }) {
   const { likes, toggle } = useReferenceLikes(items.map((it) => it.id));
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const selectedId = searchParams.get("focus");
+  const selectedItem = useMemo(
+    () => (selectedId ? items.find((it) => it.id === selectedId) ?? null : null),
+    [items, selectedId],
+  );
+  /** 点卡片上的圆圈切换选中：再点一次清除 focus，排行榜带进来的选中也能这样撤销。 */
+  const toggleSelect = (id: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (params.get("focus") === id) {
+      params.delete("focus");
+    } else {
+      params.set("focus", id);
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
   const [rules, setRules] = useState<FilterRule[]>([]);
   const [logic, setLogic] = useState<FilterLogic>("and");
   const filteredItems = useMemo(
@@ -125,6 +142,21 @@ export default function ReferenceFeed({
         onLogicChange={setLogic}
       />
 
+      {selectedId && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-full border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-300">
+          <span className="truncate">
+            已选中：{selectedItem ? selectedItem.titleZh?.trim() || selectedItem.name : "该资料不在当前列表"}
+          </span>
+          <button
+            type="button"
+            onClick={() => toggleSelect(selectedId)}
+            className="shrink-0 rounded-full px-2 py-0.5 text-zinc-500 underline decoration-zinc-300 underline-offset-2 transition-colors hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:text-zinc-100"
+          >
+            取消选中
+          </button>
+        </div>
+      )}
+
       {loading && items.length === 0 ? (
         <SkeletonGrid />
       ) : (
@@ -154,6 +186,7 @@ export default function ReferenceFeed({
                       item={it}
                       like={likes[it.id]}
                       onLike={toggle}
+                      onSelect={toggleSelect}
                       selected={selectedId === it.id}
                     />
                   </div>
