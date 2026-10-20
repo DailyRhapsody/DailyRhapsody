@@ -61,6 +61,18 @@ export const REFERENCE_DOMAINS = [
   "数据与评测",
 ] as const;
 
+export const REFERENCE_DOMAIN_LABELS_EN: Record<(typeof REFERENCE_DOMAINS)[number], string> = {
+  导航定位: "Navigation",
+  感知: "Perception",
+  运动控制: "Motion control",
+  操作: "Manipulation",
+  本体与执行: "Body & actuation",
+  调度与集群: "Fleet & orchestration",
+  安全与合规: "Safety & compliance",
+  "具身智能（VLA）": "Embodied AI (VLA)",
+  数据与评测: "Data & evaluation",
+};
+
 /** 机器人本体/应用类型；Reference 列表和筛选共用。 */
 export const REFERENCE_ROBOT_TYPES = [
   "工业机器人",
@@ -78,6 +90,33 @@ export const REFERENCE_ROBOT_TYPES = [
   "教育机器人",
   "自动驾驶",
 ] as const;
+
+export const REFERENCE_ROBOT_TYPE_LABELS_EN: Record<(typeof REFERENCE_ROBOT_TYPES)[number], string> = {
+  工业机器人: "Industrial",
+  移动机器人: "Mobile",
+  仓储物流: "Warehousing",
+  清洁机器人: "Cleaning",
+  陪伴机器人: "Companion",
+  人形机器人: "Humanoid",
+  四足机器人: "Quadruped",
+  服务机器人: "Service",
+  医疗机器人: "Medical",
+  农业机器人: "Agricultural",
+  安防机器人: "Security",
+  特种机器人: "Special-purpose",
+  教育机器人: "Education",
+  自动驾驶: "Autonomous driving",
+};
+
+export function referenceDomainLabel(domain: string, lang: "zh" | "en"): string {
+  if (lang === "zh") return domain;
+  return REFERENCE_DOMAIN_LABELS_EN[domain as keyof typeof REFERENCE_DOMAIN_LABELS_EN] ?? domain;
+}
+
+export function referenceRobotTypeLabel(type: string, lang: "zh" | "en"): string {
+  if (lang === "zh") return type;
+  return REFERENCE_ROBOT_TYPE_LABELS_EN[type as keyof typeof REFERENCE_ROBOT_TYPE_LABELS_EN] ?? type;
+}
 
 export type ReferenceKindLabel = keyof typeof REFERENCE_KIND_LABELS;
 export type ReferenceLicenseLabel = keyof typeof REFERENCE_LICENSE_LABELS;

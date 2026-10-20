@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReferenceListItem } from "@/hooks/useReference";
 import type { ReferenceLikeState } from "@/hooks/useReferenceLikes";
 import { useLang } from "@/components/LangProvider";
-import { referenceKindLabel } from "@/lib/reference-taxonomy";
+import { referenceKindLabel, referenceDomainLabel, referenceRobotTypeLabel } from "@/lib/reference-taxonomy";
 
 function hostnameOf(url: string): string {
   try {
@@ -172,22 +172,22 @@ export function ReferenceCard({
         </dl>
       ) : null}
 
-      <div className="mt-auto flex items-end justify-between gap-2 pt-3">
+      <div className="mt-auto flex flex-wrap items-end justify-between gap-x-2 gap-y-1 pt-3">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           {item.domains.slice(0, 2).map((domain) => (
             <span
               key={domain}
-              className="rounded-full border border-zinc-200 px-2 py-0.5 text-[0.65rem] text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+              className="shrink-0 whitespace-nowrap rounded-full border border-zinc-200 px-2 py-0.5 text-[0.65rem] text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
             >
-              {domain}
+              {referenceDomainLabel(domain, lang)}
             </span>
           ))}
           {(item.robotTypes ?? []).slice(0, 2).map((type) => (
             <span
               key={type}
-              className="rounded-full bg-zinc-100 px-2 py-0.5 text-[0.65rem] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+              className="shrink-0 whitespace-nowrap rounded-full bg-zinc-100 px-2 py-0.5 text-[0.65rem] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
             >
-              {type}
+              {referenceRobotTypeLabel(type, lang)}
             </span>
           ))}
         </div>
@@ -208,7 +208,7 @@ export function ReferenceCard({
           >
             <TargetIcon filled={selected} />
             <span className="hidden text-[0.68rem] sm:inline">
-              {selected ? t("reference.selected.clear") : t("reference.card.select")}
+              {selected ? t("reference.card.unselectShort") : t("reference.card.selectShort")}
             </span>
             <span className="sr-only sm:hidden">{selected ? t("reference.selected.clear") : t("reference.card.select")}</span>
           </button>
