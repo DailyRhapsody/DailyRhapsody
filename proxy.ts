@@ -46,6 +46,8 @@ function isProtectedPublicApi(pathname: string, method: string): boolean {
   if (method === "GET" && pathname === "/api/profile") return true;
   // AI-Persona 对话：花钱的接口，必须先过 PoW 握手
   if ((method === "GET" || method === "POST") && pathname === "/api/chat") return true;
+  // 每日一句：首次访问会触发一次真实模型调用，与对话同属花钱的接口
+  if (method === "GET" && pathname === "/api/persona/daily-quote") return true;
   if (method === "GET" && pathname.startsWith("/api/moments")) return true;
   // 首页底图的访客点位：同样是公开数据接口，必须先过 PoW 握手
   if (method === "GET" && pathname === "/api/analytics/visitor-map") return true;
@@ -264,6 +266,7 @@ export const config = {
     "/api/reference/:path*",
     "/api/profile",
     "/api/chat",
+    "/api/persona/daily-quote",
     "/api/analytics/collect",
     "/api/analytics/visitor-map",
     "/api/gate/:path*",

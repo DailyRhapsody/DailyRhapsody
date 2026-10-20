@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DailyQuote } from "@/components/pet/DailyQuote";
 import { PixelAstronaut } from "@/components/pet/PixelAstronaut";
 import { useAdminSession } from "@/hooks/useAdminSession";
 import { isGateIssuingPath } from "@/lib/gate-pages";
@@ -62,6 +63,8 @@ function Launcher() {
   return (
     <>
       {everOpened && <PetChatPanel open={open} onClose={close} onThinkingChange={setThinking} />}
+      {/* 对话打开时让位：面板占满右下角，这句话跟着一起收起 */}
+      <DailyQuote hidden={open} />
       <button
         ref={buttonRef}
         type="button"

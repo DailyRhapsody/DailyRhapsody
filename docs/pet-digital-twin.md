@@ -42,6 +42,7 @@ flowchart LR
 - Agent 模式（`PERSONA_AGENT_MODE`）：开启后普通对话从「一次问答」升级为只读工具循环——模型可先调用 `search_blog` / `read_article` / `blog_stats` 再作答。工具执行 ≤4 次、模型调用 ≤5 次（最后一轮强制收尾作答）、总时限 150 秒，每次模型调用过一道全站 1500 步/日的费用闸。工具结果一律按不可信输入包装（`<untrusted_tool_result>`，伪造闭合标签中和），工具参数出入口清洗隐形字符，未登记的工具名一律拒绝——注册表里永远没有写工具。流式协议为 NDJSON（`step` 进度、`delta` 正文、`done`/`error`），进度只显示「正在翻我的文章…」一行小字。协议不支持工具调用或闸门拒绝时自动降级为单步直答。
 - 渲染：`lib/chat-markdown.ts` 独立 marked 实例，白名单去掉图片；外链一律降级为纯文本、仅站内链接可点——回复被注入时，图片与外链都带不走数据。
 - 对话只存在当前标签页的 sessionStorage，服务端不留存。
+- 每日一句：`app/api/persona/daily-quote`，数字人上方的 `components/pet/DailyQuote.tsx`。只读 public 包，按北京时间的日期缓存（`dr:persona/daily-quote:v1:<date>`，TTL 到次日零点再加一小时），当天第一个请求触发生成、其余只读缓存；生成与网络失败进十分钟冷却，避免供应商故障被页面刷新放大成成百次调用；输出清洗不合格就当今天没有，不落盘。前端点叉号后按设备写 `localStorage`，当天不再出现。接口与 `/api/chat` 一样在 `proxy.ts` 受保护列表内，需先过 PoW 握手。
 
 ## 4 配置
 
