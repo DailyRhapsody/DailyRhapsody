@@ -695,9 +695,6 @@ export function ReadingDetailSheet({
                 </button>
               );
             })}
-            <span className="ml-auto hidden self-center text-[0.62rem] text-zinc-400 sm:inline dark:text-zinc-500">
-              ← → 切换
-            </span>
           </div>
           </div>
         </header>
@@ -739,7 +736,7 @@ export function ReadingDetailSheet({
                 />
               </div>
 
-              <Section title="本月统计" note="接口 readStat">
+              <Section title="本月统计">
                 <CounterRow counters={stats.monthStat} />
               </Section>
 
@@ -788,7 +785,7 @@ export function ReadingDetailSheet({
                 />
               </div>
 
-              <Section title="累计统计" note="接口 readStat">
+              <Section title="累计统计">
                 <CounterRow counters={stats.totalStat} />
               </Section>
 
@@ -851,11 +848,6 @@ export function ReadingDetailSheet({
               ) : null}
             </div>
           )}
-
-          <p className="mt-8 border-t border-zinc-100 pt-3 text-[0.62rem] leading-5 text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-            数据来自微信读书 /readdata/detail（monthly、overall），由服务端每日拉取并缓存，浏览器不直接调用接口。
-            时长按「小时／分钟」展示；书目排行只含单本满 5 分钟的条目；有效阅读天数按单日满 1 分钟计。
-          </p>
           </div>
         </div>
       </div>
