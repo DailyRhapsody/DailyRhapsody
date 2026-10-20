@@ -1,5 +1,5 @@
 import type { ReferenceListItem } from "@/hooks/useReference";
-import { REFERENCE_KIND_LABELS, REFERENCE_ROBOT_TYPES } from "@/lib/reference-taxonomy";
+import { REFERENCE_KIND_LABELS, REFERENCE_ROBOT_TYPES, referenceDomainLabel, referenceRobotTypeLabel } from "@/lib/reference-taxonomy";
 
 export type FilterField =
   | "kind"

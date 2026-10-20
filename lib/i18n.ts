@@ -1,7 +1,8 @@
 // 全站语言判定与文案字典。
 //
-// 规则（2026-10 定）：首次访问读浏览器 Accept-Language，结果写 dr_lang cookie；
-// 之后一律按 cookie 渲染，URL 不变。作者姓名、签名、博客正文不翻译。
+// 2026-10：英文样式暂时关闭，服务端 getLang() 固定返回 zh；下面的英文文案与
+// cookie/Accept-Language 逻辑保留，恢复时把 i18n-server.ts 的 EN_ENABLED 改回 true。
+// 作者姓名、签名、博客正文不翻译。
 
 export type Lang = "zh" | "en";
 
@@ -77,6 +78,8 @@ const messages: Record<string, { zh: string; en: string }> = {
   // Reference 卡片
   "reference.card.select": { zh: "选中此资料", en: "Select this reference" },
   "reference.card.unselect": { zh: "取消选中此资料", en: "Unselect this reference" },
+  "reference.card.selectShort": { zh: "选中", en: "Select" },
+  "reference.card.unselectShort": { zh: "取消", en: "Unselect" },
   "reference.card.read": { zh: "阅读", en: "Read" },
   "reference.card.readFull": { zh: "阅读全文", en: "Read more" },
   "reference.card.like": { zh: "点赞", en: "Like" },
