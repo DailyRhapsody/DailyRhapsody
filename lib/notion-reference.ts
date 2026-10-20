@@ -807,9 +807,9 @@ export async function getReferenceItem(id: string): Promise<ReferenceItem | null
     const item = mapPageToItem(page as PageObjectResponse, notionBody ?? "");
 
     // 手动收藏的 Reference 大多没有 Notion page body：按需抓原文正文。
-    // 抓不到时也展示摘要，页面不再只剩“正文为空”。
+    // 公司档案例外：正文是作者写的分析，抓原文会把公司官网或融资通稿当成分析正文。
     let hasCachedBody = Boolean(notionBody?.trim());
-    if (!hasCachedBody) {
+    if (!hasCachedBody && item.kind !== "company") {
       const fetched = await getFetchedReferenceBody(pageId, item.url);
       if (fetched?.trim()) {
         item.bodyMarkdown = fetched;

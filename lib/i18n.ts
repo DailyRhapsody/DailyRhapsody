@@ -129,6 +129,64 @@ const messages: Record<string, { zh: string; en: string }> = {
   "company.listed": { zh: "是否上市", en: "Listed" },
   "company.profitability": { zh: "业务盈亏", en: "P&L" },
   "company.interview": { zh: "是否通过面试", en: "Interview" },
+  "company.analysis.title": { zh: "哲学之剑", en: "Philosophy sword" },
+  "company.analysis.note": {
+    zh: "整体判断与主轴 · 草稿",
+    en: "Overall judgment and main axis · draft",
+  },
+  "company.analysis.empty": {
+    zh: "这份档案还没有整体分析，可先用下方的大师之剑生成一张判断卡。",
+    en: "This dossier has no overall analysis yet. Start with a Master Sword card below.",
+  },
+  "company.facts.title": { zh: "基本事实", en: "Key facts" },
+  "company.verdict.bet": { zh: "赌注", en: "Bet" },
+  "company.verdict.defense": { zh: "防守", en: "Defense" },
+  "company.verdict.death": { zh: "死法", en: "Failure mode" },
+  "company.verdict.falsifier": { zh: "反证条件", en: "Falsifier" },
+  "company.master.title": { zh: "大师之剑", en: "Master sword" },
+  "company.master.note": {
+    zh: "十五张技能卡，点击后分析当前公司；全部为试用版。",
+    en: "Fifteen skill cards. Click one to analyze this company; all are trial versions.",
+  },
+  "company.master.legend": {
+    zh: "证据条件：甲 上市或 IPO · 乙 未上市融资 · 丙 项目制集成商；绿点可跑、黄点部分、灰点不可跑。",
+    en: "Evidence: A listed/IPO · B funded private · C project integrator; green runnable, amber partial, grey blocked.",
+  },
+  "company.skills.title": { zh: "用技能分析", en: "Analyze with a skill" },
+  "company.skills.note": {
+    zh: "由大模型基于本页档案生成，结论可能出错",
+    en: "Generated from this dossier by an LLM; may be wrong",
+  },
+  "company.skills.empty": {
+    zh: "选一张卡，生成当前公司的判断",
+    en: "Pick a card to generate a judgment for this company",
+  },
+  "company.skills.error": {
+    zh: "分析失败，请稍后重试。",
+    en: "Analysis failed. Try again later.",
+  },
+  "company.skills.cached": { zh: "已缓存", en: "Cached" },
+  "company.skills.rerun": { zh: "重新生成", en: "Regenerate" },
+  "company.skills.close": { zh: "收起", en: "Collapse" },
+  "company.skills.evidence": { zh: "依据", en: "Evidence" },
+  "company.skills.commentary": { zh: "点评", en: "Commentary" },
+  "company.skills.falsifier": { zh: "反证", en: "Falsifier" },
+  "company.skills.source": { zh: "底稿", en: "Working notes" },
+  "company.skills.generated": { zh: "已生成", en: "Generated" },
+  "company.skills.analyze": { zh: "点击分析 →", en: "Analyze →" },
+  "company.author.title": { zh: "作者之剑", en: "Author's sword" },
+  "company.author.note": {
+    zh: "价值立场与人性判断 · 待建",
+    en: "Value stance and human nature · reserved",
+  },
+  "company.author.placeholder": {
+    zh: "这一块留给作者的三观与人性判断，尚未接入。上线版本只预留位置，不生成结论。",
+    en: "Reserved for the author's worldview and judgment of human nature. This launch version only reserves the slot; no conclusion is generated.",
+  },
+  "company.author.reserved": {
+    zh: "预留位 · 不参与当前分析",
+    en: "Reserved · not part of the current analysis",
+  },
 
   // 筛选
   "filter.add": { zh: "筛选", en: "Filter" },

@@ -12,11 +12,13 @@ import { referenceLicenseLabel } from "@/lib/reference-taxonomy";
 import { getLang } from "@/lib/i18n-server";
 import { applyReferenceEn, getReferenceBodyEn, getReferenceEnMap } from "@/lib/reference-i18n";
 import { t, type Lang } from "@/lib/i18n";
-import type { ReferenceCompanyProfile } from "@/lib/reference-profile";
 import { recordReferenceView } from "@/lib/reference-ranking";
 import { renderMarkdown, markdownHeadingClass, markdownPreviewProseClass } from "@/lib/markdown";
 import { ReferenceLikeButton } from "@/components/reference/ReferenceLikeButton";
 import { ReferenceShareButton } from "@/components/reference/ReferenceShareButton";
+import { CompanyAnalysis } from "@/components/reference/CompanyAnalysis";
+import { CompanySkills } from "@/components/reference/CompanySkills";
+import { CompanyAuthorSword } from "@/components/reference/CompanyAuthorSword";
 
 export const dynamic = "force-dynamic";
 
@@ -96,38 +98,6 @@ export async function generateMetadata({
   };
 }
 
-/**
- * 只保留判断「这家公司是谁、做什么」必需的字段。
- * 产品线、技术、创始人、资本与竞争等信息放在正文档案里，避免页头堆成表格。
- */
-function CompanyFacts({ profile, lang }: { profile: ReferenceCompanyProfile; lang: Lang }) {
-  const facts: { label: string; value: string }[] = [
-    {
-      label: t(lang, "company.headcount"),
-      value: profile.headcount != null ? String(profile.headcount) : "",
-    },
-    { label: t(lang, "company.scenarios"), value: profile.scenarios.join(" · ") },
-    { label: t(lang, "company.products"), value: profile.productForms.join(" · ") },
-    { label: t(lang, "company.markets"), value: profile.markets.join(" · ") },
-  ].filter((fact) => fact.value);
-
-  if (facts.length === 0) return null;
-
-  return (
-    <dl
-      aria-label={t(lang, "company.heading")}
-      className="mt-5 grid grid-cols-1 gap-x-8 gap-y-1.5 border-t border-zinc-200 pt-4 text-xs sm:grid-cols-2 dark:border-zinc-800"
-    >
-      {facts.map((fact) => (
-        <div key={fact.label} className="flex min-w-0 gap-2">
-          <dt className="shrink-0 text-zinc-400 dark:text-zinc-500">{fact.label}</dt>
-          <dd className="min-w-0 break-words text-zinc-700 dark:text-zinc-300">{fact.value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
 export default async function ReferenceDetailPage({
   params,
 }: {
@@ -155,6 +125,16 @@ export default async function ReferenceDetailPage({
   const bodyContent = bodyMarkdown?.replace(/^#\s+[^\n]+\n+/, "");
   const renderedHtml = bodyContent ? renderMarkdown(bodyContent) : "";
   const canDownload = item.license !== "link-only" && item.attachment != null;
+  const companyTags =
+    item.kind === "company" && item.company
+      ? Array.from(
+          new Set([
+            ...(item.domains ?? []),
+            ...(item.robotTypes ?? []),
+            ...(item.company?.companyTags ?? []),
+          ])
+        ).slice(0, 6)
+      : [];
 
   const jsonLd = item.isPublic
     ? {
@@ -226,7 +206,18 @@ export default async function ReferenceDetailPage({
             </p>
           )}
 
-          {item.company ? <CompanyFacts profile={item.company} lang={lang} /> : null}
+          {companyTags.length > 0 ? (
+            <ul className="mt-3 flex flex-wrap gap-1.5" aria-label={t(lang, "company.tags")}>
+              {companyTags.map((tag) => (
+                <li
+                  key={tag}
+                  className="rounded-full border border-zinc-200 px-2 py-0.5 text-[0.68rem] text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+                >
+                  {tag}
+                </li>
+              ))}
+            </ul>
+          ) : null}
 
           <div className="mt-5 flex flex-wrap items-center gap-3">
             {canDownload && (
@@ -243,7 +234,26 @@ export default async function ReferenceDetailPage({
           </div>
         </header>
 
-        {renderedHtml ? (
+        {item.kind === "company" ? (
+          <>
+            <section
+              aria-label={t(lang, "company.analysis.title")}
+              className="mt-8 border-t border-zinc-200 pt-7 dark:border-zinc-800"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="text-[1rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                  {t(lang, "company.analysis.title")}
+                </h2>
+                <p className="text-[0.7rem] text-zinc-400 dark:text-zinc-500">
+                  {t(lang, "company.analysis.note")}
+                </p>
+              </div>
+              <CompanyAnalysis bodyMarkdown={bodyContent ?? ""} lang={lang} showTopRule={false} />
+            </section>
+            <CompanySkills itemId={item.id} />
+            <CompanyAuthorSword lang={lang} />
+          </>
+        ) : renderedHtml ? (
           <article
             className={`${markdownPreviewProseClass} ${markdownHeadingClass} mt-8 border-t border-zinc-200 pt-7 text-[0.95rem] leading-relaxed dark:border-zinc-800`}
           >

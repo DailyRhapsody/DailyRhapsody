@@ -5,7 +5,7 @@ import type { KeyboardEvent, MouseEvent } from "react";
 import type { ReferenceListItem } from "@/hooks/useReference";
 import type { ReferenceLikeState } from "@/hooks/useReferenceLikes";
 import { useLang } from "@/components/LangProvider";
-import { referenceKindLabel, referenceDomainLabel, referenceRobotTypeLabel } from "@/lib/reference-taxonomy";
+import { referenceKindLabel } from "@/lib/reference-taxonomy";
 
 function hostnameOf(url: string): string {
   try {
@@ -98,7 +98,13 @@ export function ReferenceCard({
   const preferredTitle = lang === "en" ? item.name || item.titleZh : item.titleZh || item.name;
   const displayName = preferredTitle?.trim() || t("reference.card.untitled");
   const sourceLabel = hostnameOf(item.url) || (item.source && item.source !== "手动添加" ? item.source : "");
-  const profile = item.company;
+  const tags = Array.from(
+    new Set([
+      ...(item.domains ?? []),
+      ...(item.robotTypes ?? []),
+      ...(item.company?.companyTags ?? []),
+    ])
+  ).slice(0, 4);
 
   const handleCardClick = (event: MouseEvent<HTMLElement>) => {
     if (!onSelect) return;
@@ -161,48 +167,17 @@ export function ReferenceCard({
         </p>
       ) : null}
 
-      {profile ? (
-        <dl className="mt-2 grid grid-cols-1 gap-1 text-[0.68rem] leading-4 text-zinc-500 dark:text-zinc-400">
-          {profile.scenarios.length > 0 ? (
-            <div className="flex min-w-0 gap-1.5">
-              <dt className="shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">{t("reference.card.scenarios")}</dt>
-              <dd className="truncate">{profile.scenarios.join(" · ")}</dd>
-            </div>
-          ) : null}
-          {profile.productForms.length > 0 ? (
-            <div className="flex min-w-0 gap-1.5">
-              <dt className="shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">{t("reference.card.products")}</dt>
-              <dd className="truncate">{profile.productForms.join(" · ")}</dd>
-            </div>
-          ) : null}
-          {profile.operationCulture ? (
-            <div className="flex min-w-0 gap-1.5">
-              <dt className="shrink-0 whitespace-nowrap text-zinc-400 dark:text-zinc-500">{t("reference.card.culture")}</dt>
-              <dd className="truncate">{profile.operationCulture}</dd>
-            </div>
-          ) : null}
-        </dl>
-      ) : null}
+      <div className="mt-3 flex min-w-0 flex-wrap items-center gap-1.5">
+        {tags.map((tag) => (
+          <span
+            key={tag}
+            className="rounded-full border border-zinc-200 px-2 py-0.5 text-[0.65rem] text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+          >
+            {tag}
+          </span>
+        ))}
+      </div>
 
-      {item.domains.length > 0 || (item.robotTypes ?? []).length > 0 ? (
-        <p className="mt-3 text-[0.68rem] leading-5 text-zinc-500 dark:text-zinc-400">
-          {item.domains.length > 0 ? (
-            <>
-              <span className="text-zinc-400 dark:text-zinc-500">{t("reference.card.domain")}</span>{" "}
-              {item.domains.slice(0, 2).map((domain) => referenceDomainLabel(domain, lang)).join(" · ")}
-            </>
-          ) : null}
-          {item.domains.length > 0 && (item.robotTypes ?? []).length > 0 ? (
-            <span className="px-1.5 text-zinc-300 dark:text-zinc-600">·</span>
-          ) : null}
-          {(item.robotTypes ?? []).length > 0 ? (
-            <>
-              <span className="text-zinc-400 dark:text-zinc-500">{t("reference.card.robotType")}</span>{" "}
-              {(item.robotTypes ?? []).slice(0, 2).map((type) => referenceRobotTypeLabel(type, lang)).join(" · ")}
-            </>
-          ) : null}
-        </p>
-      ) : null}
 
       <div className="mt-auto flex items-center justify-end gap-1.5 pt-3 text-[0.72rem]">
         <button
