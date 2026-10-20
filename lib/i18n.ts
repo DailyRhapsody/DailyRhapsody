@@ -86,6 +86,8 @@ const messages: Record<string, { zh: string; en: string }> = {
   "reference.card.scenarios": { zh: "场景", en: "Use cases" },
   "reference.card.products": { zh: "产品", en: "Products" },
   "reference.card.culture": { zh: "文化", en: "Culture" },
+  "reference.card.domain": { zh: "领域", en: "Domain" },
+  "reference.card.robotType": { zh: "类型", en: "Type" },
 
   // Reference 详情
   "reference.detail.back": { zh: "返回资料", en: "Back to references" },
