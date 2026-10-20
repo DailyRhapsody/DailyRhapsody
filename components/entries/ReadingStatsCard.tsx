@@ -343,7 +343,7 @@ export function ReadingStatsCard({ stats }: { stats: ReadingStats | null }) {
             go(-1);
           }
         }}
-        className="group relative flex h-[148px] w-[168px] shrink-0 flex-col rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm outline-none transition-apple focus-within:ring-2 focus-within:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/80 dark:focus-within:ring-zinc-500"
+        className="relative flex h-[148px] w-[168px] shrink-0 flex-col rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm outline-none transition-apple focus-within:ring-2 focus-within:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/80 dark:focus-within:ring-zinc-500"
       >
         <div className="relative min-h-0 flex-1 overflow-hidden">
           {screens.map((s, i) => (
@@ -379,18 +379,7 @@ export function ReadingStatsCard({ stats }: { stats: ReadingStats | null }) {
             setOpen(true);
           }}
           className="absolute inset-0 z-10 cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 dark:focus-visible:ring-zinc-500"
-        >
-          <svg
-            aria-hidden
-            className="pointer-events-none absolute right-2 top-2 h-3 w-3 text-zinc-400 opacity-0 transition-opacity group-hover:opacity-70 dark:text-zinc-500"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 3H3v6M15 21h6v-6M21 3l-7 7M3 21l7-7" />
-          </svg>
-        </button>
+        />
       </div>
 
       {open ? (
