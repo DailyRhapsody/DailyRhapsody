@@ -67,9 +67,16 @@ export function DailyQuote({ hidden = false }: { hidden?: boolean }) {
       // 入口 bottom 1.25rem、高约 5.25rem；这句话落在入口上方 2.5rem 处，
       // 既不贴住数字人，也避开正文列：宽度 15rem 时，视口 ≥1440 就整块落在右侧空档里
       style={{ bottom: "calc(1.25rem + 7.75rem)" }}
-      className={`fixed right-4 z-[100] w-[min(15rem,calc(100vw-2rem))] sm:right-6 ${hidden ? "hidden" : ""}`}
+      // select-none：这张卡由根布局的 PetLauncher 渲染，不在 FeedShell 里，继承不到页面的
+      // user-select: none。按全站规则，读者不能选中、复制这里的文字，选中高亮本身就是破口。
+      className={`fixed right-4 z-[100] w-[min(15rem,calc(100vw-2rem))] select-none sm:right-6 ${hidden ? "hidden" : ""}`}
     >
-      <div className="relative rounded-2xl bg-white/85 py-3 pl-3.5 pr-8 text-[13px] leading-relaxed text-zinc-700 shadow-sm ring-1 ring-black/5 backdrop-blur-md dark:bg-zinc-900/80 dark:text-zinc-200 dark:ring-white/10">
+      <div
+        // 与 PetChatPanel 同一道保险：卡片在 <body> 下，页面的复制拦截不稳时也不能让它漏出去
+        onCopy={(e) => e.preventDefault()}
+        onCut={(e) => e.preventDefault()}
+        className="relative rounded-2xl bg-white/85 py-3 pl-3.5 pr-8 text-[13px] leading-relaxed text-zinc-700 shadow-sm ring-1 ring-black/5 backdrop-blur-md dark:bg-zinc-900/80 dark:text-zinc-200 dark:ring-white/10"
+      >
         <p className="m-0">{text}</p>
         <button
           type="button"
