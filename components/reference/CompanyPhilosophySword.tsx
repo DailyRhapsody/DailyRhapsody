@@ -5,13 +5,20 @@ import { t, type Lang } from "@/lib/i18n";
  */
 export function CompanyPhilosophySword({ lang }: { lang: Lang }) {
   return (
-    <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/40 px-5 py-6 dark:border-zinc-800 dark:bg-zinc-900/20">
-      <p className="text-[0.84rem] leading-relaxed text-zinc-500 dark:text-zinc-400">
-        {t(lang, "company.philosophy.placeholder")}
-      </p>
-      <p className="mt-2 text-[0.68rem] tracking-wide text-zinc-400 dark:text-zinc-500">
-        {t(lang, "company.philosophy.reserved")}
-      </p>
+    <div className="rd-reserved">
+      <span className="rd-reserved-num" aria-hidden>
+        Ⅰ
+      </span>
+      <div className="relative">
+        <p className="rd-eyebrow text-[var(--rd-accent)]">Philosophy / 02</p>
+        <p className="rd-reserved-copy mt-5">{t(lang, "company.philosophy.placeholder")}</p>
+      </div>
+      <div className="relative mt-10 flex items-center justify-between border-t border-[var(--rd-line)] pt-3">
+        <span className="rd-eyebrow">{t(lang, "company.philosophy.reserved")}</span>
+        <span className="rd-serif text-[0.85rem] text-[var(--rd-accent)]" aria-hidden>
+          Ⅰ
+        </span>
+      </div>
     </div>
   );
 }

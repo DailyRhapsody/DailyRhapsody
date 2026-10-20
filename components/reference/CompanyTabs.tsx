@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useLang } from "@/components/LangProvider";
 
 type TabKey = "intro" | "philosophy" | "master" | "author";
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "intro", label: "company.tabs.intro" },
-  { key: "philosophy", label: "company.tabs.philosophy" },
-  { key: "master", label: "company.tabs.master" },
-  { key: "author", label: "company.tabs.author" },
+const TABS: { key: TabKey; num: string; label: string }[] = [
+  { key: "intro", num: "01", label: "company.tabs.intro" },
+  { key: "philosophy", num: "02", label: "company.tabs.philosophy" },
+  { key: "master", num: "03", label: "company.tabs.master" },
+  { key: "author", num: "04", label: "company.tabs.author" },
 ];
 
 /**
@@ -31,9 +31,32 @@ export function CompanyTabs({
 }) {
   const { t } = useLang();
   const [active, setActive] = useState<TabKey>("intro");
+  const pendingFocus = useRef<TabKey | null>(null);
 
   const select = (key: TabKey) => {
     setActive(key);
+  };
+
+  useEffect(() => {
+    if (!pendingFocus.current) return;
+    const key = pendingFocus.current;
+    pendingFocus.current = null;
+    document.getElementById(`company-tab-${key}`)?.focus();
+  }, [active]);
+
+  const onTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const current = TABS.findIndex((tab) => tab.key === active);
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") nextIndex = (current + 1) % TABS.length;
+    else if (event.key === "ArrowLeft") nextIndex = (current - 1 + TABS.length) % TABS.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = TABS.length - 1;
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const next = TABS[nextIndex];
+    pendingFocus.current = next.key;
+    select(next.key);
   };
 
   const panels: Record<TabKey, ReactNode> = {
@@ -44,11 +67,12 @@ export function CompanyTabs({
   };
 
   return (
-    <div className="mt-7">
+    <div className="mt-8">
       <div
         role="tablist"
         aria-label={t("company.tabs.label")}
-        className="flex gap-5 overflow-x-auto border-b border-zinc-200 text-[0.82rem] dark:border-zinc-800"
+        className="rd-tabs flex gap-7 overflow-x-auto"
+        onKeyDown={onTabKeyDown}
       >
         {TABS.map((tab) => {
           const selected = active === tab.key;
@@ -60,14 +84,13 @@ export function CompanyTabs({
               id={`company-tab-${tab.key}`}
               aria-selected={selected}
               aria-controls={`company-panel-${tab.key}`}
+              data-active={selected ? "true" : undefined}
+              tabIndex={selected ? 0 : -1}
               onClick={() => select(tab.key)}
-              className={`-mb-px shrink-0 border-b-2 pb-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
-                selected
-                  ? "border-zinc-900 font-medium text-zinc-900 dark:border-zinc-100 dark:text-zinc-50"
-                  : "border-transparent text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-              }`}
+              className="rd-tab text-[0.82rem] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--rd-accent)]"
             >
-              {t(tab.label)}
+              <span className="rd-tab-num">{tab.num}</span>
+              <span>{t(tab.label)}</span>
             </button>
           );
         })}
@@ -80,7 +103,7 @@ export function CompanyTabs({
           id={`company-panel-${tab.key}`}
           aria-labelledby={`company-tab-${tab.key}`}
           hidden={active !== tab.key}
-          className="pt-6"
+          className={`pt-8 ${active === tab.key ? "rd-rise" : ""}`}
         >
           {panels[tab.key]}
         </div>

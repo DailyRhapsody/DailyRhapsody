@@ -16,11 +16,7 @@ import { recordReferenceView } from "@/lib/reference-ranking";
 import { renderMarkdown, markdownHeadingClass, markdownPreviewProseClass } from "@/lib/markdown";
 import { ReferenceLikeButton } from "@/components/reference/ReferenceLikeButton";
 import { ReferenceShareButton } from "@/components/reference/ReferenceShareButton";
-import { CompanyAnalysis } from "@/components/reference/CompanyAnalysis";
-import { CompanySkills } from "@/components/reference/CompanySkills";
-import { CompanyAuthorSword } from "@/components/reference/CompanyAuthorSword";
-import { CompanyPhilosophySword } from "@/components/reference/CompanyPhilosophySword";
-import { CompanyTabs } from "@/components/reference/CompanyTabs";
+import { CompanyDossier } from "@/components/reference/CompanyDossier";
 
 export const dynamic = "force-dynamic";
 
@@ -167,6 +163,31 @@ export default async function ReferenceDetailPage({
       }
     : null;
 
+  if (item.kind === "company") {
+    return (
+      <>
+        {jsonLd && (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }}
+          />
+        )}
+        <CompanyDossier
+          itemId={item.id}
+          title={title || t(lang, "reference.card.untitled")}
+          summary={item.summary || undefined}
+          tags={companyTags}
+          bodyMarkdown={companyBody ?? ""}
+          sourceLabel={sourceLabel}
+          licenseLabel={referenceLicenseLabel(item.license, lang)}
+          copyright={item.copyright || undefined}
+          url={item.url}
+          lang={lang}
+        />
+      </>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
       {jsonLd && (
@@ -200,11 +221,9 @@ export default async function ReferenceDetailPage({
 
       <main className="mx-auto max-w-3xl px-5 py-8 sm:py-10">
         <header>
-          {item.kind !== "company" ? (
-            <p className="text-xs text-zinc-400 dark:text-zinc-500">
-              {t(lang, "reference.detail.collected")} {formatDate(item.clippedAt)}
-            </p>
-          ) : null}
+          <p className="text-xs text-zinc-400 dark:text-zinc-500">
+            {t(lang, "reference.detail.collected")} {formatDate(item.clippedAt)}
+          </p>
           <h1 className="mt-2 text-3xl font-semibold leading-[1.2] tracking-tight text-zinc-900 sm:text-[2.1rem] dark:text-zinc-50">
             {title || t(lang, "reference.card.untitled")}
           </h1>
@@ -215,21 +234,7 @@ export default async function ReferenceDetailPage({
             </p>
           )}
 
-          {companyTags.length > 0 ? (
-            <ul className="mt-3 flex flex-wrap gap-1.5" aria-label={t(lang, "company.tags")}>
-              {companyTags.map((tag) => (
-                <li
-                  key={tag}
-                  className="rounded-full border border-zinc-200 px-2 py-0.5 text-[0.68rem] text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
-                >
-                  {tag}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-
-          {item.kind !== "company" ? (
-            <div className="mt-5 flex flex-wrap items-center gap-3">
+          <div className="mt-5 flex flex-wrap items-center gap-3">
               {canDownload && (
                 <a
                   href={`/api/download/reference/${item.id}`}
@@ -242,19 +247,9 @@ export default async function ReferenceDetailPage({
               <ReferenceLikeButton id={item.id} />
               <ReferenceShareButton title={title || "Reference"} text={item.summary} />
             </div>
-          ) : null}
         </header>
 
-        {item.kind === "company" ? (
-          <CompanyTabs
-            intro={
-              <CompanyAnalysis bodyMarkdown={companyBody ?? ""} lang={lang} showTopRule={false} />
-            }
-            philosophy={<CompanyPhilosophySword lang={lang} />}
-            master={<CompanySkills itemId={item.id} />}
-            author={<CompanyAuthorSword lang={lang} />}
-          />
-        ) : renderedHtml ? (
+        {renderedHtml ? (
           <article
             className={`${markdownPreviewProseClass} ${markdownHeadingClass} mt-8 border-t border-zinc-200 pt-7 text-[0.95rem] leading-relaxed dark:border-zinc-800`}
           >

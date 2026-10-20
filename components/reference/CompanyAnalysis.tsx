@@ -1,10 +1,6 @@
 import { parseCompanyAnalysis, hasVerdictGrid } from "@/lib/company-analysis";
 import { t, type Lang } from "@/lib/i18n";
-import {
-  renderMarkdown,
-  markdownHeadingClass,
-  markdownPreviewProseClass,
-} from "@/lib/markdown";
+import { renderMarkdown } from "@/lib/markdown";
 
 const VERDICT_LABELS = [
   ["bet", "company.verdict.bet"],
@@ -13,23 +9,36 @@ const VERDICT_LABELS = [
   ["falsifier", "company.verdict.falsifier"],
 ] as const;
 
+function cleanTitle(title: string) {
+  return title.replace(/^\s*(?:\d+(?:[.、．]\d+)*)[.、．]?\s*/, "");
+}
+
+/** 正文小标题里的 2.1 / 2.2 是写作编号；版式已有章节号，渲染时去掉。 */
+function cleanHeadingNumbers(html: string) {
+  return html
+    .replace(/(<h[1-4][^>]*>)\s*\d+(?:\s*[.、．]\s*\d+)+\s*[.、．]?\s*/g, "$1")
+    .replace(/(<h[1-4][^>]*>)\s*\d+\s*[.、．]\s*/g, "$1");
+}
+
 function Facts({ facts, lang }: { facts: string[]; lang: Lang }) {
   return (
-    <section className="rounded-xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-900/30">
-      <h2 className="text-[0.72rem] font-medium tracking-wide text-zinc-500 dark:text-zinc-400">
-        {t(lang, "company.facts.title")}
-      </h2>
-      <dl className="mt-2 grid gap-x-6 gap-y-1.5 text-[0.82rem] leading-relaxed sm:grid-cols-2">
+    <section id="rd-facts" className="rd-section border-y border-[var(--rd-line)] py-5">
+      <p className="rd-eyebrow">{t(lang, "company.facts.title")}</p>
+      <dl className="mt-3 grid gap-x-8 gap-y-2 sm:grid-cols-2">
         {facts.map((fact) => {
           const index = fact.search(/[：:]/);
           const label = index > 0 ? fact.slice(0, index).trim() : "";
           const value = index > 0 ? fact.slice(index + 1).trim() : fact;
           return (
-            <div key={fact} className="flex min-w-0 gap-2">
+            <div key={fact} className="flex min-w-0 gap-3">
               {label ? (
-                <dt className="shrink-0 text-zinc-400 dark:text-zinc-500">{label}</dt>
+                <dt className="w-20 shrink-0 pt-0.5 text-[0.68rem] text-[var(--rd-muted)]">
+                  {label}
+                </dt>
               ) : null}
-              <dd className="min-w-0 break-words text-zinc-700 dark:text-zinc-300">{value}</dd>
+              <dd className={`min-w-0 break-words text-[0.82rem] leading-relaxed text-[var(--rd-ink-soft)] ${label ? "" : "sm:col-span-2"}`}>
+                {value}
+              </dd>
             </div>
           );
         })}
@@ -39,88 +48,112 @@ function Facts({ facts, lang }: { facts: string[]; lang: Lang }) {
 }
 
 /**
- * 公司档案的简介：结构化公司资料。
+ * 公司档案的简介：一份可读的研究档案。
  *
- * 简介只负责把档案正文按分节展开；节号、调研日期、币种这类元信息在页面层
- * 已清掉，这里不再重复编号。模板之外的正文原样渲染，解析失败不会吞内容。
+ * 版式是“目录 + 正文”的杂志结构：左侧章节索引，右侧判断、档案事实与分节正文。
+ * 解析失败时原样渲染，避免吞掉作者写的内容。
  */
 export function CompanyAnalysis({
   bodyMarkdown,
   lang,
   showTopRule = true,
+  skipPositioning = false,
 }: {
   bodyMarkdown: string;
   lang: Lang;
   showTopRule?: boolean;
+  skipPositioning?: boolean;
 }) {
   const source = bodyMarkdown?.trim() ?? "";
   const parsed = parseCompanyAnalysis(source);
-  const topRule = showTopRule
-    ? "mt-8 border-t border-zinc-200 pt-6 dark:border-zinc-800"
-    : "";
+  const topRule = showTopRule ? "border-t border-[var(--rd-line)] pt-8" : "";
+  const firstSectionTitle = parsed.sections[0]?.title ?? "";
+  const skipFirstPositioning =
+    skipPositioning && !parsed.intro && /一句话定位|positioning/i.test(firstSectionTitle);
+  const sections = skipFirstPositioning ? parsed.sections.slice(1) : parsed.sections;
 
   if (!source) {
     return (
-      <p className={`${topRule} text-sm text-zinc-500 dark:text-zinc-400`}>
-        {t(lang, "company.analysis.empty")}
-      </p>
+      <div className={`${topRule} rd-reserved min-h-[220px]`}>
+        <p className="rd-eyebrow">Archive / Empty</p>
+        <p className="rd-reserved-copy">{t(lang, "company.analysis.empty")}</p>
+      </div>
     );
   }
 
   if (!parsed.hasTemplate) {
     return (
-      <article
-        className={`${markdownPreviewProseClass} ${markdownHeadingClass} ${topRule} text-[0.95rem] leading-relaxed`}
-        dangerouslySetInnerHTML={{ __html: renderMarkdown(parsed.intro || source) }}
-      />
+      <article className={`${topRule} rd-prose`}>
+        <div dangerouslySetInnerHTML={{ __html: renderMarkdown(parsed.intro || source) }} />
+      </article>
     );
   }
 
   const showGrid = hasVerdictGrid(parsed.verdict);
+  const hasAside = sections.length > 0;
 
   return (
-    <section aria-label={t(lang, "company.tabs.intro")} className={showTopRule ? "mt-8 space-y-7" : "space-y-7"}>
+    <section aria-label={t(lang, "company.tabs.intro")} className={topRule}>
       {parsed.intro ? (
-        <p className="text-[0.92rem] leading-relaxed text-zinc-600 dark:text-zinc-300">
-          {parsed.intro}
-        </p>
+        <p className="rd-serif rd-lead max-w-3xl">{parsed.intro}</p>
       ) : null}
 
-      {showGrid ? (
-        <div className="grid gap-px overflow-hidden rounded-xl border border-zinc-200 bg-zinc-200 sm:grid-cols-2 dark:border-zinc-800 dark:bg-zinc-800">
-          {VERDICT_LABELS.map(([key, labelKey]) =>
-            parsed.verdict[key] ? (
-              <div key={key} className="bg-white p-4 dark:bg-zinc-950">
-                <dt className="text-[0.68rem] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
-                  {t(lang, labelKey)}
-                </dt>
-                <dd className="mt-1.5 text-[0.88rem] leading-relaxed text-zinc-800 dark:text-zinc-200">
-                  {parsed.verdict[key]}
-                </dd>
-              </div>
-            ) : null
-          )}
+      <div className={`grid gap-10 ${hasAside ? "lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-14" : ""} ${parsed.intro ? "mt-10" : ""}`}>
+        {hasAside ? (
+          <aside className="hidden lg:sticky lg:top-20 lg:block lg:self-start">
+            <p className="rd-eyebrow">{t(lang, "company.analysis.toc")}</p>
+            <nav className="rd-toc mt-4" aria-label={t(lang, "company.analysis.toc")}>
+              {sections.map((section, index) => (
+                <a key={section.key} href={`#rd-sec-${index}`}>
+                  <span className="w-6 shrink-0 font-serif text-[0.68rem] text-[var(--rd-accent)]">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <span>{cleanTitle(section.title)}</span>
+                </a>
+              ))}
+            </nav>
+          </aside>
+        ) : null}
+
+        <div className="min-w-0 max-w-[46rem] space-y-12">
+          {showGrid ? (
+            <div id="rd-verdict" className="rd-section rd-verdict rd-rise">
+              {VERDICT_LABELS.map(([key, labelKey]) =>
+                parsed.verdict[key] ? (
+                  <div key={key}>
+                    <dt className="rd-verdict-label">{t(lang, labelKey)}</dt>
+                    <dd className="rd-serif mt-2 text-[1.02rem] leading-[1.75]">
+                      {parsed.verdict[key]}
+                    </dd>
+                  </div>
+                ) : null
+              )}
+            </div>
+          ) : parsed.verdictRaw ? (
+            <div id="rd-verdict" className="rd-section rd-prose">
+              <div dangerouslySetInnerHTML={{ __html: renderMarkdown(parsed.verdictRaw) }} />
+            </div>
+          ) : null}
+
+          {parsed.facts.length ? <Facts facts={parsed.facts} lang={lang} /> : null}
+
+          {sections.map((section, index) => {
+            const sourceSection = /来源|source/i.test(section.title);
+            return (
+              <section key={section.key} id={`rd-sec-${index}`} className="rd-section">
+                <div className="rd-section-head">
+                  <span className="rd-section-num">{String(index + 1).padStart(2, "0")}</span>
+                  <h2 className="rd-section-title">{cleanTitle(section.title)}</h2>
+                </div>
+                <div
+                  className={`rd-prose mt-4 ${index === 0 && !parsed.intro && !skipFirstPositioning ? "rd-lead" : ""} ${sourceSection ? "text-[0.8rem]" : ""}`}
+                  dangerouslySetInnerHTML={{ __html: cleanHeadingNumbers(renderMarkdown(section.markdown)) }}
+                />
+              </section>
+            );
+          })}
         </div>
-      ) : parsed.verdictRaw ? (
-        <div
-          className={`${markdownPreviewProseClass} ${markdownHeadingClass} text-[0.92rem] leading-relaxed`}
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(parsed.verdictRaw) }}
-        />
-      ) : null}
-
-      {parsed.facts.length ? <Facts facts={parsed.facts} lang={lang} /> : null}
-
-      {parsed.sections.map((section) => (
-        <section key={section.key}>
-          <h2 className="text-[1rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            {section.title.replace(/^\s*(?:\d+(?:[.、．]\d+)*)[.、．]?\s*/, "")}
-          </h2>
-          <div
-            className={`${markdownPreviewProseClass} ${markdownHeadingClass} mt-2 text-[0.92rem] leading-relaxed`}
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(section.markdown) }}
-          />
-        </section>
-      ))}
+      </div>
     </section>
   );
 }

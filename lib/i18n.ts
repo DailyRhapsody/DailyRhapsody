@@ -138,6 +138,8 @@ const messages: Record<string, { zh: string; en: string }> = {
     zh: "这份档案还没有正文。",
     en: "This dossier has no body yet.",
   },
+  "company.analysis.toc": { zh: "目录", en: "Contents" },
+  "company.verdict.title": { zh: "判断", en: "Judgment" },
   "company.tabs.label": { zh: "公司档案分段", en: "Company sections" },
   "company.tabs.intro": { zh: "简介", en: "Intro" },
   "company.tabs.philosophy": { zh: "哲学之剑", en: "Philosophy sword" },
@@ -187,6 +189,8 @@ const messages: Record<string, { zh: string; en: string }> = {
   "company.skills.source": { zh: "底稿", en: "Working notes" },
   "company.skills.generated": { zh: "已生成", en: "Generated" },
   "company.skills.analyze": { zh: "点击分析 →", en: "Analyze →" },
+  "company.skills.running": { zh: "分析中…", en: "Analyzing…" },
+  "company.skills.insufficient": { zh: "证据不足", en: "Insufficient evidence" },
   "company.author.title": { zh: "作者之剑", en: "Author's sword" },
   "company.author.note": {
     zh: "价值立场与人性判断 · 待建",
