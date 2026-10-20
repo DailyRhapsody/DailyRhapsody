@@ -151,7 +151,9 @@ export default async function ReferenceDetailPage({
   const title = displayTitle(item, lang);
   const sourceLabel = hostnameOf(item.url) || (item.source && item.source !== "手动添加" ? item.source : "");
   const bodyMarkdown = lang === "en" && bodyEn ? bodyEn : item.bodyMarkdown;
-  const renderedHtml = bodyMarkdown ? renderMarkdown(bodyMarkdown) : "";
+  // 正文常以一级标题开头，页面标题已经承担这一层，避免详情页出现两个同名大标题。
+  const bodyContent = bodyMarkdown?.replace(/^#\s+[^\n]+\n+/, "");
+  const renderedHtml = bodyContent ? renderMarkdown(bodyContent) : "";
   const canDownload = item.license !== "link-only" && item.attachment != null;
 
   const jsonLd = item.isPublic
