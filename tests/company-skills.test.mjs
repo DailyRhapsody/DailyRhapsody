@@ -2,7 +2,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-const { COMPANY_SKILLS, findCompanySkill } = await import("../lib/company-skills.ts");
+const { COMPANY_SKILLS, findCompanySkill, companySkillMaster, companySkillMethod } = await import(
+  "../lib/company-skills.ts"
+);
 const { COMPANY_SKILL_PROMPTS, COMPANY_SKILL_RULES, buildCompanySystemPrompt } =
   await import("../lib/company-skill-prompts.ts");
 
@@ -58,6 +60,15 @@ test("每个技能都有提示词与五节输出", () => {
     for (const heading of ["## 判断", "## 依据", "## 点评", "## 反证", "## 底稿"]) {
       assert.ok(built.system.includes(heading), `${skill.id} 缺 ${heading}`);
     }
+  }
+});
+
+test("每张卡都标明名人与方法论", () => {
+  for (const skill of COMPANY_SKILLS) {
+    assert.ok(companySkillMaster(skill, "zh").trim(), `${skill.id} 缺中文名人`);
+    assert.ok(companySkillMaster(skill, "en").trim(), `${skill.id} 缺英文名人`);
+    assert.ok(companySkillMethod(skill, "zh").trim(), `${skill.id} 缺中文方法论`);
+    assert.ok(companySkillMethod(skill, "en").trim(), `${skill.id} 缺英文方法论`);
   }
 });
 

@@ -288,3 +288,111 @@ export function companySkillEvidence(
   const prefix = level.toUpperCase();
   return `${prefix} ${labels[state][lang === "en" ? 1 : 0]}`;
 }
+
+/**
+ * 卡片正面要显示「哪位名人 / 哪套方法论」，与 flomo 的大师视角一致。
+ * 放在单独的表里，避免十五条目录对象各加四个字段后难读。
+ */
+const MASTER_METHOD: Record<
+  CompanySkillId,
+  { master: string; masterEn: string; method: string; methodEn: string }
+> = {
+  terms: {
+    master: "维特根斯坦",
+    masterEn: "Wittgenstein",
+    method: "家族相似",
+    methodEn: "Family resemblance",
+  },
+  promise: {
+    master: "奥斯汀 / 塞尔",
+    masterEn: "Austin / Searle",
+    method: "言语行为",
+    methodEn: "Speech acts",
+  },
+  trl: {
+    master: "Mankins / NASA",
+    masterEn: "Mankins / NASA",
+    method: "技术就绪水平",
+    methodEn: "Technology readiness",
+  },
+  "four-causes": {
+    master: "亚里士多德",
+    masterEn: "Aristotle",
+    method: "四因说",
+    methodEn: "Four causes",
+  },
+  concretization: {
+    master: "西蒙东",
+    masterEn: "Simondon",
+    method: "技术物具体化",
+    methodEn: "Concretization",
+  },
+  breakdown: {
+    master: "海德格尔",
+    masterEn: "Heidegger",
+    method: "上手与在手",
+    methodEn: "Ready-to-hand and present-at-hand",
+  },
+  "research-programme": {
+    master: "拉卡托斯",
+    masterEn: "Lakatos",
+    method: "研究纲领",
+    methodEn: "Research programme",
+  },
+  "critical-parts": {
+    master: "Kraljic",
+    masterEn: "Kraljic",
+    method: "采购组合",
+    methodEn: "Purchasing portfolio",
+  },
+  "orders-cash": {
+    master: "会计学",
+    masterEn: "Accounting",
+    method: "收入确认与现金周期",
+    methodEn: "Revenue recognition and cash cycle",
+  },
+  metrics: {
+    master: "Campbell",
+    masterEn: "Campbell",
+    method: "坎贝尔定律",
+    methodEn: "Campbell's law",
+  },
+  translation: {
+    master: "拉图尔 / 卡龙",
+    masterEn: "Latour / Callon",
+    method: "转译社会学",
+    methodEn: "Sociology of translation",
+  },
+  moat: {
+    master: "Helmer",
+    masterEn: "Helmer",
+    method: "七种力量",
+    methodEn: "Seven powers",
+  },
+  field: {
+    master: "布迪厄",
+    masterEn: "Bourdieu",
+    method: "场域与资本",
+    methodEn: "Field and capital",
+  },
+  chaxu: {
+    master: "费孝通",
+    masterEn: "Fei Xiaotong",
+    method: "差序格局",
+    methodEn: "Differential mode of association",
+  },
+  "main-conflict": {
+    master: "毛泽东",
+    masterEn: "Mao Zedong",
+    method: "矛盾论",
+    methodEn: "On contradiction",
+  },
+};
+
+export function companySkillMaster(skill: CompanySkillMeta, lang: "zh" | "en"): string {
+  return lang === "en" ? MASTER_METHOD[skill.id].masterEn : MASTER_METHOD[skill.id].master;
+}
+
+export function companySkillMethod(skill: CompanySkillMeta, lang: "zh" | "en"): string {
+  return lang === "en" ? MASTER_METHOD[skill.id].methodEn : MASTER_METHOD[skill.id].method;
+}

@@ -5,14 +5,12 @@ import { useLang } from "@/components/LangProvider";
 import type { SkillCard } from "@/lib/company-skill-card";
 import {
   COMPANY_SKILLS,
-  companySkillEvidence,
-  companySkillGrammar,
   companySkillHint,
   companySkillLabel,
-  companySkillLine,
+  companySkillMaster,
+  companySkillMethod,
   type CompanySkillId,
   type CompanySkillMeta,
-  type EvidenceState,
 } from "@/lib/company-skills";
 
 type ResultEntry =
@@ -43,25 +41,13 @@ const CARD_PROSE =
   "[&_th]:border [&_th]:border-zinc-200 [&_th]:px-1.5 [&_th]:py-1 [&_td]:border [&_td]:border-zinc-200 [&_td]:px-1.5 [&_td]:py-1 " +
   "dark:[&_th]:border-zinc-700 dark:[&_td]:border-zinc-700";
 
-const DOT: Record<EvidenceState, string> = {
-  runnable: "bg-emerald-500",
-  partial: "bg-amber-400",
-  blocked: "bg-zinc-300 dark:bg-zinc-600",
-};
-
-function EvidenceDots({ skill, lang }: { skill: CompanySkillMeta; lang: "zh" | "en" }) {
+function MasterMark({ master }: { master: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5">
-      {(["a", "b", "c"] as const).map((level) => (
-        <span
-          key={level}
-          title={companySkillEvidence(skill, level, lang)}
-          className="inline-flex items-center gap-1 text-[0.62rem] uppercase tracking-wide text-zinc-400 dark:text-zinc-500"
-        >
-          {level}
-          <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${DOT[skill.evidence[level]]}`} />
-        </span>
-      ))}
+    <span
+      aria-hidden
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-zinc-50 text-[0.72rem] font-medium text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-400"
+    >
+      {master.slice(0, 1)}
     </span>
   );
 }
@@ -84,6 +70,11 @@ function SkillCardButton({
   const { t } = useLang();
   const loading = state?.status === "loading";
   const done = state?.status === "done";
+  const master = companySkillMaster(skill, lang);
+  const method = companySkillMethod(skill, lang);
+  const label = companySkillLabel(skill, lang);
+  const showLabel = label !== method;
+
   return (
     <button
       type="button"
@@ -92,43 +83,47 @@ function SkillCardButton({
       title={companySkillHint(skill, lang)}
       onClick={onSelect}
       disabled={disabled && !loading}
-      className={`group block w-full rounded-2xl border p-4 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:cursor-not-allowed disabled:opacity-60 ${
+      className={`group block h-full w-full rounded-2xl border p-4 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:cursor-not-allowed disabled:opacity-60 ${
         selected
           ? "border-zinc-900 bg-white shadow-md dark:border-zinc-100 dark:bg-zinc-900"
           : "border-zinc-200/90 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:-translate-y-0.5 hover:border-zinc-400 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900/40 dark:hover:border-zinc-600"
       }`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-2 text-[0.65rem] tabular-nums tracking-[0.12em] text-zinc-400 dark:text-zinc-500">
-          {skill.number}
-          <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[0.6rem] tracking-normal text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-            {companySkillGrammar(skill, lang)}
-          </span>
-        </span>
-        <span className="flex items-center gap-1.5 text-[0.65rem] text-zinc-400 dark:text-zinc-500">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <MasterMark master={master} />
+          <div className="min-w-0">
+            <p className="text-[0.62rem] tabular-nums tracking-[0.14em] text-zinc-400 dark:text-zinc-500">
+              {skill.number}
+            </p>
+            <p className="truncate text-[0.7rem] text-zinc-500 dark:text-zinc-400">{master}</p>
+          </div>
+        </div>
+        <span className="shrink-0 text-[0.65rem] text-zinc-400 dark:text-zinc-500">
           {loading ? (
             <span
               aria-hidden
-              className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"
+              className="inline-block h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"
             />
           ) : done ? (
             <span aria-hidden className="text-emerald-600 dark:text-emerald-400">
               ✓
             </span>
           ) : null}
-          {companySkillLine(skill, lang)}
         </span>
       </div>
 
       <h3 className="mt-3 text-[0.95rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-        {companySkillLabel(skill, lang)}
+        {method}
       </h3>
-      <p className="mt-1.5 line-clamp-3 text-[0.78rem] leading-relaxed text-zinc-500 dark:text-zinc-400">
+      <p className="mt-0.5 text-[0.7rem] text-zinc-400 dark:text-zinc-500">
+        {showLabel ? label : null}
+      </p>
+      <p className="mt-2 line-clamp-3 text-[0.78rem] leading-relaxed text-zinc-500 dark:text-zinc-400">
         {companySkillHint(skill, lang)}
       </p>
 
-      <div className="mt-4 flex items-center justify-between gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-        <EvidenceDots skill={skill} lang={lang} />
+      <div className="mt-4 flex items-center justify-end border-t border-zinc-100 pt-3 dark:border-zinc-800">
         <span className="text-[0.65rem] text-zinc-400 transition-colors group-hover:text-zinc-700 dark:text-zinc-500 dark:group-hover:text-zinc-200">
           {done ? t("company.skills.generated") : t("company.skills.analyze")}
         </span>
@@ -152,6 +147,10 @@ function SkillResultCard({
 }) {
   const { t } = useLang();
   const card = entry.card;
+  const master = companySkillMaster(skill, lang);
+  const method = companySkillMethod(skill, lang);
+  const label = companySkillLabel(skill, lang);
+  const showLabel = label !== method;
   const time = new Intl.DateTimeFormat(lang === "en" ? "en-US" : "zh-CN", {
     month: "2-digit",
     day: "2-digit",
@@ -162,20 +161,21 @@ function SkillResultCard({
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="flex items-center gap-2 text-[0.65rem] tabular-nums tracking-[0.12em] text-zinc-400 dark:text-zinc-500">
-            {skill.number}
-            <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[0.6rem] tracking-normal text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-              {companySkillGrammar(skill, lang)}
-            </span>
-            <span className="tracking-normal">{companySkillLine(skill, lang)}</span>
-          </p>
-          <h3 className="mt-1 text-[1.05rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            {companySkillLabel(skill, lang)}
-          </h3>
+        <div className="flex min-w-0 items-center gap-3">
+          <MasterMark master={master} />
+          <div className="min-w-0">
+            <p className="text-[0.62rem] tabular-nums tracking-[0.14em] text-zinc-400 dark:text-zinc-500">
+              {skill.number} · {master}
+            </p>
+            <h3 className="mt-0.5 text-[1.02rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+              {method}
+            </h3>
+            <p className="text-[0.7rem] text-zinc-400 dark:text-zinc-500">
+              {showLabel ? label : null}
+            </p>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[0.68rem] text-zinc-400 dark:text-zinc-500">
-          <EvidenceDots skill={skill} lang={lang} />
           {entry.cached ? (
             <span className="rounded-full bg-zinc-100 px-2 py-0.5 dark:bg-zinc-800">
               {t("company.skills.cached")}
@@ -208,10 +208,7 @@ function SkillResultCard({
                 : "border-zinc-200 bg-zinc-50/70 text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-50"
             }`}
           >
-            <div
-              className="[&_p]:m-0"
-              dangerouslySetInnerHTML={{ __html: card.judgmentHtml }}
-            />
+            <div className="[&_p]:m-0" dangerouslySetInnerHTML={{ __html: card.judgmentHtml }} />
           </div>
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -250,7 +247,10 @@ function SkillResultCard({
               <summary className="cursor-pointer text-[0.7rem] text-zinc-400 select-none dark:text-zinc-500">
                 {t("company.skills.source")}
               </summary>
-              <div className={`mt-2 ${CARD_PROSE}`} dangerouslySetInnerHTML={{ __html: card.sourceHtml }} />
+              <div
+                className={`mt-2 ${CARD_PROSE}`}
+                dangerouslySetInnerHTML={{ __html: card.sourceHtml }}
+              />
             </details>
           ) : null}
         </>
@@ -264,9 +264,9 @@ function SkillResultCard({
 /**
  * 公司档案的第二块：大师之剑。
  *
- * 十五张技能卡只是入口；点击后才把当前公司档案发给服务端跑一次模型，
- * 返回一张判断卡。结果按公司与技能缓存在服务端，也留在本组件状态里，
- * 切换卡片不丢已生成的结果。
+ * 十五张卡只表明「哪位名人 + 哪套方法论」，点击后才把当前公司档案发给服务端
+ * 跑一次模型，返回一张判断卡。结果按公司与技能缓存在服务端，也留在本组件
+ * 状态里，切换卡片不丢已生成的结果。
  */
 export function CompanySkills({ itemId }: { itemId: string }) {
   const { t, lang } = useLang();
@@ -274,7 +274,6 @@ export function CompanySkills({ itemId }: { itemId: string }) {
   const [results, setResults] = useState<Partial<Record<CompanySkillId, ResultEntry>>>({});
   const panelRef = useRef<HTMLDivElement | null>(null);
   const busy = Object.values(results).some((entry) => entry?.status === "loading");
-  const doneCount = Object.values(results).filter((entry) => entry?.status === "done").length;
 
   const reveal = useCallback(() => {
     requestAnimationFrame(() => {
@@ -332,21 +331,8 @@ export function CompanySkills({ itemId }: { itemId: string }) {
   const entry = active ? results[active] : undefined;
 
   return (
-    <section aria-label={t("company.master.title")} className="mt-10 border-t border-zinc-200 pt-7 dark:border-zinc-800">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[1rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          {t("company.master.title")}
-        </h2>
-        <p className="text-[0.7rem] text-zinc-400 dark:text-zinc-500">
-          {t("company.master.note")}
-          {doneCount ? ` · ${doneCount}/15` : ""}
-        </p>
-      </div>
-      <p className="mt-2 text-[0.66rem] leading-relaxed text-zinc-400 dark:text-zinc-500">
-        {t("company.master.legend")}
-      </p>
-
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <section aria-label={t("company.master.title")}>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {COMPANY_SKILLS.map((skill) => (
           <SkillCardButton
             key={skill.id}
@@ -360,17 +346,11 @@ export function CompanySkills({ itemId }: { itemId: string }) {
         ))}
       </div>
 
-      <div ref={panelRef} aria-live="polite" className="mt-2 scroll-mt-24">
-        {!active ? (
-          <p className="rounded-xl border border-dashed border-zinc-200 px-4 py-5 text-center text-[0.78rem] text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-            {t("company.skills.empty")}
-          </p>
-        ) : null}
-
+      <div ref={panelRef} aria-live="polite" className="mt-4 scroll-mt-24">
         {active && entry?.status === "loading" && activeSkill ? (
           <div className="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-5 dark:border-zinc-800 dark:bg-zinc-900/30">
             <p className="text-[0.7rem] text-zinc-400 dark:text-zinc-500">
-              {companySkillLabel(activeSkill, lang)}
+              {companySkillMaster(activeSkill, lang)} · {companySkillMethod(activeSkill, lang)}
               <span className="px-1.5 opacity-40">·</span>
               {lang === "en" ? activeSkill.progressEn : activeSkill.progress}
             </p>

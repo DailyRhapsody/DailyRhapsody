@@ -135,8 +135,21 @@ const messages: Record<string, { zh: string; en: string }> = {
     en: "Overall judgment and main axis · draft",
   },
   "company.analysis.empty": {
-    zh: "这份档案还没有整体分析，可先用下方的大师之剑生成一张判断卡。",
-    en: "This dossier has no overall analysis yet. Start with a Master Sword card below.",
+    zh: "这份档案还没有正文。",
+    en: "This dossier has no body yet.",
+  },
+  "company.tabs.label": { zh: "公司档案分段", en: "Company sections" },
+  "company.tabs.intro": { zh: "简介", en: "Intro" },
+  "company.tabs.philosophy": { zh: "哲学之剑", en: "Philosophy sword" },
+  "company.tabs.master": { zh: "大师之剑", en: "Master sword" },
+  "company.tabs.author": { zh: "作者之剑", en: "Author's sword" },
+  "company.philosophy.placeholder": {
+    zh: "融合主轴尚未定义。这里将放：一句话定性、三线状态、三项判定与反证条件。",
+    en: "The fused main axis is not defined yet. This slot will hold the one-line verdict, three-line status, three judgments and falsifiers.",
+  },
+  "company.philosophy.reserved": {
+    zh: "预留位 · 不参与当前分析",
+    en: "Reserved · not part of the current analysis",
   },
   "company.facts.title": { zh: "基本事实", en: "Key facts" },
   "company.verdict.bet": { zh: "赌注", en: "Bet" },

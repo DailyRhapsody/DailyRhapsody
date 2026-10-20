@@ -19,6 +19,8 @@ import { ReferenceShareButton } from "@/components/reference/ReferenceShareButto
 import { CompanyAnalysis } from "@/components/reference/CompanyAnalysis";
 import { CompanySkills } from "@/components/reference/CompanySkills";
 import { CompanyAuthorSword } from "@/components/reference/CompanyAuthorSword";
+import { CompanyPhilosophySword } from "@/components/reference/CompanyPhilosophySword";
+import { CompanyTabs } from "@/components/reference/CompanyTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -123,6 +125,11 @@ export default async function ReferenceDetailPage({
   const bodyMarkdown = lang === "en" && bodyEn ? bodyEn : item.bodyMarkdown;
   // 正文常以一级标题开头，页面标题已经承担这一层，避免详情页出现两个同名大标题。
   const bodyContent = bodyMarkdown?.replace(/^#\s+[^\n]+\n+/, "");
+  // 公司档案的调研日期、币种是写作时的元信息，详情页不再展示。
+  const companyBody = bodyContent
+    ?.replace(/^.*(?:调研日期|币种)[：:].*$\n?/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
   const renderedHtml = bodyContent ? renderMarkdown(bodyContent) : "";
   const canDownload = item.license !== "link-only" && item.attachment != null;
   const companyTags =
@@ -193,9 +200,11 @@ export default async function ReferenceDetailPage({
 
       <main className="mx-auto max-w-3xl px-5 py-8 sm:py-10">
         <header>
-          <p className="text-xs text-zinc-400 dark:text-zinc-500">
-            {t(lang, "reference.detail.collected")} {formatDate(item.clippedAt)}
-          </p>
+          {item.kind !== "company" ? (
+            <p className="text-xs text-zinc-400 dark:text-zinc-500">
+              {t(lang, "reference.detail.collected")} {formatDate(item.clippedAt)}
+            </p>
+          ) : null}
           <h1 className="mt-2 text-3xl font-semibold leading-[1.2] tracking-tight text-zinc-900 sm:text-[2.1rem] dark:text-zinc-50">
             {title || t(lang, "reference.card.untitled")}
           </h1>
@@ -219,40 +228,32 @@ export default async function ReferenceDetailPage({
             </ul>
           ) : null}
 
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            {canDownload && (
-              <a
-                href={`/api/download/reference/${item.id}`}
-                className="inline-flex items-center gap-1.5 rounded-full bg-zinc-900 px-3 py-1.5 text-sm text-white transition-apple hover:bg-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-              >
-                {t(lang, "reference.detail.download")}
-                {item.attachment?.kind === "external" ? " ↗" : ""}
-              </a>
-            )}
-            <ReferenceLikeButton id={item.id} />
-            <ReferenceShareButton title={title || "Reference"} text={item.summary} />
-          </div>
+          {item.kind !== "company" ? (
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              {canDownload && (
+                <a
+                  href={`/api/download/reference/${item.id}`}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-zinc-900 px-3 py-1.5 text-sm text-white transition-apple hover:bg-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                >
+                  {t(lang, "reference.detail.download")}
+                  {item.attachment?.kind === "external" ? " ↗" : ""}
+                </a>
+              )}
+              <ReferenceLikeButton id={item.id} />
+              <ReferenceShareButton title={title || "Reference"} text={item.summary} />
+            </div>
+          ) : null}
         </header>
 
         {item.kind === "company" ? (
-          <>
-            <section
-              aria-label={t(lang, "company.analysis.title")}
-              className="mt-8 border-t border-zinc-200 pt-7 dark:border-zinc-800"
-            >
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="text-[1rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                  {t(lang, "company.analysis.title")}
-                </h2>
-                <p className="text-[0.7rem] text-zinc-400 dark:text-zinc-500">
-                  {t(lang, "company.analysis.note")}
-                </p>
-              </div>
-              <CompanyAnalysis bodyMarkdown={bodyContent ?? ""} lang={lang} showTopRule={false} />
-            </section>
-            <CompanySkills itemId={item.id} />
-            <CompanyAuthorSword lang={lang} />
-          </>
+          <CompanyTabs
+            intro={
+              <CompanyAnalysis bodyMarkdown={companyBody ?? ""} lang={lang} showTopRule={false} />
+            }
+            philosophy={<CompanyPhilosophySword lang={lang} />}
+            master={<CompanySkills itemId={item.id} />}
+            author={<CompanyAuthorSword lang={lang} />}
+          />
         ) : renderedHtml ? (
           <article
             className={`${markdownPreviewProseClass} ${markdownHeadingClass} mt-8 border-t border-zinc-200 pt-7 text-[0.95rem] leading-relaxed dark:border-zinc-800`}

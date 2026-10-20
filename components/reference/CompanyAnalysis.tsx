@@ -39,10 +39,10 @@ function Facts({ facts, lang }: { facts: string[]; lang: Lang }) {
 }
 
 /**
- * 公司档案正文的第一块：结构化综合分析。
+ * 公司档案的简介：结构化公司资料。
  *
- * 方法论名称不出现在页面上，读者只看到判断、事实与分节结论。模板之外的正文
- * 原样渲染，解析失败不会吞内容。
+ * 简介只负责把档案正文按分节展开；节号、调研日期、币种这类元信息在页面层
+ * 已清掉，这里不再重复编号。模板之外的正文原样渲染，解析失败不会吞内容。
  */
 export function CompanyAnalysis({
   bodyMarkdown,
@@ -57,7 +57,7 @@ export function CompanyAnalysis({
   const parsed = parseCompanyAnalysis(source);
   const topRule = showTopRule
     ? "mt-8 border-t border-zinc-200 pt-6 dark:border-zinc-800"
-    : "mt-4";
+    : "";
 
   if (!source) {
     return (
@@ -79,7 +79,7 @@ export function CompanyAnalysis({
   const showGrid = hasVerdictGrid(parsed.verdict);
 
   return (
-    <section aria-label={t(lang, "company.analysis.title")} className={`${showTopRule ? "mt-8" : "mt-4"} space-y-7`}>
+    <section aria-label={t(lang, "company.tabs.intro")} className={showTopRule ? "mt-8 space-y-7" : "space-y-7"}>
       {parsed.intro ? (
         <p className="text-[0.92rem] leading-relaxed text-zinc-600 dark:text-zinc-300">
           {parsed.intro}
@@ -110,13 +110,10 @@ export function CompanyAnalysis({
 
       {parsed.facts.length ? <Facts facts={parsed.facts} lang={lang} /> : null}
 
-      {parsed.sections.map((section, index) => (
+      {parsed.sections.map((section) => (
         <section key={section.key}>
-          <h2 className="flex items-baseline gap-2 text-[1rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            <span className="text-[0.7rem] font-normal tabular-nums text-zinc-300 dark:text-zinc-600">
-              {String(index + 1).padStart(2, "0")}
-            </span>
-            {section.title}
+          <h2 className="text-[1rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+            {section.title.replace(/^\s*(?:\d+(?:[.、．]\d+)*)[.、．]?\s*/, "")}
           </h2>
           <div
             className={`${markdownPreviewProseClass} ${markdownHeadingClass} mt-2 text-[0.92rem] leading-relaxed`}
