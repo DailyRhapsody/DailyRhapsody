@@ -184,55 +184,54 @@ export function ReferenceCard({
         </dl>
       ) : null}
 
-      <div className="mt-auto flex flex-wrap items-end justify-between gap-x-2 gap-y-1 pt-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          {item.domains.slice(0, 2).map((domain) => (
-            <span
-              key={domain}
-              className="shrink-0 whitespace-nowrap rounded-full border border-zinc-200 px-2 py-0.5 text-[0.65rem] text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
-            >
-              {referenceDomainLabel(domain, lang)}
-            </span>
-          ))}
-          {(item.robotTypes ?? []).slice(0, 2).map((type) => (
-            <span
-              key={type}
-              className="shrink-0 whitespace-nowrap rounded-full bg-zinc-100 px-2 py-0.5 text-[0.65rem] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-            >
-              {referenceRobotTypeLabel(type, lang)}
-            </span>
-          ))}
-        </div>
+      {item.domains.length > 0 || (item.robotTypes ?? []).length > 0 ? (
+        <p className="mt-3 text-[0.68rem] leading-5 text-zinc-500 dark:text-zinc-400">
+          {item.domains.length > 0 ? (
+            <>
+              <span className="text-zinc-400 dark:text-zinc-500">{t("reference.card.domain")}</span>{" "}
+              {item.domains.slice(0, 2).map((domain) => referenceDomainLabel(domain, lang)).join(" · ")}
+            </>
+          ) : null}
+          {item.domains.length > 0 && (item.robotTypes ?? []).length > 0 ? (
+            <span className="px-1.5 text-zinc-300 dark:text-zinc-600">·</span>
+          ) : null}
+          {(item.robotTypes ?? []).length > 0 ? (
+            <>
+              <span className="text-zinc-400 dark:text-zinc-500">{t("reference.card.robotType")}</span>{" "}
+              {(item.robotTypes ?? []).slice(0, 2).map((type) => referenceRobotTypeLabel(type, lang)).join(" · ")}
+            </>
+          ) : null}
+        </p>
+      ) : null}
 
-        <div className="flex shrink-0 items-center gap-1.5 text-[0.72rem]">
-          <button
-            type="button"
-            onClick={() => onLike?.(item.id)}
-            disabled={!onLike}
-            aria-pressed={Boolean(like?.liked)}
-            aria-label={
-              like?.liked
-                ? t("reference.card.unlikeAria", { n: like?.count ?? 0 })
-                : t("reference.card.likeAria", { n: like?.count ?? 0 })
-            }
-            className={`inline-flex items-center gap-1 rounded-full px-1.5 py-1 transition-apple focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
-              like?.liked
-                ? "text-rose-600 dark:text-rose-300"
-                : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-            }`}
-          >
-            <HeartIcon filled={Boolean(like?.liked)} />
-            <span className="tabular-nums">{like?.count ?? 0}</span>
-          </button>
-          <Link
-            href={`/reference/${item.id}`}
-            aria-label={t("reference.card.readFull")}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-zinc-500 transition-colors hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:text-zinc-100"
-          >
-            {t("reference.card.read")}
-            <ArrowIcon />
-          </Link>
-        </div>
+      <div className="mt-auto flex items-center justify-end gap-1.5 pt-3 text-[0.72rem]">
+        <button
+          type="button"
+          onClick={() => onLike?.(item.id)}
+          disabled={!onLike}
+          aria-pressed={Boolean(like?.liked)}
+          aria-label={
+            like?.liked
+              ? t("reference.card.unlikeAria", { n: like?.count ?? 0 })
+              : t("reference.card.likeAria", { n: like?.count ?? 0 })
+          }
+          className={`inline-flex items-center gap-1 rounded-full px-1.5 py-1 transition-apple focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
+            like?.liked
+              ? "text-rose-600 dark:text-rose-300"
+              : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+          }`}
+        >
+          <HeartIcon filled={Boolean(like?.liked)} />
+          <span className="tabular-nums">{like?.count ?? 0}</span>
+        </button>
+        <Link
+          href={`/reference/${item.id}`}
+          aria-label={t("reference.card.readFull")}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-zinc-500 transition-colors hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:text-zinc-100"
+        >
+          {t("reference.card.read")}
+          <ArrowIcon />
+        </Link>
       </div>
     </article>
   );
