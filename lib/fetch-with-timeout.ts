@@ -107,7 +107,7 @@ function isProtectedApi(input: RequestInfo | URL): boolean {
   if (typeof input === "string") url = input;
   else if (input instanceof URL) url = input.toString();
   else if (input && typeof (input as Request).url === "string") url = (input as Request).url;
-  return /\/api\/(diaries|moments|profile|chat|reference)(\/|\?|$)/.test(url);
+  return /\/api\/(diaries|moments|profile|chat|reference|persona)(\/|\?|$)/.test(url);
 }
 
 export async function fetchWithTimeout(
