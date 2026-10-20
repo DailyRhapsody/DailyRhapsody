@@ -19,7 +19,7 @@ const hooks = registerHooks({
 });
 after(() => hooks.deregister());
 
-const { renderMarkdown, entrySummaryProseClass, markdownPreviewProseClass } =
+const { renderMarkdown, entrySummaryProseClass, markdownPreviewProseClass, markdownHeadingClass } =
   await import("../lib/markdown.ts");
 
 /** marked 会在块之间插入换行；结构断言只看标签序列，先把空白压掉。 */
@@ -149,4 +149,19 @@ test("折叠态类名不含任何标题层级 token，展开态才放开 h1-h3",
     const src = await fs.readFile(new URL(`../${file}`, import.meta.url), "utf8");
     assert.ok(src.includes("markdownHeadingClass"), `${file} 少了标题层级`);
   }
+});
+
+test("标题里的 <strong> 不被折叠态的压平规则拉细", () => {
+  // 作者在 Notion 里手写 `# **标题**` 时，HTML 是 <h1><strong>…</strong></h1>；
+  // 卡片压平规则 [&_:is(strong,b,th)]:font-normal 会命中标题内部的 strong，
+  // 让这条标题以 400 显示、相邻标题是 600（线上实测 2026-10-20 那篇「数据回流」）。
+  const override = "[&_:is(h1,h2,h3,h4,h5,h6)_:is(strong,b)]:[font-weight:inherit]";
+  assert.ok(markdownHeadingClass.includes(override), markdownHeadingClass);
+  assert.ok(entrySummaryProseClass(true).includes(override), entrySummaryProseClass(true));
+
+  // 压平规则本身必须留在基础类里：折叠态仍要「标题也按正文显示」
+  assert.ok(
+    entrySummaryProseClass(false).includes("[&_:is(strong,b,th)]:font-normal"),
+    entrySummaryProseClass(false)
+  );
 });

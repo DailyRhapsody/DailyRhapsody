@@ -233,12 +233,18 @@ export const markdownPreviewProseClass =
   "prose prose-zinc max-w-none dark:prose-invert break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_li:has(>input[type=checkbox])]:list-none [&_ul_ul]:mt-1 [&_ul_ul]:list-[circle] [&_ul_ul_ul]:list-[square] [&_ol_ol]:mt-1 [&_ol_ol]:list-[lower-alpha] [&_ol_ol_ol]:list-[lower-roman] [&_a]:break-words [&_a]:underline [&_a]:underline-offset-2 [&_a]:decoration-zinc-400 dark:[&_a]:decoration-zinc-500 [&_a:hover]:decoration-zinc-600 dark:[&_a:hover]:decoration-zinc-300 [&_table]:block [&_table]:w-full [&_table]:overflow-x-auto [&_table]:text-left [&_th]:border [&_th]:border-zinc-300 [&_th]:px-2 [&_th]:py-1.5 [&_td]:border [&_td]:border-zinc-300 [&_td]:px-2 [&_td]:py-1.5 dark:[&_th]:border-zinc-600 dark:[&_td]:border-zinc-600 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:p-4 [&_pre]:text-sm [&_pre]:bg-zinc-900 [&_pre]:text-zinc-100 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-inherit [&_p_code]:rounded [&_p_code]:bg-zinc-100 [&_p_code]:px-1 [&_p_code]:py-0.5 dark:[&_p_code]:bg-zinc-800 [&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-lg [&_blockquote]:border-l-4 [&_blockquote]:border-zinc-300 [&_blockquote]:pl-4 [&_blockquote]:not-italic dark:[&_blockquote]:border-zinc-600 [&_hr]:my-8 [&_.dr-mermaid]:my-3 [&_.dr-mermaid]:overflow-x-auto [&_.dr-mermaid_svg]:mx-auto [&_.dr-mermaid_svg]:h-auto [&_.dr-mermaid_svg]:max-w-full [&_input[type=checkbox]]:mr-1.5 [&_input[type=checkbox]]:align-middle [&_.dr-md-editor-tag]:font-medium [&_.dr-md-editor-tag]:text-violet-700 dark:[&_.dr-md-editor-tag]:text-sky-400";
 
 /**
- * 阅读态的标题层级。用 em 而不是 rem：卡片正文 13px、Reference 15.2px、
- * 后台预览 14px，同一套相对级差在三处都能保持"一级 > 二级 > 三级"且不过重。
+ * 阅读态的标题层级。用 em 而不是 rem：卡片正文 13px、Reference 15.2px、后台预览 14px，
+ * 同一套相对级差在三处都能保持"一级 > 二级 > 三级"且不过重。
  * 13px 基数下实得 16.9 / 14.95 / 14.04px；不加 margin，块间距由外层 space-y 负责。
+ *
+ * 最后一条把标题内的 <strong>/<b> 拉回标题自身字重：作者在 Notion 里手写的
+ * `# **标题**` 会渲染成 <h1><strong>…</strong></h1>，而卡片的
+ * [&_:is(strong,b,th)]:font-normal（折叠态把加粗压平）同样命中标题内部的 strong，
+ * 于是这条标题以 400 显示、相邻标题是 600，看起来"没加粗"。选择器比压平规则
+ * 多一层元素特异性（0,1,2 > 0,1,1），不依赖 Tailwind 的输出顺序。
  */
 export const markdownHeadingClass =
-  "[&_h1]:text-[1.3em] [&_h1]:font-semibold [&_h2]:text-[1.15em] [&_h2]:font-semibold [&_h3]:text-[1.08em] [&_h3]:font-semibold [&_h4]:font-semibold [&_h5]:font-semibold [&_h6]:font-semibold";
+  "[&_h1]:text-[1.3em] [&_h1]:font-semibold [&_h2]:text-[1.15em] [&_h2]:font-semibold [&_h3]:text-[1.08em] [&_h3]:font-semibold [&_h4]:font-semibold [&_h5]:font-semibold [&_h6]:font-semibold [&_:is(h1,h2,h3,h4,h5,h6)_:is(strong,b)]:[font-weight:inherit]";
 
 /**
  * 博客卡片正文的排版类名。折叠与展开共用同一份基础样式，唯一差别：
