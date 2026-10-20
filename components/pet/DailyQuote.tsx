@@ -64,8 +64,9 @@ export function DailyQuote({ hidden = false }: { hidden?: boolean }) {
   return (
     <div
       data-daily-quote
-      // 位置与右下角入口对齐：入口 bottom 1.25rem、高约 5.5rem，这句话贴在它上方
-      style={{ bottom: "calc(1.25rem + 5.75rem)" }}
+      // 入口 bottom 1.25rem、高约 5.25rem；这句话落在入口上方 2.5rem 处，
+      // 既不贴住数字人，也避开正文列：宽度 15rem 时，视口 ≥1440 就整块落在右侧空档里
+      style={{ bottom: "calc(1.25rem + 7.75rem)" }}
       className={`fixed right-4 z-[100] w-[min(15rem,calc(100vw-2rem))] sm:right-6 ${hidden ? "hidden" : ""}`}
     >
       <div className="relative rounded-2xl bg-white/85 py-3 pl-3.5 pr-8 text-[13px] leading-relaxed text-zinc-700 shadow-sm ring-1 ring-black/5 backdrop-blur-md dark:bg-zinc-900/80 dark:text-zinc-200 dark:ring-white/10">
