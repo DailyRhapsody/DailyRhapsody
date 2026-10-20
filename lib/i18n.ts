@@ -76,10 +76,6 @@ const messages: Record<string, { zh: string; en: string }> = {
   "reference.updating": { zh: "更新中…", en: "Updating…" },
 
   // Reference 卡片
-  "reference.card.select": { zh: "选中此资料", en: "Select this reference" },
-  "reference.card.unselect": { zh: "取消选中此资料", en: "Unselect this reference" },
-  "reference.card.selectShort": { zh: "选中", en: "Select" },
-  "reference.card.unselectShort": { zh: "取消", en: "Unselect" },
   "reference.card.read": { zh: "阅读", en: "Read" },
   "reference.card.readFull": { zh: "阅读全文", en: "Read more" },
   "reference.card.like": { zh: "点赞", en: "Like" },

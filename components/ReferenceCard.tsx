@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { KeyboardEvent, MouseEvent } from "react";
 import type { ReferenceListItem } from "@/hooks/useReference";
 import type { ReferenceLikeState } from "@/hooks/useReferenceLikes";
 import { useLang } from "@/components/LangProvider";
@@ -78,15 +79,7 @@ function ArrowIcon() {
   );
 }
 
-/** 选中标记：实心点时表示「已选中」，空心圈表示可选中。 */
-function TargetIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
-      <circle cx="12" cy="12" r="7" />
-      {filled ? <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" /> : null}
-    </svg>
-  );
-}
+/** 卡片本身负责选中：不再单独放一个「选中」按钮。 */
 
 export function ReferenceCard({
   item,
@@ -107,11 +100,30 @@ export function ReferenceCard({
   const sourceLabel = hostnameOf(item.url) || (item.source && item.source !== "手动添加" ? item.source : "");
   const profile = item.company;
 
+  const handleCardClick = (event: MouseEvent<HTMLElement>) => {
+    if (!onSelect) return;
+    if ((event.target as HTMLElement).closest("a,button,input,select,textarea")) return;
+    onSelect(item.id);
+  };
+
+  const handleCardKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (!onSelect) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if ((event.target as HTMLElement).closest("a,button,input,select,textarea")) return;
+    event.preventDefault();
+    onSelect(item.id);
+  };
+
   return (
     <article
       aria-current={selected ? "true" : undefined}
       data-selected={selected || undefined}
+      onClick={handleCardClick}
+      onKeyDown={handleCardKeyDown}
+      tabIndex={onSelect ? 0 : undefined}
       className={`group flex h-full flex-col rounded-xl border p-4 transition-apple ${
+        onSelect ? "cursor-pointer" : ""
+      } ${
         selected
           ? "border-zinc-900 bg-white shadow-md ring-2 ring-zinc-900/15 ring-offset-2 ring-offset-zinc-50 dark:border-zinc-100 dark:bg-zinc-900 dark:ring-zinc-100/20 dark:ring-offset-zinc-950"
           : "border-zinc-200 bg-white/75 hover:border-zinc-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900/40 dark:hover:border-zinc-700"
@@ -193,25 +205,6 @@ export function ReferenceCard({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5 text-[0.72rem]">
-          <button
-            type="button"
-            onClick={() => onSelect?.(item.id)}
-            disabled={!onSelect}
-            aria-pressed={selected}
-            aria-label={selected ? t("reference.card.unselect") : t("reference.card.select")}
-            title={selected ? t("reference.selected.clear") : t("reference.card.select")}
-            className={`inline-flex items-center gap-1 rounded-full px-1.5 py-1 transition-apple focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
-              selected
-                ? "text-zinc-900 dark:text-zinc-100"
-                : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-            }`}
-          >
-            <TargetIcon filled={selected} />
-            <span className="hidden text-[0.68rem] sm:inline">
-              {selected ? t("reference.card.unselectShort") : t("reference.card.selectShort")}
-            </span>
-            <span className="sr-only sm:hidden">{selected ? t("reference.selected.clear") : t("reference.card.select")}</span>
-          </button>
           <button
             type="button"
             onClick={() => onLike?.(item.id)}
