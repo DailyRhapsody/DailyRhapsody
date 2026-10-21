@@ -817,11 +817,26 @@ html[data-pet-chat="thinking"] .dr-pet-panel-glow > span {
   font-weight: 600;
 }
 
-.ap-prose a {
+.ap-prose a,
+.ap-result-body a {
+  color: var(--ap-text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  transition: color 160ms var(--ap-ease);
+}
+
+.ap-prose a:hover,
+.ap-prose a:focus-visible,
+.ap-result-body a:hover,
+.ap-result-body a:focus-visible {
   color: var(--ap-blue);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  text-decoration-thickness: 1px;
+}
+
+.ap-prose a:focus-visible,
+.ap-result-body a:focus-visible {
+  outline: 2px solid var(--ap-blue);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .ap-prose ul,
