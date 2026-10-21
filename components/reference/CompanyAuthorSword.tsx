@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useLang } from "@/components/LangProvider";
+import { AuthorSwordFlow } from "@/components/reference/AuthorSwordFlow";
 import type { SkillCard } from "@/lib/company-skill-card";
 
 type Entry =
@@ -16,13 +17,6 @@ type AuthorResponse = {
   cached?: boolean;
   error?: string;
 };
-
-const AXIOMS = [
-  { title: "company.author.axiom.layers", desc: "company.author.axiom.layersDesc" },
-  { title: "company.author.axiom.power", desc: "company.author.axiom.powerDesc" },
-  { title: "company.author.axiom.three", desc: "company.author.axiom.threeDesc" },
-  { title: "company.author.axiom.evidence", desc: "company.author.axiom.evidenceDesc" },
-] as const;
 
 function PersonIcon() {
   return (
@@ -171,24 +165,7 @@ export function CompanyAuthorSword({ itemId }: { itemId: string }) {
         <p className="ap-eyebrow">Author sword</p>
         <h2 className="ap-empty-title">{t("company.author.title")}</h2>
         <p className="ap-empty-copy">{t("company.author.intro")}</p>
-        <div className="mt-2 w-full max-w-[560px] rounded-[18px] border border-[var(--ap-border)] bg-[var(--ap-surface-2)] p-4 text-left">
-          <p className="ap-eyebrow">{t("company.author.method.title")}</p>
-          <p className="mt-1 text-[13px] leading-[1.6] text-[var(--ap-secondary)]">
-            {t("company.author.method.note")}
-          </p>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {AXIOMS.map((axiom) => (
-              <div key={axiom.title} className="rounded-[14px] bg-[var(--ap-surface-3)] p-3">
-                <p className="text-[12px] font-semibold text-[var(--ap-text)]">
-                  {t(axiom.title)}
-                </p>
-                <p className="mt-1 text-[12px] leading-[1.5] text-[var(--ap-secondary)]">
-                  {t(axiom.desc)}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
+        <AuthorSwordFlow lang={lang} />
         <button
           type="button"
           onClick={() => void run()}
