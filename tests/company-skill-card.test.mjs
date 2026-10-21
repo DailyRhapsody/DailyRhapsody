@@ -43,6 +43,18 @@ test("识别证据不足", () => {
   assert.equal(card.insufficient, true);
 });
 
+test("识别三项判断中的单项证据不足", () => {
+  const card = splitSkillCard(`## 判断
+公司：证据不足：没有收入拆分。
+目的：家族传承优先。
+位置：证据不足：没有授权记录。
+
+## 依据
+权力与目的缺少董事会与预算记录。`);
+  assert.equal(card.isStructured, true);
+  assert.equal(card.insufficient, true);
+});
+
 test("识别英文标题变体", () => {
   const card = splitSkillCard(`## Judgement
 The final cause is only partly disclosed.

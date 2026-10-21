@@ -65,13 +65,16 @@ export function splitSkillCard(text: string): SkillCardSections {
     if (body) sections[key] = body;
   }
 
-  const judgmentText = stripMarkdown(sections.judgment ?? "");
+  const rawJudgment = sections.judgment ?? "";
+  const judgmentText = stripMarkdown(rawJudgment);
   const structuredCount = Object.keys(sections).length;
 
   return {
     sections,
     judgmentText,
     isStructured: Boolean(judgmentText) && structuredCount >= 2,
-    insufficient: /^(证据不足|insufficient evidence)/i.test(judgmentText),
+    insufficient:
+      /^(证据不足|insufficient evidence)/i.test(judgmentText) ||
+      /(^|\n)\s*(?:公司|目的|位置)[：:]\s*(?:证据不足|insufficient evidence)/i.test(rawJudgment),
   };
 }

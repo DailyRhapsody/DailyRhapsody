@@ -158,13 +158,13 @@ export async function POST(
     return json({ error: "今日作者判断额度已用完，请明天再试。" }, 429);
   }
 
-  const system = `${buildAuthorSwordSystemPrompt(persona)}\n9. 用${lang === "en" ? "英文" : "简体中文"}输出。`;
+  const system = `${buildAuthorSwordSystemPrompt(persona)}\n输出语言：${lang === "en" ? "英文" : "简体中文"}。`;
 
   try {
     const stream = await streamChat({
       system,
       messages: [{ role: "user", content: `请分析下面这家公司。\n\n${context}` }],
-      maxTokens: 2200,
+      maxTokens: 2800,
       temperature: 0.25,
       strict: true,
       signal: AbortSignal.timeout(55_000),
