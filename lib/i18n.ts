@@ -192,9 +192,27 @@ const messages: Record<string, { zh: string; en: string }> = {
   "company.skills.running": { zh: "分析中…", en: "Analyzing…" },
   "company.skills.insufficient": { zh: "证据不足", en: "Insufficient evidence" },
   "company.author.title": { zh: "作者之剑", en: "Author's sword" },
+  "company.author.intro": {
+    zh: "用滕君公开人设中的判断方式，看这家公司哪里值得支持、哪里需要警惕、谁承担代价。只使用公开材料与公开人设，不读取私密记忆。",
+    en: "Uses Teng Jun's public persona to judge what is worth supporting, what deserves caution, and who bears the cost. Public material and the public persona only; no private memory.",
+  },
+  "company.author.cta": { zh: "生成作者判断", en: "Generate author's judgment" },
+  "company.author.judgment": { zh: "作者判断", en: "Author's judgment" },
+  "company.author.disclaimer": {
+    zh: "AI 依据公开人设生成的推断，不代表滕君此刻的观点。",
+    en: "An AI inference from the public persona; not Teng Jun's current view.",
+  },
+  "company.author.running": {
+    zh: "正在按公开价值坐标读这家公司…",
+    en: "Reading this company through the public values…",
+  },
+  "company.author.error": {
+    zh: "作者判断生成失败，请稍后重试。",
+    en: "Author's judgment failed. Try again later.",
+  },
   "company.author.note": {
-    zh: "价值立场与人性判断 · 待建",
-    en: "Value stance and human nature · reserved",
+    zh: "价值立场与人性判断",
+    en: "Value stance and human judgment",
   },
   "company.author.placeholder": {
     zh: "这一块留给作者的三观与人性判断，尚未接入。上线版本只预留位置，不生成结论。",

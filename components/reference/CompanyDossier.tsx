@@ -54,7 +54,7 @@ export function CompanyDossier({
         }
         philosophy={<CompanyPhilosophySword lang={lang} />}
         master={<CompanySkills itemId={itemId} />}
-        author={<CompanyAuthorSword lang={lang} />}
+        author={<CompanyAuthorSword itemId={itemId} />}
       />
     </div>
   );
