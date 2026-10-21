@@ -5,18 +5,17 @@ import { useLang } from "@/components/LangProvider";
 
 type TabKey = "intro" | "philosophy" | "master" | "author";
 
-const TABS: { key: TabKey; num: string; label: string }[] = [
-  { key: "intro", num: "01", label: "company.tabs.intro" },
-  { key: "philosophy", num: "02", label: "company.tabs.philosophy" },
-  { key: "master", num: "03", label: "company.tabs.master" },
-  { key: "author", num: "04", label: "company.tabs.author" },
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "intro", label: "company.tabs.intro" },
+  { key: "philosophy", label: "company.tabs.philosophy" },
+  { key: "master", label: "company.tabs.master" },
+  { key: "author", label: "company.tabs.author" },
 ];
 
 /**
  * 公司详情的四段：简介、哲学之剑、大师之剑、作者之剑。
  *
- * 四块都在服务端渲染，切 tab 只切可见性，不重新请求；这样首屏 HTML 仍有
- * 完整内容，分享与收录不吃亏。
+ * Apple 式分段控件；四块都在服务端渲染，切 tab 只切可见性。
  */
 export function CompanyTabs({
   intro,
@@ -67,47 +66,52 @@ export function CompanyTabs({
   };
 
   return (
-    <div className="mt-8">
-      <div
-        role="tablist"
-        aria-label={t("company.tabs.label")}
-        className="rd-tabs flex gap-7 overflow-x-auto"
-        onKeyDown={onTabKeyDown}
-      >
-        {TABS.map((tab) => {
-          const selected = active === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              id={`company-tab-${tab.key}`}
-              aria-selected={selected}
-              aria-controls={`company-panel-${tab.key}`}
-              data-active={selected ? "true" : undefined}
-              tabIndex={selected ? 0 : -1}
-              onClick={() => select(tab.key)}
-              className="rd-tab text-[0.82rem] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--rd-accent)]"
-            >
-              <span className="rd-tab-num">{tab.num}</span>
-              <span>{t(tab.label)}</span>
-            </button>
-          );
-        })}
+    <>
+      <div className="ap-tabs-bar">
+        <div className="ap-tabs-inner">
+          <div
+            role="tablist"
+            aria-label={t("company.tabs.label")}
+            className="ap-segmented"
+            onKeyDown={onTabKeyDown}
+          >
+            {TABS.map((tab) => {
+              const selected = active === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  role="tab"
+                  id={`company-tab-${tab.key}`}
+                  aria-selected={selected}
+                  aria-controls={`company-panel-${tab.key}`}
+                  data-active={selected ? "true" : undefined}
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => select(tab.key)}
+                  className="ap-segment focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ap-blue)]"
+                >
+                  {t(tab.label)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
-      {TABS.map((tab) => (
-        <div
-          key={tab.key}
-          role="tabpanel"
-          id={`company-panel-${tab.key}`}
-          aria-labelledby={`company-tab-${tab.key}`}
-          hidden={active !== tab.key}
-          className={`pt-8 ${active === tab.key ? "rd-rise" : ""}`}
-        >
-          {panels[tab.key]}
-        </div>
-      ))}
-    </div>
+      <div className="ap-content">
+        {TABS.map((tab) => (
+          <div
+            key={tab.key}
+            role="tabpanel"
+            id={`company-panel-${tab.key}`}
+            aria-labelledby={`company-tab-${tab.key}`}
+            hidden={active !== tab.key}
+            className={active === tab.key ? "ap-rise" : ""}
+          >
+            {panels[tab.key]}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }

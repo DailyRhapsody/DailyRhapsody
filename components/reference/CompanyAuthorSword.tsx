@@ -8,20 +8,17 @@ import { t, type Lang } from "@/lib/i18n";
  */
 export function CompanyAuthorSword({ lang }: { lang: Lang }) {
   return (
-    <div className="rd-reserved">
-      <span className="rd-reserved-num" aria-hidden>
-        Ⅲ
-      </span>
-      <div className="relative">
-        <p className="rd-eyebrow text-[var(--rd-accent)]">Author / 04</p>
-        <p className="rd-reserved-copy mt-5">{t(lang, "company.author.placeholder")}</p>
+    <div className="ap-empty">
+      <div className="ap-empty-icon" aria-hidden>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <circle cx="12" cy="8" r="3.2" />
+          <path d="M5.5 19c.7-3.1 3.2-5 6.5-5s5.8 1.9 6.5 5" strokeLinecap="round" />
+        </svg>
       </div>
-      <div className="relative mt-10 flex items-center justify-between border-t border-[var(--rd-line)] pt-3">
-        <span className="rd-eyebrow">{t(lang, "company.author.reserved")}</span>
-        <span className="rd-serif text-[0.85rem] text-[var(--rd-accent)]" aria-hidden>
-          Ⅲ
-        </span>
-      </div>
+      <p className="ap-eyebrow">Author sword</p>
+      <h2 className="ap-empty-title">{t(lang, "company.tabs.author")}</h2>
+      <p className="ap-empty-copy">{t(lang, "company.author.placeholder")}</p>
+      <p className="ap-empty-note">{t(lang, "company.author.reserved")}</p>
     </div>
   );
 }

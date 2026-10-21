@@ -34,43 +34,6 @@ function HeartIcon({ filled }: { filled: boolean }) {
   );
 }
 
-function KindIcon({ kind }: { kind: ReferenceListItem["kind"] }) {
-  const cls = "h-5 w-5";
-  if (kind === "company") {
-    return (
-      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} aria-hidden>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 20V7l8-3 8 3v13M9 20v-5h6v5M8 9h.01M12 9h.01M16 9h.01M8 12.5h.01M12 12.5h.01M16 12.5h.01" />
-      </svg>
-    );
-  }
-  if (kind === "test") {
-    return (
-      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} aria-hidden>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 19h16M7 16V9m5 7V5m5 11v-4" />
-      </svg>
-    );
-  }
-  if (kind === "commentary") {
-    return (
-      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} aria-hidden>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M5 6h14v9H9l-4 3V6Z" />
-      </svg>
-    );
-  }
-  if (kind === "interview") {
-    return (
-      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} aria-hidden>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3Zm-6 8a6 6 0 0 0 12 0M12 18v3m-3 0h6" />
-      </svg>
-    );
-  }
-  return (
-    <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M7 3h7l4 4v14H7V3Zm7 0v5h4M9.5 12h6M9.5 15.5h6" />
-    </svg>
-  );
-}
-
 function ArrowIcon() {
   return (
     <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
@@ -80,7 +43,6 @@ function ArrowIcon() {
 }
 
 /** 卡片本身负责选中：不再单独放一个「选中」按钮。 */
-
 export function ReferenceCard({
   item,
   like,
@@ -127,74 +89,46 @@ export function ReferenceCard({
       onClick={handleCardClick}
       onKeyDown={handleCardKeyDown}
       tabIndex={onSelect ? 0 : undefined}
-      className={`group flex h-full flex-col rounded-xl border p-4 transition-apple ${
-        onSelect ? "cursor-pointer" : ""
-      } ${
-        selected
-          ? "border-zinc-900 bg-white shadow-md ring-2 ring-zinc-900/15 ring-offset-2 ring-offset-zinc-50 dark:border-zinc-100 dark:bg-zinc-900 dark:ring-zinc-100/20 dark:ring-offset-zinc-950"
-          : "border-zinc-200 bg-white/75 hover:border-zinc-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900/40 dark:hover:border-zinc-700"
-      }`}
+      className="ap-ref-card focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ap-blue)]"
     >
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-          <KindIcon kind={item.kind} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-3 text-[0.68rem] text-zinc-500 dark:text-zinc-400">
-            <span className="inline-flex shrink-0 items-center gap-1.5 font-medium text-zinc-600 dark:text-zinc-300">
-              {referenceKindLabel(item.kind, lang)}
-            </span>
-            <span className="min-w-0 truncate text-right">
-              {sourceLabel}
-              {sourceLabel && item.year ? <span className="px-1 opacity-50">·</span> : null}
-              {item.year || null}
-            </span>
-          </div>
-          <h3 className="mt-1.5 text-[0.98rem] font-semibold leading-snug text-zinc-900 dark:text-zinc-50">
-            <Link
-              href={`/reference/${item.id}`}
-              className="line-clamp-2 rounded transition-colors hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:hover:text-blue-300"
-            >
-              {displayName}
-            </Link>
-          </h3>
-        </div>
+      <div className="ap-ref-top">
+        <span className="ap-ref-kind">{referenceKindLabel(item.kind, lang)}</span>
+        <span className="ap-ref-source">
+          {sourceLabel}
+          {sourceLabel && item.year ? <span className="px-1 opacity-50">·</span> : null}
+          {item.year || null}
+        </span>
       </div>
 
-      {item.summary ? (
-        <p className="mt-3 line-clamp-3 text-[0.8rem] leading-relaxed text-zinc-600 dark:text-zinc-400">
-          {item.summary}
-        </p>
+      <h3 className="ap-ref-title">
+        <Link href={`/reference/${item.id}`}>{displayName}</Link>
+      </h3>
+
+      {item.summary ? <p className="ap-ref-summary">{item.summary}</p> : null}
+
+      {tags.length ? (
+        <div className="ap-ref-tags">
+          {tags.map((tag) => (
+            <span key={tag} className="ap-ref-tag">
+              {tag}
+            </span>
+          ))}
+        </div>
       ) : null}
 
-      <div className="mt-3 flex min-w-0 flex-wrap items-center gap-1.5">
-        {tags.map((tag) => (
-          <span
-            key={tag}
-            className="rounded-full border border-zinc-200 px-2 py-0.5 text-[0.65rem] text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
-          >
-            {tag}
-          </span>
-        ))}
-      </div>
-
-
-      <div className="mt-auto flex items-center justify-end gap-1.5 pt-3 text-[0.72rem]">
+      <div className="ap-ref-foot">
         <button
           type="button"
           onClick={() => onLike?.(item.id)}
           disabled={!onLike}
           aria-pressed={Boolean(like?.liked)}
+          data-liked={like?.liked ? "true" : undefined}
           aria-label={
             like?.liked
               ? t("reference.card.unlikeAria", { n: like?.count ?? 0 })
               : t("reference.card.likeAria", { n: like?.count ?? 0 })
           }
-          className={`inline-flex items-center gap-1 rounded-full px-1.5 py-1 transition-apple focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
-            like?.liked
-              ? "text-rose-600 dark:text-rose-300"
-              : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-          }`}
+          className="ap-ref-like focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ap-blue)]"
         >
           <HeartIcon filled={Boolean(like?.liked)} />
           <span className="tabular-nums">{like?.count ?? 0}</span>
@@ -202,7 +136,7 @@ export function ReferenceCard({
         <Link
           href={`/reference/${item.id}`}
           aria-label={t("reference.card.readFull")}
-          className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-zinc-500 transition-colors hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:text-zinc-100"
+          className="ap-ref-read focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ap-blue)]"
         >
           {t("reference.card.read")}
           <ArrowIcon />

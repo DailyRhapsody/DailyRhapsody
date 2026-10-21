@@ -5,20 +5,17 @@ import { t, type Lang } from "@/lib/i18n";
  */
 export function CompanyPhilosophySword({ lang }: { lang: Lang }) {
   return (
-    <div className="rd-reserved">
-      <span className="rd-reserved-num" aria-hidden>
-        Ⅰ
-      </span>
-      <div className="relative">
-        <p className="rd-eyebrow text-[var(--rd-accent)]">Philosophy / 02</p>
-        <p className="rd-reserved-copy mt-5">{t(lang, "company.philosophy.placeholder")}</p>
+    <div className="ap-empty">
+      <div className="ap-empty-icon" aria-hidden>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M4 5.5h8a4 4 0 0 1 4 4V19H8a4 4 0 0 1-4-4z" strokeLinejoin="round" />
+          <path d="M20 5.5h-4a4 4 0 0 0-4 4V19h4a4 4 0 0 0 4-4z" strokeLinejoin="round" />
+        </svg>
       </div>
-      <div className="relative mt-10 flex items-center justify-between border-t border-[var(--rd-line)] pt-3">
-        <span className="rd-eyebrow">{t(lang, "company.philosophy.reserved")}</span>
-        <span className="rd-serif text-[0.85rem] text-[var(--rd-accent)]" aria-hidden>
-          Ⅰ
-        </span>
-      </div>
+      <p className="ap-eyebrow">Philosophy sword</p>
+      <h2 className="ap-empty-title">{t(lang, "company.tabs.philosophy")}</h2>
+      <p className="ap-empty-copy">{t(lang, "company.philosophy.placeholder")}</p>
+      <p className="ap-empty-note">{t(lang, "company.philosophy.reserved")}</p>
     </div>
   );
 }

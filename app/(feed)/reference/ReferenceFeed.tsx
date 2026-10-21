@@ -26,13 +26,13 @@ function SkeletonGrid() {
       {Array.from({ length: 6 }).map((_, i) => (
         <div
           key={i}
-          className="animate-pulse rounded-xl border border-zinc-200 bg-white/60 p-4 dark:border-zinc-800 dark:bg-zinc-900/40"
+          className="ap-ref-card animate-pulse"
         >
           <div className="space-y-2">
-            <div className="h-2.5 w-20 rounded bg-zinc-100 dark:bg-zinc-800" />
-            <div className="h-4 w-4/5 rounded bg-zinc-100 dark:bg-zinc-800" />
-            <div className="h-2.5 w-full rounded bg-zinc-100 dark:bg-zinc-800" />
-            <div className="h-2.5 w-3/5 rounded bg-zinc-100 dark:bg-zinc-800" />
+            <div className="ap-skeleton h-2.5 w-20" />
+            <div className="ap-skeleton h-4 w-4/5" />
+            <div className="ap-skeleton h-2.5 w-full" />
+            <div className="ap-skeleton h-2.5 w-3/5" />
           </div>
         </div>
       ))}

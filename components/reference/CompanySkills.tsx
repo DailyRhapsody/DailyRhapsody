@@ -28,13 +28,11 @@ type AnalyzeResponse = {
   error?: string;
 };
 
-const CARD_PROSE =
-  "rd-prose text-[0.84rem] leading-[1.85] [&_p]:my-1 [&_ul]:my-1 [&_ul]:pl-4 " +
-  "[&_ol]:my-1 [&_ol]:pl-4 [&_li]:my-0.5 [&_table]:mt-1";
+const CARD_PROSE = "ap-result-body";
 
 function MasterMark({ master }: { master: string }) {
   return (
-    <span aria-hidden className="rd-master-mark">
+    <span aria-hidden className="ap-skill-icon">
       {master.slice(0, 1)}
     </span>
   );
@@ -71,35 +69,30 @@ function SkillCardButton({
       aria-busy={loading}
       title={companySkillHint(skill, lang)}
       data-selected={selected ? "true" : undefined}
+      data-done={done ? "true" : undefined}
       onClick={(event) => onSelect(event.currentTarget)}
       disabled={disabled && !loading}
-      className="rd-skill-card group focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--rd-accent)] disabled:cursor-not-allowed disabled:opacity-60"
+      className="ap-skill-card focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ap-blue)]"
     >
-      <div className="flex items-center justify-between gap-3">
-        <span className="rd-serif text-[0.72rem] text-[var(--rd-accent)]">{skill.number}</span>
-        <span className="rd-line-tag">{line}</span>
+      <div className="ap-skill-top">
+        <span>Master {skill.number}</span>
+        <span>{line}</span>
       </div>
 
-      <div className="mt-5 flex items-start gap-3">
+      <div className="ap-skill-master">
         <MasterMark master={master} />
         <div className="min-w-0">
-          <p className="text-[0.68rem] leading-relaxed text-[var(--rd-muted)]">{master}</p>
-          <h3 className="rd-serif mt-1 text-[1.24rem] leading-[1.25] text-[var(--rd-ink)]">
-            {method}
-          </h3>
+          <p>{master}</p>
+          <h3>{method}</h3>
         </div>
       </div>
 
-      {showLabel ? (
-        <p className="mt-2 text-[0.7rem] text-[var(--rd-muted)]">{label}</p>
-      ) : null}
+      {showLabel ? <p className="ap-skill-label">{label}</p> : null}
 
-      <p className="mt-3 flex-1 text-[0.8rem] leading-[1.75] text-[var(--rd-ink-soft)]">
-        {companySkillHint(skill, lang)}
-      </p>
+      <p className="ap-skill-question">{companySkillHint(skill, lang)}</p>
 
-      <div className="mt-5 flex items-center justify-between border-t border-[var(--rd-line)] pt-3">
-        <span className={`text-[0.66rem] ${done ? "text-[var(--rd-accent)]" : "text-[var(--rd-muted)]"}`}>
+      <div className="ap-skill-foot">
+        <span className="ap-skill-action">
           {loading
             ? t("company.skills.running")
             : done
@@ -109,11 +102,11 @@ function SkillCardButton({
         {loading ? (
           <span
             aria-hidden
-            className="inline-block h-3 w-3 animate-spin rounded-full border border-[var(--rd-accent)] border-t-transparent"
+            className="inline-block h-3 w-3 animate-spin rounded-full border border-[var(--ap-blue)] border-t-transparent"
           />
         ) : (
-          <span aria-hidden className="text-[0.9rem] text-[var(--rd-accent)]">
-            →
+          <span aria-hidden className="ap-chevron">
+            ›
           </span>
         )}
       </div>
@@ -125,58 +118,47 @@ function ResultBody({ card, html }: { card: SkillCard | null; html: string }) {
   const { t } = useLang();
 
   if (!card?.isStructured) {
-    return <div className="rd-prose" dangerouslySetInnerHTML={{ __html: html }} />;
+    return <div className="ap-prose" dangerouslySetInnerHTML={{ __html: html }} />;
   }
 
   return (
     <>
-      <div
-        className={`border p-5 ${
-          card.insufficient
-            ? "border-[var(--rd-accent)] bg-[var(--rd-accent-soft)] text-[var(--rd-ink)]"
-            : "border-[var(--rd-ink)] bg-[var(--rd-hero-bg)] text-[var(--rd-hero-fg)]"
-        }`}
-      >
-        <p className="rd-eyebrow text-[var(--rd-accent)]">
-          {t("company.verdict.title")}
-        </p>
+      <div className="ap-judgment" data-insufficient={card.insufficient ? "true" : undefined}>
+        <p className="ap-judgment-label">{t("company.verdict.title")}</p>
         <div
-          className="rd-serif mt-2 text-[1.18rem] leading-[1.8] [&_p]:m-0"
+          className="ap-judgment-text"
           dangerouslySetInnerHTML={{ __html: card.judgmentHtml }}
         />
       </div>
 
-      <div className="mt-6 space-y-6">
-        <section>
-          <p className="rd-eyebrow">{t("company.skills.evidence")}</p>
+      <div className="mt-2">
+        <section className="ap-result-section">
+          <p className="ap-result-label">{t("company.skills.evidence")}</p>
           <div
-            className={`mt-2 ${CARD_PROSE}`}
+            className={CARD_PROSE}
             dangerouslySetInnerHTML={{ __html: card.evidenceHtml || "—" }}
           />
         </section>
-        <section>
-          <p className="rd-eyebrow">{t("company.skills.commentary")}</p>
+        <section className="ap-result-section">
+          <p className="ap-result-label">{t("company.skills.commentary")}</p>
           <div
-            className={`mt-2 ${CARD_PROSE}`}
+            className={CARD_PROSE}
             dangerouslySetInnerHTML={{ __html: card.commentaryHtml || "—" }}
           />
         </section>
       </div>
 
-      <section className="mt-6 border border-[var(--rd-line)] bg-[var(--rd-paper-2)] p-4">
-        <div className="h-px w-8 bg-[var(--rd-accent)]" aria-hidden />
-        <p className="rd-eyebrow mt-3 text-[var(--rd-accent)]">{t("company.skills.falsifier")}</p>
+      <section className="ap-note">
+        <p className="ap-result-label">{t("company.skills.falsifier")}</p>
         <div
-          className={`mt-2 ${CARD_PROSE}`}
+          className={CARD_PROSE}
           dangerouslySetInnerHTML={{ __html: card.falsifierHtml || "—" }}
         />
       </section>
 
       {card.sourceHtml ? (
-        <details className="mt-6 border-t border-[var(--rd-line)] pt-4">
-          <summary className="cursor-pointer select-none text-[0.7rem] text-[var(--rd-muted)]">
-            {t("company.skills.source")}
-          </summary>
+        <details className="ap-source">
+          <summary>{t("company.skills.source")}</summary>
           <div
             className={`mt-2 ${CARD_PROSE}`}
             dangerouslySetInnerHTML={{ __html: card.sourceHtml }}
@@ -326,7 +308,7 @@ export function CompanySkills({ itemId }: { itemId: string }) {
 
   return (
     <section aria-label={t("company.master.title")}>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="ap-skill-grid">
         {COMPANY_SKILLS.map((skill) => (
           <SkillCardButton
             key={skill.id}
@@ -345,71 +327,64 @@ export function CompanySkills({ itemId }: { itemId: string }) {
 
       {activeSkill && typeof document !== "undefined"
         ? createPortal(
-            <div className="rd-portal font-sans">
-              <div className="rd-overlay" onClick={closeDrawer} aria-hidden />
+            <div className="ap-portal">
+              <div className="ap-overlay" onClick={closeDrawer} aria-hidden />
               <aside
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
-            aria-labelledby="rd-drawer-title"
-            className="rd-drawer"
+            aria-labelledby="ap-drawer-title"
+            className="ap-drawer"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="rd-drawer-head px-5 py-4">
+            <div className="ap-drawer-head">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="rd-eyebrow text-[rgba(245,241,232,0.48)]">
-                    {activeSkill.number} · {master}
+                  <p className="ap-drawer-eyebrow">
+                    Master {activeSkill.number} · {master}
                   </p>
-                  <h2
-                    id="rd-drawer-title"
-                    className="rd-serif mt-1 text-[1.35rem] leading-tight"
-                  >
+                  <h2 id="ap-drawer-title" className="ap-drawer-title">
                     {method}
                   </h2>
-                  {showLabel ? (
-                    <p className="mt-0.5 text-[0.7rem] text-[rgba(245,241,232,0.55)]">{label}</p>
-                  ) : null}
+                  {showLabel ? <p className="ap-drawer-eyebrow mt-1">{label}</p> : null}
                 </div>
                 <button
                   ref={closeRef}
                   type="button"
                   onClick={closeDrawer}
                   aria-label={t("company.skills.close")}
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/20 text-[1.05rem] leading-none text-[rgba(245,241,232,0.7)] transition-colors hover:border-white/40 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--rd-accent)]"
+                  className="ap-close focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ap-blue)]"
                 >
                   ×
                 </button>
               </div>
             </div>
 
-            <div className="rd-drawer-body" aria-live="polite">
+            <div className="ap-drawer-body" aria-live="polite">
               {!entry || entry.status === "loading" ? (
                 <div className="space-y-4">
-                  <p className="rd-eyebrow text-[var(--rd-accent)]">
+                  <p className="ap-result-label text-[var(--ap-blue)]">
                     {lang === "en" ? activeSkill.progressEn : activeSkill.progress}
                   </p>
                   <div className="mt-2 space-y-2">
-                    <div className="h-6 w-3/4 animate-pulse bg-[var(--rd-line)]" />
-                    <div className="h-3 w-full animate-pulse bg-[var(--rd-line)]" />
-                    <div className="h-3 w-5/6 animate-pulse bg-[var(--rd-line)]" />
-                    <div className="h-3 w-2/3 animate-pulse bg-[var(--rd-line)]" />
-                    <div className="h-3 w-11/12 animate-pulse bg-[var(--rd-line)]" />
-                    <div className="h-3 w-3/5 animate-pulse bg-[var(--rd-line)]" />
+                    <div className="ap-skeleton h-6 w-3/4 animate-pulse" />
+                    <div className="ap-skeleton h-3 w-full animate-pulse" />
+                    <div className="ap-skeleton h-3 w-5/6 animate-pulse" />
+                    <div className="ap-skeleton h-3 w-2/3 animate-pulse" />
+                    <div className="ap-skeleton h-3 w-11/12 animate-pulse" />
+                    <div className="ap-skeleton h-3 w-3/5 animate-pulse" />
                   </div>
                 </div>
               ) : entry.status === "error" ? (
-                <div className="border border-[var(--rd-accent)] bg-[var(--rd-accent-soft)] p-4">
-                  <p className="rd-eyebrow text-[var(--rd-accent)]">
+                <div className="ap-note">
+                  <p className="ap-result-label text-[var(--ap-orange)]">
                     {t("company.skills.error")}
                   </p>
-                  <p className="mt-2 text-[0.86rem] leading-relaxed text-[var(--rd-ink)]">
-                    {entry.error}
-                  </p>
+                  <p className="ap-result-body">{entry.error}</p>
                   <button
                     type="button"
                     onClick={() => void run(activeSkill.id, true)}
-                    className="mt-4 border border-[var(--rd-accent)] px-3 py-1.5 text-[0.75rem] text-[var(--rd-ink)] transition-colors hover:bg-[var(--rd-paper)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--rd-accent)]"
+                    className="ap-btn ap-btn-secondary mt-3 border border-[var(--ap-border)]"
                   >
                     {t("common.retry")}
                   </button>
@@ -419,8 +394,8 @@ export function CompanySkills({ itemId }: { itemId: string }) {
               )}
             </div>
 
-            <div className="rd-drawer-foot flex items-center justify-between gap-3">
-              <p className="text-[0.65rem] text-[var(--rd-muted)]">
+            <div className="ap-drawer-foot">
+              <p className="ap-drawer-time">
                 {entry?.status === "done"
                   ? `${entry.cached ? `${t("company.skills.cached")} · ` : ""}${time}`
                   : entry?.status === "error"
@@ -432,14 +407,14 @@ export function CompanySkills({ itemId }: { itemId: string }) {
                   type="button"
                   onClick={() => void run(activeSkill.id, true)}
                   disabled={entry?.status === "loading"}
-                  className="border border-[var(--rd-line)] px-3 py-1.5 text-[0.72rem] text-[var(--rd-ink)] transition-colors hover:border-[var(--rd-ink)] disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--rd-accent)]"
+                  className="ap-btn ap-btn-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ap-blue)] focus-visible:ring-offset-2"
                 >
                   {t("company.skills.rerun")}
                 </button>
                 <button
                   type="button"
                   onClick={closeDrawer}
-                  className="border border-[var(--rd-line)] px-3 py-1.5 text-[0.72rem] text-[var(--rd-muted)] transition-colors hover:border-[var(--rd-ink)] hover:text-[var(--rd-ink)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--rd-accent)]"
+                  className="ap-btn ap-btn-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ap-blue)]"
                 >
                   {t("company.skills.close")}
                 </button>
