@@ -164,7 +164,7 @@ export async function POST(
     const stream = await streamChat({
       system,
       messages: [{ role: "user", content: `请分析下面这家公司。\n\n${context}` }],
-      maxTokens: 2800,
+      maxTokens: 3200,
       temperature: 0.25,
       strict: true,
       signal: AbortSignal.timeout(55_000),

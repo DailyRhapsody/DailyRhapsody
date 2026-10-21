@@ -18,9 +18,9 @@ type AuthorResponse = {
 };
 
 const AXIOMS = [
+  { title: "company.author.axiom.layers", desc: "company.author.axiom.layersDesc" },
   { title: "company.author.axiom.power", desc: "company.author.axiom.powerDesc" },
   { title: "company.author.axiom.three", desc: "company.author.axiom.threeDesc" },
-  { title: "company.author.axiom.time", desc: "company.author.axiom.timeDesc" },
   { title: "company.author.axiom.evidence", desc: "company.author.axiom.evidenceDesc" },
 ] as const;
 

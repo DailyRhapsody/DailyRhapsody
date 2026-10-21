@@ -193,8 +193,8 @@ const messages: Record<string, { zh: string; en: string }> = {
   "company.skills.insufficient": { zh: "证据不足", en: "Insufficient evidence" },
   "company.author.title": { zh: "作者之剑", en: "Author's sword" },
   "company.author.intro": {
-    zh: "用滕君公开人设中的判断顺序，先看所有权、实权与目的函数，再把公司、目的、位置分开判；最后看十年尺度、证据与叙事差额。只使用公开材料与公开人设，不读取私密记忆。",
-    en: "Uses Teng Jun's public judgment order: ownership, real power and purpose first; then judges the company, the purpose and the position separately; finally the ten-year view, evidence and the gap between narrative and reality. Public material and the public persona only; no private memory.",
+    zh: "用滕君公开人设中的判断顺序，先做层次定位：世界体系、国家与发展阶段、文化合法性、产权与组织、技术与物质，哪一层解释力最强；再判主导层、公司、目的、位置。只使用公开材料与公开人设，不读取私密记忆。",
+    en: "Uses Teng Jun's public judgment order: first locate the dominant layer — world-system, state and development, culture and legitimacy, ownership and organization, technology and materiality; then judge the dominant layer, the company, the purpose and the position. Public material and the public persona only; no private memory.",
   },
   "company.author.cta": { zh: "生成作者判断", en: "Generate author's judgment" },
   "company.author.judgment": { zh: "作者判断", en: "Author's judgment" },
@@ -204,8 +204,13 @@ const messages: Record<string, { zh: string; en: string }> = {
   },
   "company.author.method.title": { zh: "判断顺序", en: "Judgment order" },
   "company.author.method.note": {
-    zh: "先看所有权、实权与目的函数，再看它们如何通过预算、人事与资源分配塑造产品、技术与十年；公司、目的、位置三问由同一条链连接。",
-    en: "Ownership, real power and purpose first; then how budget, people and resource allocation shape products, technology and the ten-year position. The three questions are sections of one causal chain.",
+    zh: "先做层次定位：世界体系与地缘、国家与发展阶段、文化合法性、产权与组织、技术与物质，哪一层解释力最强；再判主导层、公司、目的、位置，四问由一条因果链连接。",
+    en: "First locate the dominant layer: world-system and geopolitics, state and development, culture and legitimacy, ownership and organization, technology and materiality. Then judge the dominant layer, company, purpose and position, linked by one causal chain.",
+  },
+  "company.author.axiom.layers": { zh: "层次定位", en: "Layer" },
+  "company.author.axiom.layersDesc": {
+    zh: "哪一层主导？国家、地缘、文化、产权？",
+    en: "Which layer leads? State, geopolitics, culture, ownership?",
   },
   "company.author.axiom.power": { zh: "权力与目的", en: "Power and purpose" },
   "company.author.axiom.powerDesc": {
@@ -228,8 +233,8 @@ const messages: Record<string, { zh: string; en: string }> = {
     en: "Primary evidence; the gap between narrative and reality.",
   },
   "company.author.running": {
-    zh: "正在按所有权、目的与位置读这家公司…",
-    en: "Reading this company through ownership, purpose and position…",
+    zh: "正在定位层次与权力结构…",
+    en: "Locating the dominant layer and power structure…",
   },
   "company.author.error": {
     zh: "作者判断生成失败，请稍后重试。",

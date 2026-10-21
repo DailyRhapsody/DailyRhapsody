@@ -75,6 +75,6 @@ export function splitSkillCard(text: string): SkillCardSections {
     isStructured: Boolean(judgmentText) && structuredCount >= 2,
     insufficient:
       /^(证据不足|insufficient evidence)/i.test(judgmentText) ||
-      /(^|\n)\s*(?:公司|目的|位置)[：:]\s*(?:证据不足|insufficient evidence)/i.test(rawJudgment),
+      /(^|\n)\s*(?:主导层|公司|目的|位置)[：:]\s*(?:证据不足|insufficient evidence)/i.test(rawJudgment),
   };
 }

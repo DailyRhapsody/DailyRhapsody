@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-const { AUTHOR_SWORD_VERSION, AUTHOR_THOUGHT_CORE, buildAuthorSwordSystemPrompt } = await import(
-  "../lib/author-sword.ts"
-);
+const {
+  AUTHOR_SWORD_VERSION,
+  AUTHOR_THOUGHT_CORE,
+  AUTHOR_STRUCTURE_LAYERS,
+  buildAuthorSwordSystemPrompt,
+} = await import("../lib/author-sword.ts");
 
 const bundle = {
   schema: 1,
@@ -21,9 +24,15 @@ const bundle = {
   avoidIds: [],
 };
 
-test("作者之剑版本固定，思想内核以所有权、目的与三问为第一层", () => {
-  assert.equal(AUTHOR_SWORD_VERSION, "2026-10-21.5");
+test("作者之剑版本固定，思想内核先做层次定位，再落到产权、目的与位置", () => {
+  assert.equal(AUTHOR_SWORD_VERSION, "2026-10-21.6");
   for (const key of [
+    "层次定位",
+    "世界体系",
+    "国家/发展阶段",
+    "文化/合法性",
+    "产权/组织",
+    "技术/物质",
     "因果链",
     "所有权与控制权",
     "实权审计",
@@ -40,6 +49,9 @@ test("作者之剑版本固定，思想内核以所有权、目的与三问为�
   ]) {
     assert.match(AUTHOR_THOUGHT_CORE, new RegExp(key));
   }
+  for (const key of ["世界体系与地缘", "国家与发展阶段", "文化与合法性", "产权与组织", "技术与物质"]) {
+    assert.match(AUTHOR_STRUCTURE_LAYERS, new RegExp(key));
+  }
 });
 
 test("作者之剑只注入公开判断方式，不注入私密记忆", () => {
@@ -53,21 +65,26 @@ test("作者之剑只注入公开判断方式，不注入私密记忆", () => {
   assert.equal(prompt.includes("PRIVATE_MEMORY_SENTINEL"), false);
 });
 
-test("判断分三行，公司、目的、位置不合并成总分", () => {
+test("判断分四行，主导层、公司、目的、位置不合并成总分", () => {
   const prompt = buildAuthorSwordSystemPrompt(bundle);
+  assert.match(prompt, /主导层：/);
   assert.match(prompt, /公司：/);
   assert.match(prompt, /目的：/);
   assert.match(prompt, /位置：/);
   assert.match(prompt, /同一条因果链/);
   assert.match(prompt, /公司是结果/);
-  assert.match(prompt, /技术路线\/产品组合/);
+  assert.match(prompt, /结构与层次/);
+  assert.match(prompt, /世界体系\/国家政策/);
   assert.match(prompt, /公司值得投、家族不想做产品、作者不适合去/);
   assert.match(prompt, /只适合可结算的外部身份/);
 });
 
-test("先审实权与目的，再谈产品与窗口", () => {
+test("先做层次定位，不把所有权当唯一根", () => {
   const prompt = buildAuthorSwordSystemPrompt(bundle);
-  assert.match(prompt, /所有权与目的先行/);
+  assert.match(prompt, /先做层次定位/);
+  assert.match(prompt, /不要先验地把所有权放第一/);
+  assert.match(prompt, /中力可能由产权与家族主导/);
+  assert.match(prompt, /中国机器人可能由国家、发展阶段与地缘主导/);
   assert.match(prompt, /名义职级/);
   assert.match(prompt, /预算谁批/);
   assert.match(prompt, /什么事项能否决/);
