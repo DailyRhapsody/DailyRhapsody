@@ -164,7 +164,6 @@ export function CompanyAuthorSword({ itemId }: { itemId: string }) {
         </div>
         <p className="ap-eyebrow">Author sword</p>
         <h2 className="ap-empty-title">{t("company.author.title")}</h2>
-        <p className="ap-empty-copy">{t("company.author.intro")}</p>
         <AuthorSwordFlow lang={lang} />
         <button
           type="button"
