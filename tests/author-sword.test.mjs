@@ -22,8 +22,9 @@ const bundle = {
 };
 
 test("作者之剑版本固定，思想内核以所有权、目的与三问为第一层", () => {
-  assert.equal(AUTHOR_SWORD_VERSION, "2026-10-21.4");
+  assert.equal(AUTHOR_SWORD_VERSION, "2026-10-21.5");
   for (const key of [
+    "因果链",
     "所有权与控制权",
     "实权审计",
     "代际时钟",
@@ -57,6 +58,9 @@ test("判断分三行，公司、目的、位置不合并成总分", () => {
   assert.match(prompt, /公司：/);
   assert.match(prompt, /目的：/);
   assert.match(prompt, /位置：/);
+  assert.match(prompt, /同一条因果链/);
+  assert.match(prompt, /公司是结果/);
+  assert.match(prompt, /技术路线\/产品组合/);
   assert.match(prompt, /公司值得投、家族不想做产品、作者不适合去/);
   assert.match(prompt, /只适合可结算的外部身份/);
 });

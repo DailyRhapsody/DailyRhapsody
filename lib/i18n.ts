@@ -204,18 +204,18 @@ const messages: Record<string, { zh: string; en: string }> = {
   },
   "company.author.method.title": { zh: "判断顺序", en: "Judgment order" },
   "company.author.method.note": {
-    zh: "先看所有权、实权与目的函数，再把公司值不值得、家族想不想做产品、个人适不适合分开判；最后才看十年、证据与叙事差额。",
-    en: "Ownership, real power and purpose first; then judge the company, the family's product intent and personal fit separately; only then the ten-year view, evidence and the gap between narrative and reality.",
+    zh: "先看所有权、实权与目的函数，再看它们如何通过预算、人事与资源分配塑造产品、技术与十年；公司、目的、位置三问由同一条链连接。",
+    en: "Ownership, real power and purpose first; then how budget, people and resource allocation shape products, technology and the ten-year position. The three questions are sections of one causal chain.",
   },
   "company.author.axiom.power": { zh: "权力与目的", en: "Power and purpose" },
   "company.author.axiom.powerDesc": {
     zh: "谁控制？为谁服务？",
     en: "Who controls? Who is served?",
   },
-  "company.author.axiom.three": { zh: "三问分开", en: "Three questions" },
+  "company.author.axiom.three": { zh: "三问相连", en: "One chain" },
   "company.author.axiom.threeDesc": {
-    zh: "公司、目的、位置各判一次。",
-    en: "Company, purpose, position: judge each once.",
+    zh: "公司、目的、位置，链条相连。",
+    en: "Company, purpose and position, linked by one chain.",
   },
   "company.author.axiom.time": { zh: "十年尺度", en: "Ten-year horizon" },
   "company.author.axiom.timeDesc": {
