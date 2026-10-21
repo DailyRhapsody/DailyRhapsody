@@ -464,26 +464,6 @@ html[data-pet-chat="thinking"] .dr-pet-panel-glow > span {
   -webkit-font-smoothing: antialiased;
 }
 
-.ap-nav {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 18px 24px 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  font-size: 13px;
-  color: var(--ap-secondary);
-}
-
-.ap-nav a {
-  transition: color 180ms ease;
-}
-
-.ap-nav a:hover {
-  color: var(--ap-text);
-}
-
 .ap-hero {
   position: relative;
   max-width: 1120px;
@@ -616,20 +596,6 @@ html[data-pet-chat="thinking"] .dr-pet-panel-glow > span {
   max-width: 1120px;
   margin: 0 auto;
   padding: 40px 24px 96px;
-}
-
-.ap-footer {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 24px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  border-top: 1px solid var(--ap-border);
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--ap-tertiary);
 }
 
 .ap-intro-grid {
@@ -1583,9 +1549,6 @@ html[data-pet-chat="thinking"] .dr-pet-panel-glow > span {
   }
   .ap-hero {
     padding: 44px 20px 28px;
-  }
-  .ap-nav {
-    padding: 14px 20px 0;
   }
   .ap-tabs-inner {
     padding: 8px 20px;

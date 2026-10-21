@@ -47,13 +47,11 @@ export function ReferenceCard({
   item,
   like,
   onLike,
-  onSelect,
   selected = false,
 }: {
   item: ReferenceListItem;
   like?: ReferenceLikeState;
   onLike?: (id: string) => void;
-  onSelect?: (id: string) => void;
   selected?: boolean;
 }) {
   const { t, lang } = useLang();
@@ -68,18 +66,20 @@ export function ReferenceCard({
     ])
   ).slice(0, 4);
 
+  const openDetail = () => {
+    window.open(`/reference/${item.id}`, "_blank", "noopener,noreferrer");
+  };
+
   const handleCardClick = (event: MouseEvent<HTMLElement>) => {
-    if (!onSelect) return;
     if ((event.target as HTMLElement).closest("a,button,input,select,textarea")) return;
-    onSelect(item.id);
+    openDetail();
   };
 
   const handleCardKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (!onSelect) return;
     if (event.key !== "Enter" && event.key !== " ") return;
     if ((event.target as HTMLElement).closest("a,button,input,select,textarea")) return;
     event.preventDefault();
-    onSelect(item.id);
+    openDetail();
   };
 
   return (
@@ -88,7 +88,7 @@ export function ReferenceCard({
       data-selected={selected || undefined}
       onClick={handleCardClick}
       onKeyDown={handleCardKeyDown}
-      tabIndex={onSelect ? 0 : undefined}
+      tabIndex={0}
       className="ap-ref-card focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ap-blue)]"
     >
       <div className="ap-ref-top">
@@ -101,7 +101,9 @@ export function ReferenceCard({
       </div>
 
       <h3 className="ap-ref-title">
-        <Link href={`/reference/${item.id}`}>{displayName}</Link>
+        <Link href={`/reference/${item.id}`} target="_blank" rel="noopener noreferrer">
+          {displayName}
+        </Link>
       </h3>
 
       {item.summary ? <p className="ap-ref-summary">{item.summary}</p> : null}
@@ -135,6 +137,8 @@ export function ReferenceCard({
         </button>
         <Link
           href={`/reference/${item.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
           aria-label={t("reference.card.readFull")}
           className="ap-ref-read focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ap-blue)]"
         >

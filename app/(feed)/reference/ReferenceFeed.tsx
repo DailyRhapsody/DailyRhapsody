@@ -272,7 +272,6 @@ export default function ReferenceFeed({
                       item={it}
                       like={likes[it.id]}
                       onLike={toggle}
-                      onSelect={toggleSelect}
                       selected={selectedId === it.id}
                     />
                   </div>

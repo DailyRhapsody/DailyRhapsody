@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { t, type Lang } from "@/lib/i18n";
+import type { Lang } from "@/lib/i18n";
 import { CompanyAnalysis } from "@/components/reference/CompanyAnalysis";
 import { CompanySkills } from "@/components/reference/CompanySkills";
 import { CompanyAuthorSword } from "@/components/reference/CompanyAuthorSword";
@@ -18,10 +17,6 @@ export function CompanyDossier({
   summary,
   tags,
   bodyMarkdown,
-  sourceLabel,
-  licenseLabel,
-  copyright,
-  url,
   lang,
 }: {
   itemId: string;
@@ -29,33 +24,10 @@ export function CompanyDossier({
   summary?: string;
   tags: string[];
   bodyMarkdown: string;
-  sourceLabel: string;
-  licenseLabel: string;
-  copyright?: string;
-  url?: string;
   lang: Lang;
 }) {
   return (
     <div className="ap-page min-h-screen">
-      <nav className="ap-nav">
-        <Link
-          href="/reference"
-          className="focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ap-blue)]"
-        >
-          ‹ {t(lang, "reference.detail.back")}
-        </Link>
-        {url ? (
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ap-blue)]"
-          >
-            {t(lang, "reference.detail.jump")} ↗
-          </a>
-        ) : null}
-      </nav>
-
       <header className="ap-hero">
         <p className="ap-eyebrow">Reference · Company dossier</p>
         <h1 className="ap-hero-title">{title}</h1>
@@ -84,12 +56,6 @@ export function CompanyDossier({
         master={<CompanySkills itemId={itemId} />}
         author={<CompanyAuthorSword lang={lang} />}
       />
-
-      <footer className="ap-footer">
-        {sourceLabel ? <span>{sourceLabel} · </span> : null}
-        <span>{licenseLabel}</span>
-        {copyright ? <span> · {copyright}</span> : null}
-      </footer>
     </div>
   );
 }

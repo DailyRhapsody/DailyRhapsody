@@ -178,10 +178,6 @@ export default async function ReferenceDetailPage({
           summary={item.summary || undefined}
           tags={companyTags}
           bodyMarkdown={companyBody ?? ""}
-          sourceLabel={sourceLabel}
-          licenseLabel={referenceLicenseLabel(item.license, lang)}
-          copyright={item.copyright || undefined}
-          url={item.url}
           lang={lang}
         />
       </>
