@@ -20,14 +20,35 @@ const url = env.KV_REST_API_URL;
 const token = env.KV_REST_API_READ_ONLY_TOKEN || env.KV_REST_API_TOKEN;
 if (!url || !token) throw new Error("KV_REST_API_URL / KV_REST_API_TOKEN 未配置");
 
-const response = await fetch(`${url}/get/${encodeURIComponent("notion:diaries:v7")}`, {
-  headers: { Authorization: `Bearer ${token}` },
-});
-if (!response.ok) throw new Error(`读取日记缓存失败：${response.status}`);
-const payload = await response.json();
-let value = payload.result;
-if (typeof value === "string") value = JSON.parse(value);
-const all = Array.isArray(value) ? value : value?.data || value?.results || [];
+// 缓存键不写死版本号：先读 latest 别名，再按版本号探测。
+// 上游升版（v5→v6→v7）时这里不需要跟着改；2026-10 就是因为写死 v6 断了采集。
+const ALIAS_KEY = "notion:diaries:latest";
+const PROBE_KEYS = Array.from({ length: 12 }, (_, i) => `notion:diaries:v${12 - i}`);
+
+async function readKey(key) {
+  const res = await fetch(`${url}/get/${encodeURIComponent(key)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return null;
+  const payload = await res.json();
+  let value = payload.result;
+  if (typeof value === "string") value = JSON.parse(value);
+  const list = Array.isArray(value) ? value : value?.data || value?.results || [];
+  return Array.isArray(list) && list.length ? list : null;
+}
+
+let all = null;
+let usedKey = null;
+for (const key of [ALIAS_KEY, ...PROBE_KEYS]) {
+  all = await readKey(key);
+  if (all) {
+    usedKey = key;
+    break;
+  }
+}
+if (!all) throw new Error("博客缓存全空：latest 别名与 v1–v12 均无数据");
+console.error(`[tree] 使用缓存键 ${usedKey}`);
+
 const publicEntries = all
   .filter((entry) => entry.isPublic !== false)
   .map((entry) => ({

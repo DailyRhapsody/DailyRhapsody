@@ -97,6 +97,14 @@ async function getRedis() {
 // 访客继续看到旧正文，后台重拉完成后自动切换，不会出现空白页。
 const CACHE_KEY = "notion:diaries:v7";
 const LEGACY_CACHE_KEY = "notion:diaries:v6";
+/**
+ * 跨项目通用别名：对外部消费者（persona-lab 人设包、scripts/tree）只暴露这一个键。
+ * 历史上缓存键从 v2 → v5 → v6 → v7 升级过三次，每次都要去改下游写死的版本号，
+ * 漏一处就静默读到旧数据（2026-10 博客采集断了三天才发现）。写侧每次落缓存时
+ * 同步写别名，下游读别名即可，升版不再需要通知下游。
+ */
+const LATEST_CACHE_KEY = "notion:diaries:latest";
+
 
 /**
  * 正文转换器版本。改 blockToMarkdown / 缩进 / toggle 规则时 +1。
@@ -191,6 +199,9 @@ async function setCache(diaries: Diary[], snapshotAt: number): Promise<void> {
   try {
     const entry: CacheEntry = { data: diaries, refreshedAt: Date.now(), snapshotAt };
     await redis.set(CACHE_KEY, entry, { ex: cacheTtl() });
+    // 别名与主键同寿命、同内容。写失败不影响主缓存，但下一轮刷新会补写；
+    // 别名缺失时下游会退化成按版本号探测，不会读不到数据。
+    await redis.set(LATEST_CACHE_KEY, entry, { ex: cacheTtl() });
   } catch {
     // cache write failure is non-fatal
   }

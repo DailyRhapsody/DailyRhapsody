@@ -28,6 +28,7 @@ import { revalidatePath } from "next/cache";
 import { markDiariesCacheStale } from "@/lib/notion";
 import { markMomentsCacheStale } from "@/lib/notion-moments";
 import { markReferenceCacheStale } from "@/lib/notion-reference";
+import { markTreeStale } from "@/lib/tree/store";
 
 // 标记过期后在本次调用里用 waitUntil 后台重拉（日记全量约 80-100s）
 export const maxDuration = 300;
@@ -53,6 +54,9 @@ export async function POST(req: NextRequest) {
     await markDiariesCacheStale();
     await markMomentsCacheStale();
     await markReferenceCacheStale();
+    // 只打标记，不在这里重建：重建要调模型，几十秒到几分钟，会拖住 webhook。
+    // 真正的重建由下一次 /api/tree 读取在后台执行（见 app/api/tree/route.ts）。
+    await markTreeStale();
     revalidatePath("/", "layout");
     revalidatePath("/reference", "layout");
     return NextResponse.json({ revalidated: true, now: Date.now() });
