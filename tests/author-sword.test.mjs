@@ -22,7 +22,7 @@ const bundle = {
 };
 
 test("作者之剑版本固定，思想内核以所有权、目的与三问为第一层", () => {
-  assert.equal(AUTHOR_SWORD_VERSION, "2026-10-21.3");
+  assert.equal(AUTHOR_SWORD_VERSION, "2026-10-21.4");
   for (const key of [
     "所有权与控制权",
     "实权审计",
@@ -70,6 +70,10 @@ test("先审实权与目的，再谈产品与窗口", () => {
   assert.match(prompt, /继承事件/);
   assert.match(prompt, /产品是目的还是手段/);
   assert.match(prompt, /全职与实控只证明控制权集中/);
+  assert.match(prompt, /家族企业才写家族传承/);
+  assert.match(prompt, /不要套家族模板/);
+  assert.match(prompt, /只写以下三行/);
+  assert.match(prompt, /未使用私密记忆/);
 });
 
 test("硬条件按顺序否决，并给反共识与标签设边界", () => {
