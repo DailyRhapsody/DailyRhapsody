@@ -193,8 +193,8 @@ const messages: Record<string, { zh: string; en: string }> = {
   "company.skills.insufficient": { zh: "证据不足", en: "Insufficient evidence" },
   "company.author.title": { zh: "作者之剑", en: "Author's sword" },
   "company.author.intro": {
-    zh: "用滕君公开人设中的判断方式，看这家公司哪里值得支持、哪里需要警惕、谁承担代价。只使用公开材料与公开人设，不读取私密记忆。",
-    en: "Uses Teng Jun's public persona to judge what is worth supporting, what deserves caution, and who bears the cost. Public material and the public persona only; no private memory.",
+    zh: "用滕君公开人设中的思想内核，按十年尺度看这家公司：方向是否必然且尚冷、窗口是否还开着、证据是否够硬、谁承担代价。只使用公开材料与公开人设，不读取私密记忆。",
+    en: "Uses Teng Jun's public thought core to judge this company on a ten-year horizon: is the direction inevitable but still cold, is the window still open, is the evidence hard, and who bears the cost. Public material and the public persona only; no private memory.",
   },
   "company.author.cta": { zh: "生成作者判断", en: "Generate author's judgment" },
   "company.author.judgment": { zh: "作者判断", en: "Author's judgment" },
@@ -202,9 +202,34 @@ const messages: Record<string, { zh: string; en: string }> = {
     zh: "AI 依据公开人设生成的推断，不代表滕君此刻的观点。",
     en: "An AI inference from the public persona; not Teng Jun's current view.",
   },
+  "company.author.method.title": { zh: "思想内核", en: "Thought core" },
+  "company.author.method.note": {
+    zh: "这套判断顺序来自作者此前的十年公司研究：不按通用商业框架打分，先看方向是否必然且尚冷，再看窗口是否还开着，最后看证据与代价。",
+    en: "This sequence comes from the author's earlier ten-year company research: not a generic business score. First the direction: inevitable but still cold; then whether the window is open; finally the evidence and who bears the cost.",
+  },
+  "company.author.axiom.time": { zh: "十年尺度", en: "Ten-year horizon" },
+  "company.author.axiom.timeDesc": {
+    zh: "十年后还成立吗？",
+    en: "Will it still hold in ten years?",
+  },
+  "company.author.axiom.contrarian": { zh: "反共识", en: "Contrarian" },
+  "company.author.axiom.contrarianDesc": {
+    zh: "热门不等于机会。",
+    en: "Being hot is not an opportunity.",
+  },
+  "company.author.axiom.window": { zh: "窗口", en: "Window" },
+  "company.author.axiom.windowDesc": {
+    zh: "核心层是否已经定型？",
+    en: "Has the core team already closed?",
+  },
+  "company.author.axiom.evidence": { zh: "证据与代价", en: "Evidence and cost" },
+  "company.author.axiom.evidenceDesc": {
+    zh: "一手证据；谁承担代价。",
+    en: "Primary evidence; who pays.",
+  },
   "company.author.running": {
-    zh: "正在按公开价值坐标读这家公司…",
-    en: "Reading this company through the public values…",
+    zh: "正在按十年尺度与思想内核读这家公司…",
+    en: "Reading this company through the ten-year lens and thought core…",
   },
   "company.author.error": {
     zh: "作者判断生成失败，请稍后重试。",

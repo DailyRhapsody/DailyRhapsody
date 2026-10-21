@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-const { AUTHOR_SWORD_VERSION, AUTHOR_VALUE_AXES, buildAuthorSwordSystemPrompt } = await import(
+const { AUTHOR_SWORD_VERSION, AUTHOR_THOUGHT_CORE, buildAuthorSwordSystemPrompt } = await import(
   "../lib/author-sword.ts"
 );
 
@@ -21,17 +21,27 @@ const bundle = {
   avoidIds: [],
 };
 
-test("作者之剑版本固定，公开价值坐标齐全", () => {
-  assert.equal(AUTHOR_SWORD_VERSION, "2026-10-21.1");
-  for (const key of ["现实约束", "证据硬度", "利益与结构", "人与团队", "技术与产品", "取舍与长期"]) {
-    assert.match(AUTHOR_VALUE_AXES, new RegExp(key));
+test("作者之剑版本固定，思想内核覆盖十年、反共识、窗口与硬条件", () => {
+  assert.equal(AUTHOR_SWORD_VERSION, "2026-10-21.2");
+  for (const key of [
+    "十年尺度",
+    "反共识",
+    "方向必然性",
+    "窗口与核心层",
+    "创始人真实性",
+    "证据硬度",
+    "硬条件取交集",
+    "代价与人性",
+  ]) {
+    assert.match(AUTHOR_THOUGHT_CORE, new RegExp(key));
   }
 });
 
 test("作者之剑只注入公开判断方式，不注入私密记忆", () => {
   const prompt = buildAuthorSwordSystemPrompt(bundle);
-  assert.match(prompt, /现实约束/);
-  assert.match(prompt, /证据硬度/);
+  assert.match(prompt, /十年尺度/);
+  assert.match(prompt, /反共识/);
+  assert.match(prompt, /窗口/);
   assert.match(prompt, /## 判断/);
   assert.match(prompt, /## 依据/);
   assert.match(prompt, /## 点评/);
@@ -41,10 +51,11 @@ test("作者之剑只注入公开判断方式，不注入私密记忆", () => {
   assert.equal(prompt.includes("PRIVATE_MEMORY_SENTINEL"), false);
 });
 
-test("作者之剑要求价值坐标与公司事实同时出现", () => {
+test("作者之剑要求硬条件取交集，不用总分掩盖硬伤", () => {
   const prompt = buildAuthorSwordSystemPrompt(bundle);
-  assert.match(prompt, /同时包含/);
-  assert.match(prompt, /证据等级/);
-  assert.match(prompt, /谁得利/);
+  assert.match(prompt, /硬条件取交集/);
+  assert.match(prompt, /加权平均/);
+  assert.match(prompt, /通稿依赖度/);
+  assert.match(prompt, /一号位/);
   assert.match(prompt, /不写投资建议/);
 });
