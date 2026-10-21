@@ -193,8 +193,8 @@ const messages: Record<string, { zh: string; en: string }> = {
   "company.skills.insufficient": { zh: "证据不足", en: "Insufficient evidence" },
   "company.author.title": { zh: "作者之剑", en: "Author's sword" },
   "company.author.intro": {
-    zh: "用滕君公开人设中的判断顺序，先做层次定位：世界体系、国家与发展阶段、文化合法性、产权与组织、技术与物质，哪一层解释力最强；再判主导层、公司、目的、位置。只使用公开材料与公开人设，不读取私密记忆。",
-    en: "Uses Teng Jun's public judgment order: first locate the dominant layer — world-system, state and development, culture and legitimacy, ownership and organization, technology and materiality; then judge the dominant layer, the company, the purpose and the position. Public material and the public persona only; no private memory.",
+    zh: "用滕君公开人设中的判断顺序，先做层次定位：世界体系、国家与发展阶段、文化合法性、产权与组织、技术与物质，哪一层解释力最强；再判主导层、公司与目的。只使用公开材料与公开人设，不读取私密记忆。",
+    en: "Uses Teng Jun's public judgment order: first locate the dominant layer — world-system, state and development, culture and legitimacy, ownership and organization, technology and materiality; then judge the dominant layer, the company and its purpose. Public material and the public persona only; no private memory.",
   },
   "company.author.cta": { zh: "生成作者判断", en: "Generate author's judgment" },
   "company.author.judgment": { zh: "作者判断", en: "Author's judgment" },

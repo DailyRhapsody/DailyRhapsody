@@ -4,7 +4,7 @@ const COPY = {
   zh: {
     kicker: "判断顺序",
     title: "先定层，再判断",
-    sub: "六层结构先找主导层，再沿因果链落到四行判断。任何单层都不当唯一根。",
+    sub: "六层结构先找主导层，再沿因果链落到三行判断。任何单层都不当唯一根。",
     layers: "六层结构",
     layersHint: "哪一层解释力最强？",
     pick: "主导层候选，随公司变化",
@@ -14,7 +14,7 @@ const COPY = {
       ["03", "文化 / 合法性", "面子 · 权威 · 叙事"],
       ["04", "产权 / 组织", "所有权 · 实权 · 家族"],
       ["05", "技术 / 物质", "技术路线 · 路径依赖"],
-      ["06", "个体 / 位置", "身份 · 风险收益 · 退出"],
+      ["06", "个体 / 角色", "创始人 · 经理人 · 员工"],
     ],
     chain: "因果链",
     chainHint: "结构如何塑造产品",
@@ -23,23 +23,22 @@ const COPY = {
       ["产权 / 权力", "谁拥有、谁控制、谁否决"],
       ["目的 / 资源分配", "预算、人事、信息、时间"],
       ["技术 / 产品", "路线、组合、节奏"],
-      ["十年位置", "结果与下一轮结构"],
+      ["十年后的公司位置", "结果与下一轮结构"],
     ],
     feedback: "技术/产品结果反过来改变权力与合法性",
-    verdicts: "四行判断",
-    verdictsHint: "同一张卡，四个断面",
+    verdicts: "三行判断",
+    verdictsHint: "同一张卡，三个断面",
     verdictData: [
       ["01", "主导层", "哪一层解释力最强"],
       ["02", "公司", "资产与经营质量"],
       ["03", "目的", "为谁服务，产品是手段还是目的"],
-      ["04", "位置", "外部人最高可及位置"],
     ],
-    foot: "四问分开作答，由同一条链连接。公司值得投、家族不想做产品、作者不适合去，可以同时成立。",
+    foot: "作者之剑只判断公司与目的，不回答个人去留、职级、薪酬与面试。",
   },
   en: {
     kicker: "Judgment order",
     title: "Locate the layer first",
-    sub: "Find the dominant layer among the six, then follow the causal chain into four verdicts. No single layer is treated as the only root.",
+    sub: "Find the dominant layer among the six, then follow the causal chain into three verdicts. No single layer is treated as the only root.",
     layers: "Six layers",
     layersHint: "Which layer explains most?",
     pick: "Dominant layer varies by company",
@@ -49,7 +48,7 @@ const COPY = {
       ["03", "Culture / legitimacy", "Face · authority · narrative"],
       ["04", "Ownership / organization", "Property · real power · family"],
       ["05", "Technology / materiality", "Technical route · path dependence"],
-      ["06", "Individual / position", "Identity · risk-reward · exit"],
+      ["06", "Individual / role", "Founder · manager · employee"],
     ],
     chain: "Causal chain",
     chainHint: "How structure shapes product",
@@ -58,18 +57,17 @@ const COPY = {
       ["Ownership / power", "Who owns, controls and vetoes"],
       ["Purpose / resource allocation", "Budget, people, information, time"],
       ["Technology / product", "Route, portfolio, cadence"],
-      ["Ten-year position", "Outcome and the next structure"],
+      ["The company's position in ten years", "Outcome and the next structure"],
     ],
     feedback: "Technology and product outcomes feed back into power and legitimacy",
-    verdicts: "Four verdicts",
-    verdictsHint: "One card, four sections",
+    verdicts: "Three verdicts",
+    verdictsHint: "One card, three sections",
     verdictData: [
       ["01", "Dominant layer", "Which layer explains most"],
       ["02", "Company", "Asset and operating quality"],
       ["03", "Purpose", "Who is served; product as means or end"],
-      ["04", "Position", "Highest accessible position for an outsider"],
     ],
-    foot: "The four questions are answered separately and linked by one chain. A company can be worth studying, the family may not want to build products, and the author may still not fit.",
+    foot: "Author's sword judges the company and its purpose. It does not answer personal fit, job grade, compensation or interviews.",
   },
 } as const;
 
@@ -159,7 +157,7 @@ export function AuthorSwordFlow({ lang }: { lang: Lang }) {
           </p>
           <p className="text-[10px] text-[var(--ap-tertiary)]">{c.verdictsHint}</p>
         </div>
-        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {c.verdictData.map(([n, title, desc]) => (
             <div key={n} className="rounded-[10px] border border-[var(--ap-border)] bg-[var(--ap-surface-2)] p-2">
               <p className="text-[9px] text-[var(--ap-tertiary)]">{n}</p>

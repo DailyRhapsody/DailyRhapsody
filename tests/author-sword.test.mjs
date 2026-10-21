@@ -24,8 +24,8 @@ const bundle = {
   avoidIds: [],
 };
 
-test("作者之剑版本固定，思想内核先做层次定位，再落到产权、目的与位置", () => {
-  assert.equal(AUTHOR_SWORD_VERSION, "2026-10-21.6");
+test("作者之剑版本固定，思想内核先做层次定位，再落到产权与目的", () => {
+  assert.equal(AUTHOR_SWORD_VERSION, "2026-10-21.7");
   for (const key of [
     "层次定位",
     "世界体系",
@@ -38,7 +38,7 @@ test("作者之剑版本固定，思想内核先做层次定位，再落到产�
     "实权审计",
     "代际时钟",
     "目的函数",
-    "三问分开",
+    "两问分开",
     "适用性筛查",
     "反共识",
     "方向必然性",
@@ -65,18 +65,29 @@ test("作者之剑只注入公开判断方式，不注入私密记忆", () => {
   assert.equal(prompt.includes("PRIVATE_MEMORY_SENTINEL"), false);
 });
 
-test("判断分四行，主导层、公司、目的、位置不合并成总分", () => {
+test("判断分三行，主导层、公司、目的不合并成总分", () => {
   const prompt = buildAuthorSwordSystemPrompt(bundle);
+  assert.match(prompt, /判断分三行/);
   assert.match(prompt, /主导层：/);
   assert.match(prompt, /公司：/);
   assert.match(prompt, /目的：/);
-  assert.match(prompt, /位置：/);
+  assert.equal(prompt.includes("位置："), false);
   assert.match(prompt, /同一条因果链/);
   assert.match(prompt, /公司是结果/);
   assert.match(prompt, /结构与层次/);
   assert.match(prompt, /世界体系\/国家政策/);
-  assert.match(prompt, /公司值得投、家族不想做产品、作者不适合去/);
-  assert.match(prompt, /只适合可结算的外部身份/);
+  assert.match(prompt, /公司值得投、家族不想做产品/);
+  assert.equal(prompt.includes("作者不适合去"), false);
+  assert.equal(prompt.includes("只适合可结算的外部身份"), false);
+});
+
+test("作者之剑只做公司判断，不混入面试与职级评估", () => {
+  const prompt = buildAuthorSwordSystemPrompt(bundle);
+  assert.match(prompt, /不回答个人是否入职/);
+  assert.match(prompt, /职级、薪酬、面试、offer、风险收益/);
+  assert.match(prompt, /涉及个人去留的内容一律不写/);
+  assert.equal(prompt.includes("这个职级实际拿到哪几项"), false);
+  assert.equal(prompt.includes("全职进入"), false);
 });
 
 test("先做层次定位，不把所有权当唯一根", () => {
@@ -85,7 +96,7 @@ test("先做层次定位，不把所有权当唯一根", () => {
   assert.match(prompt, /不要先验地把所有权放第一/);
   assert.match(prompt, /中力可能由产权与家族主导/);
   assert.match(prompt, /中国机器人可能由国家、发展阶段与地缘主导/);
-  assert.match(prompt, /名义职级/);
+  assert.match(prompt, /名义头衔/);
   assert.match(prompt, /预算谁批/);
   assert.match(prompt, /什么事项能否决/);
   assert.match(prompt, /继承事件/);
