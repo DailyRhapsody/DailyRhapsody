@@ -177,7 +177,13 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     assert.deepEqual(await getDiaries(), [fresh]);
     assert.equal(query.mock.callCount(), 3);
     assert.deepEqual(store.get(LEGACY), oldEntry);
-    assert.deepEqual(writes.slice(priorWrites), ["notion:diaries:v2:refreshLock", CURRENT]);
+    // 主键之后紧跟 latest 别名：外部消费者（persona-lab、树脚本）只读别名，
+    // 上游升版时不再需要逐个改下游写死的版本号。
+    assert.deepEqual(writes.slice(priorWrites), [
+      "notion:diaries:v2:refreshLock",
+      CURRENT,
+      "notion:diaries:latest",
+    ]);
   });
 
   await t.test("pin takes precedence over Pinned; missing fields remain unpinned", async () => {
