@@ -33,7 +33,6 @@ const COPY = {
       ["02", "公司", "资产与经营质量"],
       ["03", "目的", "为谁服务，产品是手段还是目的"],
     ],
-    foot: "作者之剑只判断公司与目的，不回答个人去留、职级、薪酬与面试。",
   },
   en: {
     kicker: "Judgment order",
@@ -67,7 +66,6 @@ const COPY = {
       ["02", "Company", "Asset and operating quality"],
       ["03", "Purpose", "Who is served; product as means or end"],
     ],
-    foot: "Author's sword judges the company and its purpose. It does not answer personal fit, job grade, compensation or interviews.",
   },
 } as const;
 
@@ -166,7 +164,6 @@ export function AuthorSwordFlow({ lang }: { lang: Lang }) {
             </div>
           ))}
         </div>
-        <p className="mt-2 text-[10px] leading-[1.45] text-[var(--ap-secondary)]">{c.foot}</p>
       </section>
     </div>
   );
