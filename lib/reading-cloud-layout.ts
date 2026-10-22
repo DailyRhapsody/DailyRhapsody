@@ -35,10 +35,10 @@ export type CloudPlacement = {
   y: number;
   fontSize: number;
   /**
-   * 绿色档位：1 最深（首名）、2 中间、3 最浅（末名）。
+   * 绿色档位：1 最深（首名）→ 4 最浅（末名）；暗色同样按 1→4 递减对比度。
    * 对应色值见 `components/entries/ReadingCloudScreen.tsx` 的 `SHADE_CLASS`。
    */
-  shade: 1 | 2 | 3;
+  shade: 1 | 2 | 3 | 4;
   bold: boolean;
 };
 
@@ -52,17 +52,23 @@ function fontPx(rank: number, total: number): number {
  * 名次 → 绿色档位。
  *
  * 早先用「同一色 + 递减透明度」表达层级，实测白底上末名只有 2.21:1 对比度，
- * 排在最后的词几乎读不清；而且这套主题色在白底上无论怎么调透明度都到不了
- * WCAG 正文的 4.5:1。
- * 因此改成三档**实体色**：亮色 700 / 700 / 600，暗色 300 / 400 / 500
- * （对比度按卡片真实底色实测：亮色 5.32 / 5.32 / 3.62:1，暗色 10.29 / 8.08 / 6.33:1）。
- * 亮色最浅一档低于 AA 正文线且用的正是最小字号，属有意弱化的层级尾部，已在 README 注明。
- * 层级同时由字号与字重承担。
+ * 排在最后的词几乎读不清。
+ *
+ * 现在档位就是写作热力图的那四档绿（同一族色、同一组实测色值，见
+ * `components/entries/ReadingCloudScreen.tsx` 的 `SHADE_CLASS`），名次按它在
+ * 色阶上的相对位置取档：首名最深一档，末名最浅一档。热力图加深到四档之后，
+ * 云图的深度上限跟着放开，不再把原先「1 篇」那种 pastel 绿当成最深一档。
+ *
+ * 层级同时由字号与字重承担；档位只表达名次，不表达绝对值。
  */
-function greenStyle(rank: number, total: number): { shade: 1 | 2 | 3; bold: boolean } {
+function greenStyle(
+  rank: number,
+  total: number,
+): { shade: 1 | 2 | 3 | 4; bold: boolean } {
   if (total <= 1) return { shade: 1, bold: true };
   const t = rank / (total - 1);
-  return { shade: rank === 0 ? 1 : t <= 0.5 ? 2 : 3, bold: rank === 0 };
+  const shade = (1 + Math.round(t * 3)) as 1 | 2 | 3 | 4;
+  return { shade, bold: rank === 0 };
 }
 
 /**
