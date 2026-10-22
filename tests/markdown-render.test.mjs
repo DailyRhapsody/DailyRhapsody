@@ -109,6 +109,37 @@ test("只有标题的 toggle 不输出空 body 容器", () => {
   assert.ok(!html.includes("dr-toggle-body"), html);
 });
 
+test("行内代码在段落和表格里都渲染成 code", () => {
+  const paragraph = renderMarkdown("占用记录含 `capacity` 和 `cur_usage`");
+  assert.match(paragraph, /<code>capacity<\/code>/, paragraph);
+  assert.match(paragraph, /<code>cur_usage<\/code>/, paragraph);
+
+  const table = renderMarkdown("| 字段 |\n| --- |\n| `capacity` |");
+  assert.match(table, /<td><code>capacity<\/code><\/td>/, table);
+  assert.ok(markdownPreviewProseClass.includes("[&_code]:rounded"), markdownPreviewProseClass);
+  assert.ok(markdownPreviewProseClass.includes("[&_code]:font-mono"), markdownPreviewProseClass);
+});
+
+test("行内公式与块公式渲染 KaTeX，代码块里的 $ 原样保留", () => {
+  const inline = renderMarkdown("质能方程 $E=mc^2$。");
+  assert.match(inline, /class="katex"/, inline);
+  assert.ok(inline.includes("E=mc"), inline);
+
+  const block = renderMarkdown("$$\\int_0^1 x^2 dx$$");
+  assert.match(block, /class="dr-math-block"/, block);
+  assert.match(block, /class="katex-display"/, block);
+
+  const fenced = renderMarkdown("```\n$x$ and `y`\n```");
+  assert.ok(!fenced.includes("katex"), fenced);
+  assert.match(fenced, /<code>\$x\$ and `y`/, fenced);
+});
+
+test("行内代码里的 $...$ 不会被当成公式", () => {
+  const html = renderMarkdown("命令是 `$HOME`，不是公式。");
+  assert.ok(!html.includes("katex"), html);
+  assert.match(html, /<code>\$HOME<\/code>/, html);
+});
+
 test("链接不放行 data: 协议（图片仍允许内联 data:）", () => {
   const link = renderMarkdown("[x](data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==)");
   assert.ok(!/href="data:/.test(link), link);

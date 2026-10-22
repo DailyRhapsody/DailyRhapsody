@@ -403,6 +403,34 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     store.delete("notion:diaries:v2:refreshLock");
   });
 
+  await t.test("inline equations and code annotations survive the body converter", async () => {
+    const equation = {
+      type: "equation",
+      equation: { expression: "a^2+b^2=c^2" },
+      plain_text: "a^2+b^2=c^2",
+      href: null,
+      annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" },
+    };
+    const code = {
+      ...richText("capacity"),
+      annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: true, color: "default" },
+    };
+    pages = [page("inline-rich", "2026-10-09T00:00:00Z")];
+    bodyReader = async () => ({
+      has_more: false,
+      next_cursor: null,
+      results: [{
+        object: "block", id: "rich-body", type: "paragraph", has_children: false,
+        paragraph: { rich_text: [equation, richText(" 与 "), code], color: "default" },
+      }],
+    });
+    await warmDiariesCache();
+    const [entry] = await getDiaries();
+    assert.match(entry.summary, /\$a\^2\+b\^2=c\^2\$/, entry.summary);
+    assert.match(entry.summary, /`capacity`/, entry.summary);
+    bodyReader = defaultBody;
+  });
+
   await t.test("keeps every file in the Image property for the top gallery", async () => {
     const multi = page("image-files", "2026-10-01T16:00:00.789Z");
     multi.properties.Image = {

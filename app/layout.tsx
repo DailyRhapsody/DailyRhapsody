@@ -5,6 +5,7 @@ import { GateClient } from "@/components/GateClient";
 import { LangProvider } from "@/components/LangProvider";
 import { PetLauncher } from "@/components/pet/PetLauncher";
 import { getLang } from "@/lib/i18n-server";
+import "katex/dist/katex.min.css";
 import "./globals.css";
 
 const geistSans = Geist({
