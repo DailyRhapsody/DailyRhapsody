@@ -46,7 +46,7 @@ export function EntrySummary({ text }: { text: string }) {
 
   return (
     <div>
-      {/* 正文图片与卡片首图同尺寸：小方图裁切，不按原图宽度铺开。
+      {/* 正文图片按 Markdown 原位置与原始比例渲染，不再抽到卡片顶部当首图。
           博客是滚动的动态流，不是文档：折叠态字号统一、不加粗（标题、加粗、表头都按正文显示），
           标题层级只在点开「展开」之后出现（见 lib/markdown.ts entrySummaryProseClass）。
           正文 13px（0.8125rem，随浏览器默认字号等比缩放；AI-Persona 对话、时间轴年份、后台列表与之一致）。
