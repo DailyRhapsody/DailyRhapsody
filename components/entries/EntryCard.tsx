@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import Link from "next/link";
 import { formatDate12h } from "@/lib/format";
 import { createShareCardElement } from "@/lib/share-card";
@@ -72,11 +73,14 @@ export function EntryCard({
   authorName,
   avatarSrc,
   canEdit,
+  onOpenImages,
 }: {
   item: Diary;
   authorName: string;
   avatarSrc: string;
   canEdit: boolean;
+  /** 点击首图放大：urls 为本篇全部图片，index 为点中的那张 */
+  onOpenImages: (urls: string[], index: number) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -97,6 +101,10 @@ export function EntryCard({
   const [sharePreviewSrc, setSharePreviewSrc] = useState<string | null>(null);
   const [shareModalError, setShareModalError] = useState<string | null>(null);
   const [copyLinkHint, setCopyLinkHint] = useState<"ok" | "fail" | null>(null);
+  // 优化器回源偶发失败（线上见过 /_next/image 400）时，改为直接加载代理原图
+  const [unoptimizedSrcs, setUnoptimizedSrcs] = useState<ReadonlySet<string>>(() => new Set());
+  // 直连也加载失败的（如正文里的视频 block）不再占首图位置，也不进灯箱
+  const [brokenSrcs, setBrokenSrcs] = useState<ReadonlySet<string>>(() => new Set());
   const copyLinkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shareUrlRef = useRef("");
   /** 每次生成 / 关闭都 +1：关闭弹窗即取消，迟到的生成结果按代号丢弃 */
@@ -104,8 +112,13 @@ export function EntryCard({
   /** 系统分享用的图片文件；预览与下载用 data URL（微信等内置浏览器长按保存取不到 blob: 地址） */
   const shareBlobRef = useRef<Blob | null>(null);
   const menuRootRef = useRef<HTMLDivElement | null>(null);
-  /** 分享卡只放文字：正文图片留在列表原位置，不抽出来当首图。 */
+  /** 分享卡只取纯文本；正文图片仍按 Markdown 原位置渲染。 */
   const shareText = useMemo(() => splitBodyImages(item.summary).text, [item.summary]);
+  /** 顶部首图只认 Notion 的 Image 字段；正文图片不抽出来。 */
+  const images = useMemo(
+    () => [...new Set(item.images ?? [])].filter((src) => !brokenSrcs.has(src)),
+    [item.images, brokenSrcs]
+  );
 
   useEffect(() => {
     if (!marginThread && !inlineThread) return;
@@ -418,6 +431,41 @@ export function EntryCard({
             )}
           </div>
         </div>
+        {images.length > 0 && (
+          // p-1/-m-1 给键盘焦点框留出位置，否则会被 overflow-hidden 裁掉
+          <div className="-m-1 flex gap-1 overflow-hidden rounded-xl p-1">
+            {images.slice(0, 3).map((src, idx) => {
+              // 只有公开文章的 Image 属性图走优化器（与改动前一致）：
+              // 私密图优化器回源不带 cookie 会被拒；正文图直连代理，文章转私密后 5 分钟内失效，
+              // 走优化器会被缓存 4 小时；外链图的域名不在 images 配置里，走优化器会直接报错
+              const optimized =
+                src.startsWith("/api/media/p/") && item.isPublic !== false && !unoptimizedSrcs.has(src);
+              return (
+                <button
+                  key={src}
+                  type="button"
+                  onClick={() => onOpenImages(images, idx)}
+                  aria-label={`查看大图 ${idx + 1}/${images.length}`}
+                  // 窄屏（<350px）三张 96px 放不下，按行宽三等分缩小，保持方图
+                  className="relative aspect-square w-[calc((100%-0.5rem)/3)] max-w-24 flex-shrink-0 cursor-zoom-in overflow-hidden rounded-lg bg-zinc-200 dark:bg-zinc-800 sm:h-20 sm:w-20"
+                >
+                  <Image
+                    src={src}
+                    alt=""
+                    fill
+                    className="object-cover"
+                    sizes="96px"
+                    unoptimized={!optimized}
+                    onError={() => {
+                      if (optimized) setUnoptimizedSrcs((prev) => new Set(prev).add(src));
+                      else setBrokenSrcs((prev) => new Set(prev).add(src));
+                    }}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        )}
         {item.summary.trim() !== "" && <EntrySummary text={item.summary} />}
         <div className="flex items-center justify-between gap-2">
           {(item.tags ?? []).length > 0 ? (
