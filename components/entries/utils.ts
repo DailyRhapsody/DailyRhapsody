@@ -16,7 +16,7 @@ const FENCED_CODE = /(`{3,})[\s\S]*?\1/g;
 
 /**
  * 提取正文里独占一行的图片，供分享卡取纯文本与目录提取跳过图片行。
- * 列表卡不再把图片抽出来当首图；正文按 Markdown 原位置渲染。
+ * 列表卡顶部只展示 Notion 的 Image 字段；正文图片仍按 Markdown 原位置渲染。
  */
 export function splitBodyImages(summary: string): { text: string; images: string[] } {
   const images: string[] = [];

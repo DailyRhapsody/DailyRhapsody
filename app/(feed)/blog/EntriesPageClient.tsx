@@ -453,6 +453,9 @@ export default function EntriesPageClient({
                       authorName={profile?.name ?? "DailyRhapsody"}
                       avatarSrc={profile?.avatar ?? "/avatar.png"}
                       canEdit={isAdminSession}
+                      onOpenImages={(urls, i) =>
+                        setLightbox({ urls, i, lbKey: `entry-${item.id}-${i}` })
+                      }
                     />
                   ))}
                 {hasMore && !loading && <div ref={sentinelRef} className="h-4" aria-hidden />}
