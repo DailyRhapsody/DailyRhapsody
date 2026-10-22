@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadLocalDiaries } from "@/lib/dev-snapshot";
+import { countPostsByDate } from "@/lib/post-activity";
 
 /**
  * 本地预览专用的只读文章接口（只在非生产环境提供，生产返回 404）。
@@ -26,6 +27,7 @@ export async function GET() {
   for (const d of items) {
     for (const t of d.tags ?? []) tagCount.set(t, (tagCount.get(t) ?? 0) + 1);
   }
+  const postCounts = countPostsByDate(items);
 
   return NextResponse.json({
     items,
@@ -33,7 +35,8 @@ export async function GET() {
     tagCounts: [...tagCount.entries()]
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value),
-    dates: [...new Set(items.map((d) => d.date))],
+    dates: Object.keys(postCounts),
+    dateCounts: postCounts,
     source: "data/diaries.json（本机脱敏只读快照，非生产数据源）",
   });
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import { countPostsInMonth, type PostCountsByDate } from "@/lib/post-activity";
 import { PAGE_SIZE } from "@/components/entries/utils";
 import { scrollToEntry } from "@/components/entries/ScrollTimeline";
 import type { Diary, EntryOutlineItem } from "@/components/entries/types";
@@ -11,6 +12,8 @@ type DiariesResponse = {
   total?: number;
   tagCounts?: { name: string; value: number }[];
   dates?: string[];
+  /** 日期 → 当天发布篇数；热力图分档与「本月 N 篇」都读它 */
+  dateCounts?: PostCountsByDate;
   outline?: EntryOutlineItem[];
 };
 
@@ -29,9 +32,9 @@ export type UseEntriesState = {
   hasMore: boolean;
   /** 当前最大 tag 计数，用于词云字号映射 */
   maxTagCount: number;
-  /** 后端返回的所有有发文的日期，用于日历热力图 */
-  datesWithPosts: Set<string>;
-  /** 本月发文篇数（来自 datesWithPosts） */
+  /** 后端返回的「日期 → 当天发布篇数」，用于日历热力图分档与本月篇数 */
+  dateCounts: PostCountsByDate;
+  /** 本月发文篇数（同一天多篇逐篇计入） */
   thisMonthPostCount: number;
   /** 文章列表底部 sentinel 的回调 ref，挂在 IntersectionObserver 上做无限滚动 */
   sentinelRef: React.RefCallback<HTMLDivElement>;
@@ -51,7 +54,7 @@ export type UseEntriesState = {
  * 2. 无限滚动：sentinel 进入视窗时 append 下一页
  * 3. hash 深链：URL 带 #entry-123 时如果文章不在当前页就一直翻页直到拉到，滚到一次后
  *    不再响应该锚点；目标不在当前筛选的大纲里则不翻页
- * 4. 把 dates / tagCounts 派生成 datesWithPosts / thisMonthPostCount / maxTagCount
+ * 4. 把 dateCounts / tagCounts 派生成 thisMonthPostCount / maxTagCount
  *
  * 之前这些状态、callback、4 个 effect 全在 entries page 里和彩蛋、tab 切换、滚动同步混在
  * 一起；抽出来后调用方只需要 `const { items, ... } = useEntries(selectedTag)` 一行。
@@ -60,7 +63,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
   const [items, setItems] = useState<Diary[]>([]);
   const [total, setTotal] = useState(0);
   const [tagCounts, setTagCounts] = useState<{ name: string; value: number }[]>([]);
-  const [datesFromApi, setDatesFromApi] = useState<string[]>([]);
+  const [dateCountsFromApi, setDateCountsFromApi] = useState<PostCountsByDate>({});
   const [outline, setOutline] = useState<EntryOutlineItem[]>([]);
   const [pendingEntryId, setPendingEntryId] = useState<string | null>(null);
   /** hash 深链落地滚动的中止函数（scrollToEntry 返回）。时间轴跳转或切 tag 接管、gate 重拉
@@ -121,16 +124,11 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
 
   const hasMore = items.length < total && total > 0;
 
-  const datesWithPosts = useMemo(() => new Set(datesFromApi), [datesFromApi]);
-  const thisMonthPostCount = useMemo(() => {
-    const now = new Date();
-    const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    let count = 0;
-    datesWithPosts.forEach((d) => {
-      if (d.startsWith(prefix)) count++;
-    });
-    return count;
-  }, [datesWithPosts]);
+  /** 本月篇数按「篇」而不是按「有更新的天数」统计：同一天发两篇要算两篇。 */
+  const thisMonthPostCount = useMemo(
+    () => countPostsInMonth(dateCountsFromApi),
+    [dateCountsFromApi],
+  );
   const maxTagCount = tagCounts[0]?.value ?? 1;
 
   const loadPage = useCallback(
@@ -156,7 +154,15 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
           }
           if (typeof data.total === "number") setTotal(data.total);
           if (Array.isArray(data.tagCounts)) setTagCounts(data.tagCounts);
-          if (Array.isArray(data.dates)) setDatesFromApi(data.dates);
+          if (data.dateCounts && typeof data.dateCounts === "object") {
+            setDateCountsFromApi(data.dateCounts);
+          } else if (Array.isArray(data.dates)) {
+            // 旧响应只给去重后的日期（部署切换期间可能命中）：按每天 1 篇兜底，
+            // 不要让热力图整片熄掉；下一次请求就会拿到 dateCounts。
+            setDateCountsFromApi(
+              Object.fromEntries(data.dates.map((d) => [d, 1])),
+            );
+          }
         });
     },
     [],
@@ -195,6 +201,9 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     // 首屏换血后列表整体重置，在途的旧 append 结果不能再接到新列表后面
     appendCtrlRef.current?.abort();
     appendCtrlRef.current = null;
+    // loading 是请求生命周期状态（发起即置位、落地即复位），不是从 props/state 派生的值，
+    // 也不存在级联渲染：这里必须同步置位，否则会先闪一帧旧列表再让位给骨架屏。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     loadPage(0, false, selectedTag, ctrl.signal)
       .catch(() => {
@@ -289,6 +298,9 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     const ctrl = new AbortController();
     appendCtrlRef.current = ctrl;
     appendInFlightRef.current = true;
+    // 同首屏：append 的 loadingMore 也是请求生命周期状态，发起即置位才能让底部占位
+    // 立刻出现；这里不是派生 state，显式关掉启发式误报。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingMore(true);
     loadPage(items.length, true, selectedTag, ctrl.signal)
       .catch(() => {
@@ -377,7 +389,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     loadingMore,
     hasMore,
     maxTagCount,
-    datesWithPosts,
+    dateCounts: dateCountsFromApi,
     thisMonthPostCount,
     sentinelRef: setSentinelEl,
     outline,

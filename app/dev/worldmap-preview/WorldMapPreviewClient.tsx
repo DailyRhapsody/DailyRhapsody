@@ -59,6 +59,7 @@ type EntriesPayload = {
   total: number;
   tagCounts: { name: string; value: number }[];
   dates: string[];
+  dateCounts?: Record<string, number>;
   source?: string;
 };
 
@@ -139,7 +140,7 @@ export default function WorldMapPreviewClient() {
         <div className="px-4 pt-5">
           <div className="mb-5 -mx-4 flex items-start gap-4 overflow-x-auto px-4 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="shrink-0">
-              <CalendarHeatmap datesWithPosts={new Set(data?.dates ?? [])} />
+              <CalendarHeatmap dateCounts={data?.dateCounts ?? {}} />
             </div>
             <div className="inline-flex h-[148px] w-[168px] shrink-0 flex-col items-start justify-center rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-800/80">
               <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">{data ? data.total : "—"}</p>

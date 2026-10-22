@@ -6,6 +6,7 @@ import { getLang } from "@/lib/i18n-server";
 import { applyReferenceEn, getReferenceEnMap } from "@/lib/reference-i18n";
 import { getProfile } from "@/lib/profile-store";
 import { getReadingStats } from "@/lib/weread";
+import { countPostsByDate, countPostsInMonth } from "@/lib/post-activity";
 import FeedShell, { type FeedStats } from "./FeedShell";
 
 /**
@@ -45,9 +46,9 @@ export default async function FeedLayout({
     diaries = null;
   }
   const publicDiaries = (diaries ?? []).filter((d) => d.isPublic !== false);
-  const dates = [...new Set(publicDiaries.map((d) => d.date).filter(Boolean))];
-  const monthKey = new Date().toISOString().slice(0, 7);
-  const thisMonthPostCount = dates.filter((d) => d.slice(0, 7) === monthKey).length;
+  /** 热力图与「本月 N 篇更新」同源：按篇计数，同一天多篇不折叠成一天 */
+  const dateCounts = countPostsByDate(publicDiaries);
+  const thisMonthPostCount = countPostsInMonth(dateCounts);
 
   let moments = null;
   try {
@@ -96,7 +97,7 @@ export default async function FeedLayout({
   const initialStats: FeedStats = {
     totalPosts: publicDiaries.length,
     thisMonthPostCount,
-    dates,
+    dateCounts,
     momentsThumbs,
     referenceTotal,
     referenceTop,
