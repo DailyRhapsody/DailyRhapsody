@@ -118,6 +118,14 @@ test("行内代码在段落和表格里都渲染成 code", () => {
   assert.match(table, /<td><code>capacity<\/code><\/td>/, table);
   assert.ok(markdownPreviewProseClass.includes("[&_code]:rounded"), markdownPreviewProseClass);
   assert.ok(markdownPreviewProseClass.includes("[&_code]:font-mono"), markdownPreviewProseClass);
+  assert.ok(markdownPreviewProseClass.includes("dr-md"), markdownPreviewProseClass);
+});
+
+test("dr-md 行内代码兜底样式存在（不依赖 Tailwind 任意选择器）", async () => {
+  const fs = await import("node:fs/promises");
+  const css = await fs.readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /\.dr-md :not\(pre\) > code\s*\{/, css);
+  assert.match(css, /\.dr-md pre > code\s*\{/, css);
 });
 
 test("行内公式与块公式渲染 KaTeX，代码块里的 $ 原样保留", () => {

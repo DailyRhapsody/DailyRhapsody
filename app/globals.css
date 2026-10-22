@@ -1600,3 +1600,34 @@ html[data-pet-chat="thinking"] .dr-pet-panel-glow > span {
     transform: none;
   }
 }
+
+/*
+ * Markdown 行内代码的兜底样式。
+ * Tailwind 的 [&_code] 任意选择器已经写在 markdownPreviewProseClass 里，
+ * 但博客正文是在 React 渲染后写入 innerHTML 的；一旦旧 CSS chunk 或被缓存的
+ * 页面还在用旧 class，表格单元格里的 <code> 就只剩浏览器默认等宽字体。
+ * 这里用稳定的 dr-md 容器类再落一层，不依赖任意选择器，也覆盖表格/列表。
+ */
+.dr-md :not(pre) > code {
+  padding: 0.1em 0.3em;
+  border-radius: 0.25rem;
+  background: #f4f4f5;
+  color: #3f3f46;
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+.dr-md pre > code {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+}
+
+@media (prefers-color-scheme: dark) {
+  .dr-md :not(pre) > code {
+    background: #27272a;
+    color: #e4e4e7;
+  }
+}
