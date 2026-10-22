@@ -431,4 +431,20 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     bodyReader = defaultBody;
   });
 
+  await t.test("keeps every file in the Image property for the top gallery", async () => {
+    const multi = page("image-files", "2026-10-01T16:00:00.789Z");
+    multi.properties.Image = {
+      type: "files",
+      files: [
+        { name: "one", type: "file", file: { url: "https://files.test/one.png", expiry_time: "2026-10-02T00:00:00.000Z" } },
+        { name: "two", type: "external", external: { url: "https://files.test/two.png" } },
+      ],
+    };
+    pages = [multi];
+    await warmDiariesCache();
+    const [entry] = await getDiaries();
+    assert.equal(entry.images.length, 2, "Image 字段的每个文件都要保留，不能只取第一张");
+    assert.match(entry.images[0], /^\/api\/media\/p\//);
+    assert.equal(entry.images[1], "https://files.test/two.png");
+  });
 });
