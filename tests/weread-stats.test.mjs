@@ -963,28 +963,35 @@ test("字号按名次递减，颜色全部是绿色深浅（不出现灰阶）",
   assert.equal(out[3].bold, false);
   // 绿色档位由浅入深：首名 1，越靠后档位数字越大，组件按档位取实体色，没有灰阶分支
   const shades = out.map((p) => p.shade);
-  assert.deepEqual(shades, [1, 2, 3, 3]);
+  assert.deepEqual(shades, [1, 2, 3, 4], "四词一屏应铺满四档");
+  // 三词一屏按名次在色阶上的相对位置取档（0 / 1.5 / 3 → 1 / 3 / 4），不挤成一档
+  const three = layoutCloud(words("甲", "乙", "丙"), CLOUD_W, CLOUD_H);
+  assert.deepEqual(three.map((p) => p.shade), [1, 3, 4]);
 });
 
-test("云图三档色值：最深档等于热力图绿，其余依次变淡", () => {
+test("云图四档色值：与热力图四档绿一一对应，名次越高对比越强", () => {
   /*
-   * 口径：色值取自阅读组件 SHADE_CLASS 的精确 RGB 任意值，底色取卡片实测合成色
-   * （亮 rgb(255,255,255)、暗 rgb(82,82,85)），与「热力图绿」比较时同样按实测像素。
-   * 用户指定最深一档取热力图的绿（CalendarHeatmap 的 bg-emerald-300/70），
-   * 其余档位在它基础上依次提亮（亮底与暗底上「淡」都等于更亮）。
+   * 口径：色值取自阅读组件 SHADE_CLASS 的精确 RGB 任意值（实测热力图四档合成色），
+   * 底色取卡片真实合成色（亮 rgb(251,251,251)、暗 rgb(35,35,38)），与热力图比较时
+   * 同样用实测像素值。热力图只有二值色时云图最深只到 1 篇那种 pastel 绿；
+   * 四档之后首名直接取 4+ 篇的绿，深度上限解除。
    */
   const light = [
+    [25, 163, 117],
+    [38, 198, 144],
+    [51, 221, 168],
     [142, 240, 203],
-    [159, 242, 211],
-    [176, 244, 218],
   ];
   const dark = [
-    [41, 147, 115],
-    [77, 166, 133],
-    [110, 184, 150],
+    [158, 233, 199],
+    [86, 204, 159],
+    [9, 168, 119],
+    [18, 124, 92],
   ];
-  const HEATMAP_LIGHT = [142, 240, 203]; // 实测：bg-emerald-300/70 合成到白底
-  const HEATMAP_DARK = [41, 147, 115]; // 实测：dark:bg-emerald-400/50 合成到暗色卡底
+  const HEATMAP_LIGHT_DEEPEST = [25, 163, 117]; // 实测：bg-emerald-600/90 合成到卡片底
+  const HEATMAP_LIGHT_PALEST = [142, 240, 203]; // 实测：bg-emerald-300/70
+  const HEATMAP_DARK_BRIGHTEST = [158, 233, 199]; // 实测：dark:bg-emerald-200/95
+  const HEATMAP_DARK_DIMMEST = [18, 124, 92]; // 实测：dark:bg-emerald-400/50
   const lum = (rgb) => {
     const lin = (c) => {
       const v = c / 255;
@@ -993,38 +1000,40 @@ test("云图三档色值：最深档等于热力图绿，其余依次变淡", ()
     return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
   };
 
-  assert.deepEqual(light[0], HEATMAP_LIGHT, "亮色最深档必须等于热力图绿");
-  assert.deepEqual(dark[0], HEATMAP_DARK, "暗色最深档必须等于热力图绿");
+  assert.deepEqual(light[0], HEATMAP_LIGHT_DEEPEST, "亮色首名必须等于热力图最深一档");
+  assert.deepEqual(light[3], HEATMAP_LIGHT_PALEST, "亮色末名必须等于热力图最浅一档");
+  assert.deepEqual(dark[0], HEATMAP_DARK_BRIGHTEST, "暗色首名必须等于热力图最亮一档");
+  assert.deepEqual(dark[3], HEATMAP_DARK_DIMMEST, "暗色末名必须等于热力图最暗一档");
 
-  // 同一主题内亮度单调递增（依次变淡）
-  for (const [name, shades] of [["亮色", light], ["暗色", dark]]) {
-    for (let i = 1; i < shades.length; i++) {
-      assert.ok(
-        lum(shades[i]) > lum(shades[i - 1]),
-        `${name}第 ${i + 1} 档没有比第 ${i} 档更淡（亮度未递增）`,
-      );
-    }
+  // 亮色越靠后越亮，暗色越靠后越暗：两主题下都是「离卡片底色越来越近」
+  for (let i = 1; i < light.length; i++) {
+    assert.ok(lum(light[i]) > lum(light[i - 1]), `亮色第 ${i + 1} 档没有更淡`);
+  }
+  for (let i = 1; i < dark.length; i++) {
+    assert.ok(lum(dark[i]) < lum(dark[i - 1]), `暗色第 ${i + 1} 档没有更淡`);
   }
 
   /*
-   * 记录已知代价而不假装达标：这个基准色是 pastel 色，亮色下三档对比度
-   * 都在 1.2~1.4:1，低于 WCAG 正文 4.5:1 与大字的 3:1。
-   * 这里把上限钉住，避免以后有人以为它达标；真要达标必须同时加深热力图的绿。
+   * 记录已知代价而不假装达标：亮色末名仍是最浅的 pastel 绿，1.31:1，
+   * 低于 WCAG 正文 4.5:1；首名首次越过 3:1（3.10:1）。真要达标必须整体加深绿，
+   * 那会把卡片条的绿色基调改掉，因此保持现状并在 README 注明。
    */
   const ratio = (fg, bg) => {
     const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x);
     return (a + 0.05) / (b + 0.05);
   };
-  const white = [255, 255, 255];
-  const lightRatios = light.map((c) => ratio(c, white));
+  const lightCard = [251, 251, 251];
+  const lightRatios = light.map((c) => ratio(c, lightCard));
+  assert.ok(lightRatios.every((r, i) => i === 0 || r < lightRatios[i - 1]), "亮色对比度应逐档递减");
+  assert.ok(lightRatios[0] >= 3, `亮色首名对比度 ${lightRatios[0].toFixed(2)}:1 跌回 3:1 以下`);
   assert.ok(
-    lightRatios.every((r) => r < 1.5),
-    `亮色三档对比度 ${lightRatios.map((r) => r.toFixed(2)).join("/")} 超出预期，口径变了要同步 README`,
+    lightRatios[3] < 1.5,
+    `亮色末名对比度 ${lightRatios[3].toFixed(2)}:1 超出预期，口径变了要同步 README`,
   );
-  // 暗色三档在暗底上都还能辨认（≥2:1），这是与热力图一致的前提下能拿到的最好结果
-  const darkCard = [82, 82, 85];
+  // 暗色四档都远高于 3:1（11.15 / 7.86 / 5.13 / 3.03），暗底上不放行不可辨的档位
+  const darkCard = [35, 35, 38];
   for (const [i, c] of dark.entries()) {
-    assert.ok(ratio(c, darkCard) >= 2, `暗色第 ${i + 1} 档对比度不足 2:1`);
+    assert.ok(ratio(c, darkCard) >= 3, `暗色第 ${i + 1} 档对比度不足 3:1`);
   }
 });
 
