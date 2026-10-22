@@ -15,9 +15,8 @@ const STANDALONE_IMAGE_LINE =
 const FENCED_CODE = /(`{3,})[\s\S]*?\1/g;
 
 /**
- * 把正文里独占一行的图片抽出来，和 Image 属性一起作为卡片首图展示。
- * 只删图片行和它占用的那一个空行分隔，作者自己留的空行不动；代码块原样保留；
- * 与文字写在同一行的图片不动，仍留在正文里。
+ * 提取正文里独占一行的图片，供分享卡取纯文本与目录提取跳过图片行。
+ * 列表卡不再把图片抽出来当首图；正文按 Markdown 原位置渲染。
  */
 export function splitBodyImages(summary: string): { text: string; images: string[] } {
   const images: string[] = [];

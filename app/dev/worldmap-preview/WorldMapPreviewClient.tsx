@@ -189,7 +189,6 @@ export default function WorldMapPreviewClient() {
                 authorName="DailyRhapsody"
                 avatarSrc="/avatar.png"
                 canEdit={false}
-                onOpenImages={() => {}}
               />
             ))}
           </section>
