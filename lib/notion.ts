@@ -754,21 +754,23 @@ function extractIsPublic(page: PageObjectResponse): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Image extraction from the "Image" Files property (max 1 image per entry)
+// Image extraction from the "Image" Files property
+// Image 字段是多文件属性；顶部图片区最多展示 3 张，数据层必须全部保留，
+// 不能只取 files[0]，否则用户放两张时第二张会静默丢失。
 // ---------------------------------------------------------------------------
 
 function extractImages(page: PageObjectResponse): string[] {
   const prop = page.properties["Image"];
   if (prop?.type !== "files") return [];
-  const first = prop.files[0];
-  if (!first) return [];
-  let url: string | undefined;
-  if (first.type === "file") {
-    url = mediaProxyPath("p", page.id, first.file.url);
-  } else if (first.type === "external") {
-    url = first.external.url;
-  }
-  return url ? [url] : [];
+  return prop.files.flatMap((file) => {
+    if (file.type === "file") {
+      return [mediaProxyPath("p", page.id, file.file.url)];
+    }
+    if (file.type === "external") {
+      return [file.external.url];
+    }
+    return [];
+  });
 }
 
 // ---------------------------------------------------------------------------
