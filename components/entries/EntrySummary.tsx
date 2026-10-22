@@ -18,6 +18,11 @@ export function EntrySummary({ text }: { text: string }) {
   const needsExpand = text.split(/\n/).length > MAX_SUMMARY_LINES || text.length > 280;
   const rendered = useMemo(() => renderMarkdown(text), [text]);
   const contentRef = useRef<HTMLDivElement>(null);
+  const outerRef = useRef<HTMLDivElement>(null);
+  /** 正文里有图片时，按文字长度算出的 needsExpand 可能为 false，
+   *  但图片已经占满折叠高度；直接量 DOM 是否溢出，避免长图文章没有「展开」。 */
+  const [overflowing, setOverflowing] = useState(false);
+  const canExpand = needsExpand || overflowing || expanded;
   const dark = useSyncExternalStore(
     subscribeColorScheme,
     () => window.matchMedia(DARK_QUERY).matches,
@@ -30,6 +35,25 @@ export function EntrySummary({ text }: { text: string }) {
     const root = contentRef.current;
     if (root) root.innerHTML = rendered;
   }, [rendered]);
+
+  useLayoutEffect(() => {
+    const outer = outerRef.current;
+    const content = contentRef.current;
+    if (!outer || !content) return;
+    const measure = () => {
+      setOverflowing(outer.scrollHeight > outer.clientHeight + 1);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(outer);
+    observer.observe(content);
+    const images = Array.from(content.querySelectorAll("img"));
+    for (const image of images) image.addEventListener("load", measure);
+    return () => {
+      observer.disconnect();
+      for (const image of images) image.removeEventListener("load", measure);
+    };
+  }, [rendered, expanded]);
 
   // 内容写入后（或切换深浅色时）把 mermaid 代码块渲染成图
   useEffect(() => {
@@ -53,11 +77,12 @@ export function EntrySummary({ text }: { text: string }) {
           引用与图注只用灰色区分，正文两端对齐（链接文字多是整串网址，允许断在任意处，
           否则网址整体挪到下一行、上一行被两端对齐拉散） */}
       <div
+        ref={outerRef}
         className={entrySummaryProseClass(expanded)}
       >
         <div ref={contentRef} className="space-y-[1.15em]" />
       </div>
-      {needsExpand && (
+      {canExpand && (
         <button
           type="button"
           onClick={() => setExpanded((e) => !e)}
