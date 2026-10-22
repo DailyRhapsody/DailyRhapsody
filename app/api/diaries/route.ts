@@ -5,6 +5,7 @@ import type { EntryOutlineItem } from "@/components/entries/types";
 import { getDiaries, isNotionConfigured, type Diary } from "@/lib/notion";
 import { loadLocalDiaries } from "@/lib/dev-snapshot";
 import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
+import { countPostsByDate, type PostCountsByDate } from "@/lib/post-activity";
 import { stripPrivateMarkers } from "@/lib/share-card";
 
 // SWR 后台重拉（waitUntil）跑在本次函数调用里，受 maxDuration 约束。
@@ -61,6 +62,8 @@ export async function GET(req: Request) {
   }
   const admin = await isAdmin();
   const visible = admin ? diaries : diaries.filter((d) => d.isPublic !== false);
+  /** 日历热力图与「本月 N 篇更新」共用的按篇计数：同一天多篇不再被去重折叠。 */
+  const postCounts = countPostsByDate(visible);
 
   if (limitParam == null || limitParam === "") {
     if (!admin) {
@@ -71,7 +74,9 @@ export async function GET(req: Request) {
         total: visible.length,
         hasMore: visible.length > items.length,
         tagCounts: getTagCounts(visible),
-        dates: [...new Set(visible.map((d) => d.date))],
+        /** 兼容字段：部署切换期间旧客户端还在读 dates，按 dateCounts 的键派生同一份数据 */
+        dates: Object.keys(postCounts),
+        dateCounts: postCounts,
       };
       return withAntiScrapeHeaders(NextResponse.json(body));
     }
@@ -108,12 +113,14 @@ export async function GET(req: Request) {
     hasMore: boolean;
     tagCounts?: { name: string; value: number }[];
     dates?: string[];
+    dateCounts?: PostCountsByDate;
     outline?: EntryOutlineItem[];
   } = { items, total, hasMore };
 
   if (offset === 0) {
     body.tagCounts = getTagCounts(visible);
-    body.dates = [...new Set(visible.map((d) => d.date))];
+    body.dates = Object.keys(postCounts);
+    body.dateCounts = postCounts;
     // 时间轴大纲：用 filtered（已剔除访客不可见的私密文章并套用 tag/搜索），与 total 同口径
     if (searchParams.get("outline") === "1") body.outline = buildEntryOutline(filtered);
   }

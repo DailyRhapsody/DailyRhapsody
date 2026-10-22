@@ -1,12 +1,32 @@
 "use client";
 
 import { memo } from "react";
+import { activityLevel, type PostCountsByDate } from "@/lib/post-activity";
 
-/** 本月日历热力图：仅方块，始终当前月，有发布的日期高亮；列顺序为周一至周日 */
+/**
+ * 档位色：0 篇 / 1 篇 / 2 篇 / 3 篇 / 4 篇及以上。
+ *
+ * 分档而不是按篇数插值，原因有两条：
+ * 1. 方格只有约 20px，连续插值在这么小的面积上分辨不出相邻几个百分点的亮度差；
+ *    21st.dev 的设计指南与 Stephen Few 的结论一致：顺序色阶 4–5 档最好读，上限约 7–8 档。
+ * 2. 本站 220 个发文日里 185 天只有 1 篇（84%），线性插值会把绝大多数日子压到最浅一档，
+ *    连「这天发过文」这个主信号都变弱。第 1 档沿用原来的 emerald-300/70，视觉基调不变。
+ *
+ * 浅色下越深 = 越多；深色下越亮 = 越多（深色底上亮度才是强度）。
+ */
+const LEVEL_CLASS: Record<number, string> = {
+  0: "bg-zinc-200 dark:bg-zinc-600/80",
+  1: "bg-emerald-300/70 dark:bg-emerald-400/50",
+  2: "bg-emerald-400/80 dark:bg-emerald-400/75",
+  3: "bg-emerald-500/85 dark:bg-emerald-300/85",
+  4: "bg-emerald-600/90 dark:bg-emerald-200/95",
+};
+
+/** 本月日历热力图：仅方块，始终当前月，当天发布篇数决定深浅；列顺序为周一至周日 */
 export const CalendarHeatmap = memo(function CalendarHeatmap({
-  datesWithPosts,
+  dateCounts,
 }: {
-  datesWithPosts: Set<string>;
+  dateCounts: PostCountsByDate;
 }) {
   const now = new Date();
   const y = now.getFullYear();
@@ -52,21 +72,25 @@ export const CalendarHeatmap = memo(function CalendarHeatmap({
          这里改用与卡片条另外三张相同的 w-[168px]。 */
       className="inline-grid h-[148px] w-[168px] shrink-0 grid-cols-7 content-between gap-1 rounded-xl border border-zinc-200 bg-white/80 p-2.5 shadow-sm dark:border-zinc-700 dark:bg-zinc-800/80"
     >
-      {weeks.flat().map((day, i) =>
-        day === null ? (
-          <div key={`e-${i}`} className="aspect-square rounded-[4px] bg-zinc-100 dark:bg-zinc-700/60" />
-        ) : (
+      {weeks.flat().map((day, i) => {
+        if (day === null) {
+          return (
+            <div
+              key={`e-${i}`}
+              className="aspect-square rounded-[4px] bg-zinc-100 dark:bg-zinc-700/60"
+            />
+          );
+        }
+        const dateKey = toDateKey(day);
+        const count = dateCounts[dateKey] ?? 0;
+        return (
           <div
             key={day}
-            className={`aspect-square rounded-[4px] transition-colors ${
-              datesWithPosts.has(toDateKey(day))
-                ? "bg-emerald-300/70 dark:bg-emerald-400/50"
-                : "bg-zinc-200 dark:bg-zinc-600/80"
-            }`}
-            title={`${y}-${String(m + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}${datesWithPosts.has(toDateKey(day)) ? " 有发布" : ""}`}
+            className={`aspect-square rounded-[4px] transition-colors ${LEVEL_CLASS[activityLevel(count)]}`}
+            title={count > 0 ? `${dateKey} · ${count} 篇` : dateKey}
           />
-        )
-      )}
+        );
+      })}
     </div>
   );
 });

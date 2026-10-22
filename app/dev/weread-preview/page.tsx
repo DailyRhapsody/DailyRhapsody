@@ -16,14 +16,28 @@ export default async function WereadPreviewPage() {
 
   const stats = await fetchReadingStats();
 
-  // 用本月真实的发布日期喂热力图，让对照更接近线上观感
+  // 用本月真实的发布日期喂热力图，让对照更接近线上观感；篇数故意取 1–4，
+  // 四档配色在同一次预览里都能看到
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
-  const datesWithPosts = new Set(
-    [2, 5, 6, 9, 11, 14, 15, 16, 17, 20, 21, 23, 26, 28].map(
-      (d) => `${y}-${m}-${String(d).padStart(2, "0")}`,
-    ),
+  const dateCounts = Object.fromEntries(
+    [
+      [2, 1],
+      [5, 2],
+      [6, 1],
+      [9, 3],
+      [11, 1],
+      [14, 4],
+      [15, 1],
+      [16, 1],
+      [17, 2],
+      [20, 1],
+      [21, 1],
+      [23, 3],
+      [26, 1],
+      [28, 1],
+    ].map(([d, n]) => [`${y}-${m}-${String(d).padStart(2, "0")}`, n]),
   );
 
   return (
@@ -42,7 +56,7 @@ export default async function WereadPreviewPage() {
           className="entries-top-cards mt-6 flex items-start gap-4 overflow-x-auto px-1 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           <div className="shrink-0">
-            <CalendarHeatmap datesWithPosts={datesWithPosts} />
+            <CalendarHeatmap dateCounts={dateCounts} />
           </div>
 
           <ReadingStatsCard stats={stats} />

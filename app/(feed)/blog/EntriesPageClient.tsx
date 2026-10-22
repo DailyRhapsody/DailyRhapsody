@@ -57,7 +57,7 @@ export default function EntriesPageClient({
     loadingMore,
     hasMore,
     maxTagCount,
-    datesWithPosts,
+    dateCounts,
     thisMonthPostCount,
     sentinelRef,
     outline,
@@ -176,7 +176,7 @@ export default function EntriesPageClient({
       : {
           totalPosts,
           thisMonthPostCount,
-          dates: [...datesWithPosts],
+          dateCounts,
           momentsThumbs,
         },
   );

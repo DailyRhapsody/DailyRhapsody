@@ -17,11 +17,13 @@ import { CalendarHeatmap } from "@/components/entries/CalendarHeatmap";
 import { ReadingStatsCard } from "@/components/entries/ReadingStatsCard";
 import type { StickyProfileHeaderData } from "@/components/StickyProfileHeader";
 import type { ReadingStats } from "@/lib/weread";
+import type { PostCountsByDate } from "@/lib/post-activity";
 
 export type FeedStats = {
   totalPosts: number;
   thisMonthPostCount: number;
-  dates: string[];
+  /** 日期 → 当天发布篇数；热力图分档与「本月 N 篇」同源 */
+  dateCounts: PostCountsByDate;
   momentsThumbs: { src: string; isVideo: boolean }[];
   referenceTotal: number;
   referenceTop: { id: string; title: string }[];
@@ -81,7 +83,6 @@ export default function FeedShell({
   );
 
   const active = pathname === "/moments" ? 1 : pathname === "/reference" ? 2 : 0;
-  const datesWithPosts = useMemo(() => new Set(stats.dates), [stats.dates]);
 
   /* 顶部横向卡片在视口边缘直接裁切会显得生硬：根据滚动位置动态给左右边缘加渐隐。 */
   const topCardsRef = useRef<HTMLDivElement>(null);
@@ -156,7 +157,7 @@ export default function FeedShell({
             className="entries-top-cards mb-5 -mx-4 flex items-start gap-4 overflow-x-auto px-4 py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           >
             <div className="shrink-0">
-              <CalendarHeatmap datesWithPosts={datesWithPosts} />
+              <CalendarHeatmap dateCounts={stats.dateCounts} />
             </div>
             <ReadingStatsCard stats={readingStats} />
 
