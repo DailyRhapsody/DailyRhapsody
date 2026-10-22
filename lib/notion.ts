@@ -110,8 +110,9 @@ const LATEST_CACHE_KEY = "notion:diaries:latest";
  * 正文转换器版本。改 blockToMarkdown / 缩进 / toggle 规则时 +1。
  * 换缓存键只隔离新旧实例，不会让存量文章重新转换——必须靠这个版本号判断
  * 「旧正文是不是当前转换器产出的」，否则 v6 的正文会被当成可复用写进 v7。
+ * v8：行内公式转为 $...$、行内代码支持反引号内容；正文需重转换。
  */
-export const BODY_VERSION = 7;
+export const BODY_VERSION = 8;
 
 /** 每轮刷新最多重转换多少篇老正文。全量 281 篇跑不进 200s 预算，分批迁移。 */
 const BODY_MIGRATION_BATCH = 40;
@@ -285,9 +286,21 @@ function asCodeFence(text: string): string {
 function richTextToMarkdown(items: RichTextItemResponse[]): string {
   return items
     .map((i) => {
+      // Notion 行内公式是 rich_text 的一种类型，不是 text + annotation；
+      // 旧代码只取 plain_text，公式会退化成普通文本。
+      if (i.type === "equation") {
+        const expression = i.equation.expression.trim();
+        return expression ? `$${expression}$` : "";
+      }
       let t = i.plain_text;
       const a = i.annotations;
-      if (a.code) t = `\`${t}\``;
+      if (a.code) {
+        // 内容本身可能含反引号：围栏比最长的一段再多一个，避免提前闭合。
+        const longest = Math.max(0, ...(t.match(/`+/g) ?? []).map((run) => run.length));
+        const ticks = "`".repeat(longest + 1);
+        const pad = t.startsWith("`") || t.endsWith("`") ? " " : "";
+        t = `${ticks}${pad}${t}${pad}${ticks}`;
+      }
       if (a.bold) t = `**${t}**`;
       if (a.italic) t = `*${t}*`;
       if (a.strikethrough) t = `~~${t}~~`;
