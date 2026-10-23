@@ -16,6 +16,7 @@ import { getSizeClass } from "@/components/entries/utils";
 import type { MomentsTimelineRow } from "@/components/entries/types";
 import { useReference, type ReferenceListItem } from "@/hooks/useReference";
 import { usePublishFeedStats } from "../FeedShell";
+import { shouldPublishEntryStats } from "@/lib/feed-stats";
 import ReferenceFeed from "../reference/ReferenceFeed";
 import { pickReferenceTop } from "@/lib/reference-thumbs";
 import { useProfile, type Profile } from "@/hooks/useProfile";
@@ -54,6 +55,7 @@ export default function EntriesPageClient({
     total,
     tagCounts,
     loading,
+    firstPageLoaded,
     loadingMore,
     hasMore,
     maxTagCount,
@@ -170,16 +172,17 @@ export default function EntriesPageClient({
     return items.slice(0, 4);
   }, [momentsTimeline]);
 
+  /**
+   * 两条统计各按自己的数据源就绪：博客统计等首屏 2xx 落地（参考 tab 一律不写，
+   * 见 shouldPublishEntryStats 的注释），动态缩略卡只在自己有数据时才覆盖，
+   * 免得首帧的空数组把服务端快照清空。
+   */
   usePublishFeedStats(
-    activeTopTab === 2
-      ? {}
-      : {
-          totalPosts,
-          thisMonthPostCount,
-          dateCounts,
-          momentsThumbs,
-        },
+    shouldPublishEntryStats({ activeTopTab, loading, firstPageLoaded })
+      ? { totalPosts, thisMonthPostCount, dateCounts }
+      : {},
   );
+  usePublishFeedStats(momentsThumbs.length > 0 ? { momentsThumbs } : {});
   usePublishFeedStats(
     referenceTotal > 0 || referenceTop.length > 0
       ? {
