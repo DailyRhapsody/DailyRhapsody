@@ -26,6 +26,8 @@ export type UseEntriesState = {
   tagCounts: { name: string; value: number }[];
   /** 首屏 / 切标签时的 loading；分页 append 时不会拉起这个 */
   loading: boolean;
+  /** 首屏列表是否至少成功落地过一次；用来区分「真的没有文章」与「还没拿到 / 请求失败」 */
+  firstPageLoaded: boolean;
   /** 分页 append loading */
   loadingMore: boolean;
   /** 是否还有下一页（items.length < total） */
@@ -78,6 +80,8 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     hashLandedRef.current = null;
     setPendingEntryId(id);
   }, []);
+  /** 是否至少有一次首屏请求成功落地（2xx）。用于区分「真的 0 篇」与「还没拿到 / 请求失败」 */
+  const [firstPageLoaded, setFirstPageLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -151,6 +155,9 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
             setItems(list);
             setOutline(Array.isArray(data.outline) ? data.outline : []);
             loadedTagRef.current = tag; // items 从此归属这个 tag
+            // 只有 2xx 首屏响应才算「拿到过数据」：失败时下面会清空 items、total 归零，
+            // 那种 0 不能当成「本站没有文章」写回顶部卡片。
+            setFirstPageLoaded(true);
           }
           if (typeof data.total === "number") setTotal(data.total);
           if (Array.isArray(data.tagCounts)) setTagCounts(data.tagCounts);
@@ -386,6 +393,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     total,
     tagCounts,
     loading,
+    firstPageLoaded,
     loadingMore,
     hasMore,
     maxTagCount,

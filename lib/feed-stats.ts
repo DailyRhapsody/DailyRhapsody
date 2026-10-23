@@ -14,3 +14,24 @@ import type { Diary } from "./notion";
 export function visibleDiariesFor(diaries: Diary[], admin: boolean): Diary[] {
   return admin ? diaries : diaries.filter((d) => d.isPublic !== false);
 }
+
+/**
+ * 客户端是否可以把自己那份博客统计写回顶部卡片。
+ *
+ * 参考 tab 一律不写：那个路由不展示博客统计，参考页首帧的 total 恒为 0，写回会把卡片刷成 0。
+ * 首屏尚未成功落地也不写：`loading` 期间以及首次成功之前的 total 同样是 0，但那不代表
+ * 「真的没有文章」。用 `firstPageLoaded`（只在 2xx 首屏响应后置真）区分，既挡住失败那一帧，
+ * 也让真实的 0 篇能正常写回。
+ */
+export function shouldPublishEntryStats({
+  activeTopTab,
+  loading,
+  firstPageLoaded,
+}: {
+  activeTopTab: number;
+  loading: boolean;
+  firstPageLoaded: boolean;
+}): boolean {
+  if (activeTopTab === 2) return false;
+  return !loading && firstPageLoaded;
+}
