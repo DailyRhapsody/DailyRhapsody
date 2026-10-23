@@ -431,6 +431,27 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     bodyReader = defaultBody;
   });
 
+  await t.test("multi-line bold in a quote is split per line instead of leaking **", async () => {
+    const bold = {
+      ...richText("礼让来自社会规范\n博弈论上有个反直觉的结论"),
+      annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: "default" },
+    };
+    pages = [page("multiline-bold", "2026-10-10T00:00:00Z")];
+    bodyReader = async () => ({
+      has_more: false,
+      next_cursor: null,
+      results: [{
+        object: "block", id: "quote-body", type: "quote", has_children: false,
+        quote: { rich_text: [bold], color: "default" },
+      }],
+    });
+    await warmDiariesCache();
+    const [entry] = await getDiaries();
+    assert.match(entry.summary, /> \*\*礼让来自社会规范\*\*\n> \*\*博弈论上有个反直觉的结论\*\*/, entry.summary);
+    assert.ok(!entry.summary.includes("**礼让来自社会规范\n"), entry.summary);
+    bodyReader = defaultBody;
+  });
+
   await t.test("keeps every file in the Image property for the top gallery", async () => {
     const multi = page("image-files", "2026-10-01T16:00:00.789Z");
     multi.properties.Image = {

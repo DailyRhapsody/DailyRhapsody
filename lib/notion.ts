@@ -111,8 +111,9 @@ const LATEST_CACHE_KEY = "notion:diaries:latest";
  * 换缓存键只隔离新旧实例，不会让存量文章重新转换——必须靠这个版本号判断
  * 「旧正文是不是当前转换器产出的」，否则 v6 的正文会被当成可复用写进 v7。
  * v8：行内公式转为 $...$、行内代码支持反引号内容；正文需重转换。
+ * v9：加粗/斜体/删除线按行拆分，避免跨行 `**…**` 变成字面量；正文需重转换。
  */
-export const BODY_VERSION = 8;
+export const BODY_VERSION = 9;
 
 /** 每轮刷新最多重转换多少篇老正文。全量 281 篇跑不进 200s 预算，分批迁移。 */
 const BODY_MIGRATION_BATCH = 40;
@@ -283,6 +284,22 @@ function asCodeFence(text: string): string {
   return `${fence}\n${text}\n${fence}`;
 }
 
+/** 给每个非空行单独包标记：Notion 的 bold/italic 可能横跨一行内的换行，
+ *  直接把 **…** 套在整段文本上会得到「**第一行\n第二行**」，marked 不认这种跨行强调。 */
+function wrapEachLine(text: string, marker: string): string {
+  return text
+    .split("\n")
+    .map((line) => (line ? `${marker}${line}${marker}` : line))
+    .join("\n");
+}
+
+function inlineCodeForLine(text: string): string {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+  const ticks = "`".repeat(longest + 1);
+  const pad = text.startsWith("`") || text.endsWith("`") ? " " : "";
+  return `${ticks}${pad}${text}${pad}${ticks}`;
+}
+
 function richTextToMarkdown(items: RichTextItemResponse[]): string {
   return items
     .map((i) => {
@@ -296,15 +313,12 @@ function richTextToMarkdown(items: RichTextItemResponse[]): string {
       const a = i.annotations;
       if (a.code) {
         // 内容本身可能含反引号：围栏比最长的一段再多一个，避免提前闭合。
-        const longest = Math.max(0, ...(t.match(/`+/g) ?? []).map((run) => run.length));
-        const ticks = "`".repeat(longest + 1);
-        const pad = t.startsWith("`") || t.endsWith("`") ? " " : "";
-        t = `${ticks}${pad}${t}${pad}${ticks}`;
+        t = t.split("\n").map((line) => (line ? inlineCodeForLine(line) : line)).join("\n");
       }
-      if (a.bold) t = `**${t}**`;
-      if (a.italic) t = `*${t}*`;
-      if (a.strikethrough) t = `~~${t}~~`;
-      if (i.href) t = `[${t}](${i.href})`;
+      if (a.bold) t = wrapEachLine(t, "**");
+      if (a.italic) t = wrapEachLine(t, "*");
+      if (a.strikethrough) t = wrapEachLine(t, "~~");
+      if (i.href) t = t.split("\n").map((line) => (line ? `[${line}](${i.href})` : line)).join("\n");
       return t;
     })
     .join("");
