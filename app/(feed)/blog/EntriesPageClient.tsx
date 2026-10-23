@@ -170,8 +170,14 @@ export default function EntriesPageClient({
     return items.slice(0, 4);
   }, [momentsTimeline]);
 
+  /**
+   * 首屏数据落地前不上报：参考页与慢导航时，新挂载的实例先拿到 total=0，
+   * 而过渡期间 usePathname() 可能还指着上一页，这一帧上报会把顶部卡片刷成 0。
+   * 参考 tab 维持空补丁——该页不展示博客统计，数字由共享 layout 首屏给出。
+   */
+  const entryStatsReady = !loading && totalPosts > 0;
   usePublishFeedStats(
-    activeTopTab === 2
+    activeTopTab === 2 || !entryStatsReady
       ? {}
       : {
           totalPosts,

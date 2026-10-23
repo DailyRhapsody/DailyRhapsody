@@ -6,7 +6,9 @@ import { getLang } from "@/lib/i18n-server";
 import { applyReferenceEn, getReferenceEnMap } from "@/lib/reference-i18n";
 import { getProfile } from "@/lib/profile-store";
 import { getReadingStats } from "@/lib/weread";
+import { isAdmin } from "@/lib/auth";
 import { countPostsByDate, countPostsInMonth } from "@/lib/post-activity";
+import { visibleDiariesFor } from "@/lib/feed-stats";
 import FeedShell, { type FeedStats } from "./FeedShell";
 
 /**
@@ -45,9 +47,21 @@ export default async function FeedLayout({
   } catch {
     diaries = null;
   }
-  const publicDiaries = (diaries ?? []).filter((d) => d.isPublic !== false);
+  /**
+   * 查看者权限读一次 cookie：站长看到的篇数含私密，访客只含公开。
+   * 首屏就要算对——参考 tab 不写回卡片数字（那里为空），一旦首屏给的是
+   * 公开口径，站长会一直看到 276，直到切回博客 tab 才被客户端改成 280。
+   * 取权限失败按访客处理，不让鉴权异常把整页打挂。
+   */
+  let admin = false;
+  try {
+    admin = await isAdmin();
+  } catch {
+    admin = false;
+  }
+  const visibleDiaries = visibleDiariesFor(diaries ?? [], admin);
   /** 热力图与「本月 N 篇更新」同源：按篇计数，同一天多篇不折叠成一天 */
-  const dateCounts = countPostsByDate(publicDiaries);
+  const dateCounts = countPostsByDate(visibleDiaries);
   const thisMonthPostCount = countPostsInMonth(dateCounts);
 
   let moments = null;
@@ -95,7 +109,7 @@ export default async function FeedLayout({
   }
 
   const initialStats: FeedStats = {
-    totalPosts: publicDiaries.length,
+    totalPosts: visibleDiaries.length,
     thisMonthPostCount,
     dateCounts,
     momentsThumbs,
