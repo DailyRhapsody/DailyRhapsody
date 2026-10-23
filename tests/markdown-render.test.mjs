@@ -128,6 +128,14 @@ test("dr-md 行内代码兜底样式存在（不依赖 Tailwind 任意选择器�
   assert.match(css, /\.dr-md pre > code\s*\{/, css);
 });
 
+test("引用块内部空行渲染为相邻段落，并有段间距", async () => {
+  const html = renderMarkdown("> 第一段\n>\n> 第二段");
+  assert.match(html, /<blockquote>[\s\S]*<p>第一段<\/p>[\s\S]*<p>第二段<\/p>[\s\S]*<\/blockquote>/, html);
+  const fs = await import("node:fs/promises");
+  const css = await fs.readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /\.dr-md blockquote > p \+ p\s*\{/, css);
+});
+
 test("行内公式与块公式渲染 KaTeX，代码块里的 $ 原样保留", () => {
   const inline = renderMarkdown("质能方程 $E=mc^2$。");
   assert.match(inline, /class="katex"/, inline);

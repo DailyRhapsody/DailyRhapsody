@@ -1631,3 +1631,16 @@ html[data-pet-chat="thinking"] .dr-pet-panel-glow > span {
     color: #e4e4e7;
   }
 }
+
+/*
+ * 引用块内部段间距。Notion 的 quote 里可以用空行分段；marked 会输出多个 <p>，
+ * Tailwind preflight 把 p 的默认 margin 清零，若只靠外层 space-y，段落会挤在一起。
+ * 这里只给相邻段落补回一个空行的高度，不改变 blockquote 与外部块的间距。
+ */
+.dr-md blockquote > p {
+  margin-block: 0;
+}
+
+.dr-md blockquote > p + p {
+  margin-top: 0.85em;
+}
