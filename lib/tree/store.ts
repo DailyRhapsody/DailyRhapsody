@@ -10,7 +10,7 @@ import seedTaxonomyJson from "@/public/tree/taxonomy.json";
  * 下一轮部署之前也能立刻生效。种子仍随仓库发布，缓存被清空时不会白屏。
  */
 
-export type TreeEntry = { id: string; date: string; t: number; sub: string };
+export type TreeEntry = { id: string; date: string; t: number; sub: string; name?: string };
 
 export type TreeSub = { name: string; count: number };
 

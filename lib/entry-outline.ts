@@ -47,6 +47,7 @@ export function buildEntryOutline(list: Diary[]): EntryOutlineItem[] {
     const excerpt = excerptOf(plain);
     return {
       id: d.id,
+      ...(d.name ? { name: d.name } : {}),
       at: d.publishedAt ?? `${d.date}T12:00:00`,
       words: countPlainWords(plain),
       ...(excerpt ? { excerpt } : {}),
