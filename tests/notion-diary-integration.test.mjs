@@ -133,6 +133,7 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     pages = [page("warmed", "2026-10-01T16:00:00.456Z")];
     assert.equal(await warmDiariesCache(), 1, "warm refreshes even a fresh cache");
     const [warmed] = await getCachedDiaries();
+    assert.equal(warmed.name, "warmed", "Notion Name 要进入列表缓存，供时间轴使用");
     assert.deepEqual([warmed.id, warmed.date, warmed.publishedAt],
       ["warmed", "2026-10-02", "2026-10-01T16:00:00.456Z"]);
     assert.equal(warmed.summary, "body:warmed");
@@ -332,16 +333,19 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     registered = Promise.withResolvers();
     await markDiariesCacheStale();
     assert.ok(Number(store.get(signalKey)) > store.get(CURRENT).snapshotAt);
+    // mark 会先做一次只读列表属性刷新（pin/Name），再触发全量正文刷新
+    const afterFastProperties = query.mock.callCount();
+    assert.ok(afterFastProperties > callsBefore, "fast list-property refresh should query Notion");
     await registered.promise;
     await background;
-    assert.equal(query.mock.callCount(), callsBefore);
+    assert.equal(query.mock.callCount(), afterFastProperties);
     assert.deepEqual(await getCachedDiaries(), freshSeed);
     store.delete(lockKey);
     registered = Promise.withResolvers();
     assert.deepEqual(await getDiaries(), freshSeed, "fresh snapshot remains available during refresh");
     await registered.promise;
     await background;
-    assert.equal(query.mock.callCount() - callsBefore, 2);
+    assert.equal(query.mock.callCount() - afterFastProperties, 2);
     assert.equal((await getCachedDiaries()).some((d) => d.id === "fresh-seed"), false);
   });
   await t.test("analysis requires verified complete bodies, reuses unchanged versions and excludes private sources", async () => {

@@ -43,6 +43,7 @@ const entries = (Array.isArray(raw) ? raw : raw.data || raw.results || [])
     id: String(entry.id),
     date: String(entry.date || entry.publishedAt || "").slice(0, 10),
     summary: redactPII(String(entry.summary || "").replace(/\s+/g, " ").trim()).slice(0, 700),
+    name: String(entry.name || "").trim() || undefined,
   }))
   .filter((entry) => entry.id && entry.date);
 const textEntries = entries.filter((entry) => entry.summary.length >= 8);
@@ -211,6 +212,7 @@ function buildTree(taxonomy, assignments) {
       date: item.entry.date,
       t: (item.parts.year - epoch.year) * 12 + (item.parts.month - epoch.month) + (item.parts.day - 1) / 31,
       sub,
+      ...(item.entry.name ? { name: item.entry.name } : {}),
     });
   }
   const families = taxonomy.families.map((family) => {
@@ -244,6 +246,7 @@ function buildTree(taxonomy, assignments) {
             date: item.entry.date,
             t: (item.parts.year - epoch.year) * 12 + (item.parts.month - epoch.month) + (item.parts.day - 1) / 31,
             sub: "短记",
+            ...(item.entry.name ? { name: item.entry.name } : {}),
           })),
         }],
       });

@@ -35,8 +35,8 @@ export function entryTimelineRows(outline: EntryOutlineItem[]): TimelineRow[] {
       at: o.at,
       width: entryLineWidth(o.words),
       line1: parts.join(" · "),
-      line2: o.excerpt,
-      label: [...parts, o.excerpt ?? ""].filter(Boolean).join("，"),
+      line2: o.name || o.excerpt,
+      label: [...parts, o.name || o.excerpt || ""].filter(Boolean).join("，"),
       pinned: o.pinned,
       muted: o.isPublic === false,
     };

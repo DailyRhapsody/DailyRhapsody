@@ -4,6 +4,8 @@ export type Diary = {
   publishedAt?: string;
   pinned?: boolean;
   isPublic?: boolean;
+  /** Notion 的 Name 属性（数据库标题） */
+  name?: string;
   summary: string;
   location?: string;
   tags?: string[];
@@ -16,6 +18,8 @@ export type EntryOutlineItem = {
   /** publishedAt，缺失时取 date 当天中午（与卡片显示时间同源） */
   at: string;
   words: number;
+  /** Notion 的 Name 属性；用于时间轴悬浮提示 */
+  name?: string;
   /** 正文前 10 个字（超出时以「…」结尾）；纯图片文章没有 */
   excerpt?: string;
   isPublic?: false;

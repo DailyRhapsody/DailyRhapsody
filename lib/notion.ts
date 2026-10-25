@@ -35,6 +35,8 @@ export type Diary = {
   publishedAt?: string; // ISO UTC
   pinned?: boolean;
   isPublic?: boolean;
+  /** Notion 的 Name 属性（数据库标题），供时间轴/树使用；不替代卡片正文。 */
+  name?: string;
   summary: string; // rich text → plain text
   /** 仅 complete 的文字正文可参与全量分析；旧缓存没有此字段。 */
   bodyStatus?: "complete" | "partial" | "stale";
@@ -214,6 +216,59 @@ async function setCache(diaries: Diary[], snapshotAt: number): Promise<void> {
  * 不再删缓存——删除后首位访客要同步冷拉 80s 以上，前端 30s 超时显示「暂无文章」。
  * 别的实例正持锁刷新时，这次后台刷新拿不到锁会放弃，由持锁的那一轮收尾时补跑（refreshWithCatchUp）。
  */
+/** pin 变化只需要页面属性，不需要重抓 280 篇正文。 */
+const PIN_REFRESH_BUDGET_MS = 12_000;
+
+/**
+ * 先把 pin / Name 这类列表属性同步到缓存，再让全量正文刷新在后台慢慢跑。
+ * Notion 自动化调 /api/revalidate 时，用户取消置顶不必等 80 秒的正文重抓才看到顺序变化。
+ */
+async function refreshListPropertiesOnly(): Promise<void> {
+  const cached = await getCached();
+  if (!cached) return;
+  const client = getClient();
+  const databaseId = getDatabaseId();
+  const deadline = Date.now() + PIN_REFRESH_BUDGET_MS;
+  const pages: PageObjectResponse[] = [];
+  let cursor: string | undefined;
+  do {
+    const response = await withNotionRetry(
+      () =>
+        client.databases.query({
+          database_id: databaseId,
+          start_cursor: cursor,
+          page_size: 100,
+          sorts: [{ property: "Date", direction: "descending" }],
+        }),
+      deadline
+    );
+    for (const page of response.results) {
+      if ("properties" in page) pages.push(page as PageObjectResponse);
+    }
+    cursor = response.has_more ? response.next_cursor ?? undefined : undefined;
+  } while (cursor);
+
+  const properties = new Map(pages.map((page) => [page.id, page]));
+  const updated = cached.data.map((diary) => {
+    const page = properties.get(diary.id);
+    if (!page) return diary;
+    return {
+      ...diary,
+      pinned: extractPinned(page),
+      isPublic: extractIsPublic(page),
+      name: extractTitle(page) || diary.name,
+    };
+  });
+  const createdTimes = new Map(pages.map((page) => [page.id, Date.parse(page.created_time)]));
+  updated.sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    if (a.pinned && b.pinned) return (createdTimes.get(b.id) ?? 0) - (createdTimes.get(a.id) ?? 0);
+    return new Date(b.publishedAt ?? b.date).getTime() - new Date(a.publishedAt ?? a.date).getTime();
+  });
+  await setCache(updated, cached.snapshotAt ?? cached.refreshedAt);
+}
+
 export async function markDiariesCacheStale(): Promise<void> {
   const redis = await getRedis();
   if (!redis) return;
@@ -221,6 +276,12 @@ export async function markDiariesCacheStale(): Promise<void> {
     await redis.set(INVALIDATED_KEY, Date.now(), { ex: cacheTtl() });
   } catch {
     return;
+  }
+  try {
+    await refreshListPropertiesOnly();
+  } catch (e) {
+    // 属性刷新失败不阻塞全量快照；后台刷新仍会尝试
+    console.warn("[notion] fast list-property refresh failed:", e);
   }
   triggerBackgroundRefresh();
 }
@@ -812,6 +873,7 @@ function mapPageToDiary(page: PageObjectResponse, bodyMarkdown: string): Diary {
     ...extractNotionDiaryDate(page),
     pinned: extractPinned(page),
     isPublic: extractIsPublic(page),
+    name: title || undefined,
     summary: bodyMarkdown || title,
     location: extractLocation(page),
     tags: extractTags(page),

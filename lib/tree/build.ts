@@ -39,7 +39,7 @@ export type RebuildResult = {
   families?: number;
 };
 
-type Entry = { id: string; date: string; summary: string };
+type Entry = { id: string; date: string; summary: string; name?: string };
 
 function llmConfig() {
   return {
@@ -180,6 +180,7 @@ function buildTree(
       date: item.entry.date,
       t: (item.parts.year - epoch.year) * 12 + (item.parts.month - epoch.month) + (item.parts.day - 1) / 31,
       sub,
+      ...(item.entry.name ? { name: item.entry.name } : {}),
     });
   }
 
@@ -216,6 +217,7 @@ function buildTree(
             date: item.entry.date,
             t: (item.parts.year - epoch.year) * 12 + (item.parts.month - epoch.month) + (item.parts.day - 1) / 31,
             sub: "短记",
+            ...(item.entry.name ? { name: item.entry.name } : {}),
           })),
         },
       ],
@@ -248,6 +250,7 @@ export async function rebuildTree(opts?: { maxBatches?: number }): Promise<Rebui
         id: String(entry.id),
         date: String(entry.date || entry.publishedAt || "").slice(0, 10),
         summary: String(entry.summary || "").replace(/\s+/g, " ").trim(),
+        name: String(entry.name || "").trim() || undefined,
       }))
       .filter((entry) => entry.id && entry.date);
     if (!entries.length) return { status: "no-entries" };

@@ -108,6 +108,7 @@ function notesFromTree(tree){
       fam: f.name,
       topic: tp.name,
       sub: e.sub,
+      name: e.name || "",
       t: Number(e.t) || 0,
       date: e.date,
       entryId: String(e.id),
@@ -690,7 +691,8 @@ function hover(e){
   const title = document.createElement('b');
   title.textContent = best.nt.topic || '博客';
   const sub = document.createElement('span');
-  sub.textContent = `${best.nt.sub || ''}${best.nt.sub ? ' · ' : ''}${best.nt.date || ''}`;
+  const leafTitle = best.nt.name || best.nt.sub || '';
+  sub.textContent = `${leafTitle}${leafTitle && best.nt.date ? ' · ' : ''}${best.nt.date || ''}`;
   tip.append(title, sub);
   tip.style.left = `${e.clientX - r.left}px`;
   tip.style.top = `${e.clientY - r.top}px`;
@@ -713,7 +715,7 @@ async function openReader(nt){
   reader.classList.add('open');
   reader.setAttribute('aria-hidden', 'false');
   readerMeta.textContent = `${nt.date || ''} · ${nt.topic || ''}`;
-  readerTitle.textContent = nt.sub || nt.topic || '博客';
+  readerTitle.textContent = nt.name || nt.sub || nt.topic || '博客';
   readerBody.textContent = '正在读取文章…';
   readerLink.href = `/blog#entry-${nt.entryId}`;
   try {

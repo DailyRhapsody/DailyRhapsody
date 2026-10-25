@@ -55,6 +55,7 @@ const publicEntries = all
     id: String(entry.id),
     date: String(entry.date || entry.publishedAt || "").slice(0, 10),
     summary: String(entry.summary || "").replace(/\s+/g, " ").trim(),
+    name: String(entry.name || "").trim() || undefined,
   }))
   .filter((entry) => entry.id && entry.date);
 
