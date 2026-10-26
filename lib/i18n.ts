@@ -69,9 +69,6 @@ const messages: Record<string, { zh: string; en: string }> = {
   },
   "reference.empty.noFilterMatch": { zh: "没有符合当前条件的资料。", en: "No references match these filters." },
   "reference.loadingMore": { zh: "加载中", en: "Loading" },
-  "reference.selected.label": { zh: "已选中：", en: "Selected: " },
-  "reference.selected.missing": { zh: "该资料不在当前列表", en: "not in the current list" },
-  "reference.selected.clear": { zh: "取消选中", en: "Clear selection" },
   "reference.tag.current": { zh: "当前标签：{tag}（共 {total} 条）", en: "Tag: {tag} · {total} items" },
   "reference.updating": { zh: "更新中…", en: "Updating…" },
 
