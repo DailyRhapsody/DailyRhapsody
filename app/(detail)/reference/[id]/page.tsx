@@ -17,6 +17,7 @@ import { renderMarkdown, markdownHeadingClass, markdownPreviewProseClass } from 
 import { ReferenceLikeButton } from "@/components/reference/ReferenceLikeButton";
 import { ReferenceShareButton } from "@/components/reference/ReferenceShareButton";
 import { CompanyDossier } from "@/components/reference/CompanyDossier";
+import { CopyGuard } from "@/components/CopyGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -185,7 +186,8 @@ export default async function ReferenceDetailPage({
   }
 
   return (
-    <div className="min-h-screen bg-white font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
+    <div className="min-h-screen select-none bg-white font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
+      <CopyGuard />
       {jsonLd && (
         <script
           type="application/ld+json"

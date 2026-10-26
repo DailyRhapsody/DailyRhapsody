@@ -4,6 +4,7 @@ import { CompanySkills } from "@/components/reference/CompanySkills";
 import { CompanyAuthorSword } from "@/components/reference/CompanyAuthorSword";
 import { CompanyPhilosophySword } from "@/components/reference/CompanyPhilosophySword";
 import { CompanyTabs } from "@/components/reference/CompanyTabs";
+import { CopyGuard } from "@/components/CopyGuard";
 
 /**
  * 公司详情：Apple 式资料页。
@@ -27,7 +28,8 @@ export function CompanyDossier({
   lang: Lang;
 }) {
   return (
-    <div className="ap-page min-h-screen">
+    <div className="ap-page min-h-screen select-none">
+      <CopyGuard />
       <header className="ap-hero">
         <p className="ap-eyebrow">Reference · Company dossier</p>
         <h1 className="ap-hero-title">{title}</h1>
