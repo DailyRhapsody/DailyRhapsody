@@ -66,15 +66,11 @@ export default function ReferenceFeed({
   onTagClick: (tag: string) => void;
 }) {
   const { likes, toggle } = useReferenceLikes(items.map((it) => it.id));
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const selectedId = searchParams.get("focus");
-  const selectedItem = useMemo(
-    () => (selectedId ? items.find((it) => it.id === selectedId) ?? null : null),
-    [items, selectedId],
-  );
   const focusedRef = useRef<string | null>(null);
 
   /** 写 URL 时读实时 location.search，避免用渲染时的旧快照覆盖掉刚写入的 focus/q。 */
@@ -85,16 +81,6 @@ export default function ReferenceFeed({
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
 
-  /** 点卡片上的圆圈切换选中：再点一次清除 focus，排行榜带进来的选中也能这样撤销。 */
-  const toggleSelect = (id: string) => {
-    const willSelect = selectedId !== id;
-    // 点击选中不滚动：先把 ref 对齐，scroll effect 认为「已经处理过」。
-    focusedRef.current = willSelect ? id : null;
-    replaceParams((params) => {
-      if (willSelect) params.set("focus", id);
-      else params.delete("focus");
-    });
-  };
   const [rules, setRules] = useState<FilterRule[]>([]);
   const [logic, setLogic] = useState<FilterLogic>("and");
   const filteredItems = useMemo(
@@ -165,6 +151,24 @@ export default function ReferenceFeed({
     return () => cancelAnimationFrame(frame);
   }, [selectedId, visibleItems.length]);
 
+  /**
+   * 选中只用于排行榜定位（`?focus=`），不作常驻高亮：点卡片以外的空白处即撤销。
+   * 卡片、链接与表单控件上的点击不参与，否则开详情、换筛选时会被顺手清掉。
+   */
+  useEffect(() => {
+    if (!selectedId) return;
+    const onDocumentClick = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (!target) return;
+      if (target.closest("a,button,input,select,textarea,[role='button'],[data-ref-card]")) return;
+      replaceParams((params) => params.delete("focus"));
+    };
+    document.addEventListener("click", onDocumentClick);
+    return () => document.removeEventListener("click", onDocumentClick);
+    // replaceParams 每次渲染都是新函数，放进依赖会让监听器反复重建。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
   return (
     <>
       <h1 className="sr-only">{t("reference.title")}</h1>
@@ -221,26 +225,6 @@ export default function ReferenceFeed({
         }
       />
 
-      {selectedId && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-full border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-300">
-          <span className="truncate">
-            {t("reference.selected.label")}
-            {selectedItem
-              ? (lang === "zh"
-                  ? selectedItem.titleZh?.trim() || selectedItem.name
-                  : selectedItem.name || selectedItem.titleZh?.trim())
-              : t("reference.selected.missing")}
-          </span>
-          <button
-            type="button"
-            onClick={() => toggleSelect(selectedId)}
-            className="shrink-0 rounded-full px-2 py-0.5 text-zinc-500 underline decoration-zinc-300 underline-offset-2 transition-colors hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:text-zinc-100"
-          >
-            {t("reference.selected.clear")}
-          </button>
-        </div>
-      )}
-
       {loading && items.length === 0 ? (
         <SkeletonGrid />
       ) : (
@@ -267,7 +251,7 @@ export default function ReferenceFeed({
               <h2 className="sr-only">{t("reference.list.heading")}</h2>
               <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
                 {visibleItems.map((it) => (
-                  <div key={it.id} id={`reference-${it.id}`} className="scroll-mt-24">
+                  <div key={it.id} id={`reference-${it.id}`} data-ref-card className="scroll-mt-24">
                     <ReferenceCard
                       item={it}
                       like={likes[it.id]}
