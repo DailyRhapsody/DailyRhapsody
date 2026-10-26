@@ -42,16 +42,18 @@ function ArrowIcon() {
   );
 }
 
-/** 卡片本身负责选中：不再单独放一个「选中」按钮。 */
+/** 卡片本体负责选中：再点一次取消；详情只走标题与「阅读」。 */
 export function ReferenceCard({
   item,
   like,
   onLike,
+  onSelect,
   selected = false,
 }: {
   item: ReferenceListItem;
   like?: ReferenceLikeState;
   onLike?: (id: string) => void;
+  onSelect?: (id: string) => void;
   selected?: boolean;
 }) {
   const { t, lang } = useLang();
@@ -66,20 +68,17 @@ export function ReferenceCard({
     ])
   ).slice(0, 4);
 
-  const openDetail = () => {
-    window.open(`/reference/${item.id}`, "_blank", "noopener,noreferrer");
-  };
-
+  /** 卡片任意非交互区域切换选中；标题、阅读、点赞、标签链接保留各自行为。 */
   const handleCardClick = (event: MouseEvent<HTMLElement>) => {
     if ((event.target as HTMLElement).closest("a,button,input,select,textarea")) return;
-    openDetail();
+    onSelect?.(item.id);
   };
 
   const handleCardKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     if ((event.target as HTMLElement).closest("a,button,input,select,textarea")) return;
     event.preventDefault();
-    openDetail();
+    onSelect?.(item.id);
   };
 
   return (

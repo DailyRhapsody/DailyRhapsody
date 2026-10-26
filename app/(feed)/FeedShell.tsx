@@ -242,7 +242,7 @@ export default function FeedShell({
                         {i + 1}
                       </span>
                       <Link
-                        href={`/reference?focus=${encodeURIComponent(item.id)}#reference-${item.id}`}
+                        href={`/reference?focus=${encodeURIComponent(item.id)}`}
                         className="pointer-events-auto min-w-0 truncate rounded text-[0.72rem] leading-4 text-zinc-700 transition-colors hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 dark:text-zinc-300 dark:hover:text-blue-300"
                       >
                         {item.title}
