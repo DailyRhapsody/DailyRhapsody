@@ -67,6 +67,8 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
   const [tagCounts, setTagCounts] = useState<{ name: string; value: number }[]>([]);
   const [dateCountsFromApi, setDateCountsFromApi] = useState<PostCountsByDate>({});
   const [outline, setOutline] = useState<EntryOutlineItem[]>([]);
+  /** 首屏请求是否已经成功返回：gate 握手晚到时不重复清空列表。 */
+  const firstPageLoadedRef = useRef(false);
   const [pendingEntryId, setPendingEntryId] = useState<string | null>(null);
   /** hash 深链落地滚动的中止函数（scrollToEntry 返回）。时间轴跳转或切 tag 接管、gate 重拉
    *  卸载卡片、组件卸载时中止，否则两段逐帧滚动互相争抢，或追着已移出 DOM 的卡片把页面往上带。 */
@@ -158,6 +160,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
             // 只有 2xx 首屏响应才算「拿到过数据」：失败时下面会清空 items、total 归零，
             // 那种 0 不能当成「本站没有文章」写回顶部卡片。
             setFirstPageLoaded(true);
+            firstPageLoadedRef.current = true;
           }
           if (typeof data.total === "number") setTotal(data.total);
           if (Array.isArray(data.tagCounts)) setTagCounts(data.tagCounts);
@@ -180,7 +183,13 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
   /** 上一次首页加载对应的 gateGen：区分「gate 就绪重拉」与快速来回切 tag 造成的同 tag 重拉 */
   const lastGateGenRef = useRef(gateGen);
   useEffect(() => {
-    const onGateReady = () => setGateGen((g) => g + 1);
+    const onGateReady = () => {
+      // 首屏已经拿到 2xx 数据时，握手完成只是一次重复请求：
+      // 从首页点进博客、GateClient 稍后才 dispatch 会让列表闪一次骨架屏，
+      // 看起来像整页重载。只有首屏失败/仍在请求时才需要 gate 重拉。
+      if (firstPageLoadedRef.current) return;
+      setGateGen((g) => g + 1);
+    };
     window.addEventListener("dr-gate-ready", onGateReady);
     return () => window.removeEventListener("dr-gate-ready", onGateReady);
   }, []);
