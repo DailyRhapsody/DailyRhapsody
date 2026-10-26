@@ -110,7 +110,7 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     background = task;
     registered.resolve();
   } } });
-  const { getDiaries, warmDiariesCache, getCachedDiaries, getDiaryById, markDiariesCacheStale, getAnalysisDiaries, IncompleteAnalysisSourceError } = await import("../lib/notion.ts");
+  const { getDiaries, warmDiariesCache, getCachedDiaries, getDiaryById, markDiariesCacheStale, getAnalysisDiaries, IncompleteAnalysisSourceError, resolveNotionFileUrl } = await import("../lib/notion.ts");
 
   await t.test("maps Date.created_time, sorts by milliseconds with pinned first, and warms v6", async () => {
     pages = [
@@ -471,5 +471,22 @@ test("offline integration of the real Notion diary exports", { timeout: 5000 }, 
     assert.equal(entry.images.length, 2, "Image 字段的每个文件都要保留，不能只取第一张");
     assert.match(entry.images[0], /^\/api\/media\/p\//);
     assert.equal(entry.images[1], "https://files.test/two.png");
+  });
+
+  await t.test("media proxy resolves a non-first Image file by its version", async () => {
+    const { mediaVersion } = await import("../lib/notion-media.ts");
+    const mediaPage = page("media-page", "2026-10-01T00:00:00Z");
+    mediaPage.properties.Image = {
+      type: "files",
+      files: [
+        { name: "one", type: "file", file: { url: "https://files.test/one.png", expiry_time: "2026-10-02T00:00:00.000Z" } },
+        { name: "two", type: "file", file: { url: "https://files.test/two.png", expiry_time: "2026-10-02T00:00:00.000Z" } },
+      ],
+    };
+    retrieve.mock.mockImplementation(async () => mediaPage);
+    const secondUrl = "https://files.test/two.png";
+    const result = await resolveNotionFileUrl("p", "media-page", mediaVersion(secondUrl));
+    assert.deepEqual(result && { url: result.url, media: result.media }, { url: secondUrl, media: "image" });
+    retrieve.mock.mockImplementation(() => { throw new Error("Unexpected detail cache miss"); });
   });
 });

@@ -1159,6 +1159,27 @@ export async function resolveNotionFileUrl(
   let file: { url: string; expiry_time: string } | null = null;
   let media: "image" | "video" = "image";
   const deadline = Date.now() + MEDIA_BUDGET_MS;
+  /** Image/Cover 都是 files 多值属性；版本号要匹配具体那一项，不能只看 files[0]。 */
+  const pickFile = (files: unknown, version: string) => {
+    if (!Array.isArray(files)) return null;
+    for (const item of files) {
+      if (
+        item &&
+        typeof item === "object" &&
+        "type" in item &&
+        item.type === "file" &&
+        "file" in item &&
+        item.file &&
+        typeof item.file === "object" &&
+        "url" in item.file &&
+        typeof item.file.url === "string" &&
+        mediaVersion(item.file.url) === version
+      ) {
+        return item.file as { url: string; expiry_time: string };
+      }
+    }
+    return null;
+  };
   try {
     const client = getClient();
     if (kind === "b") {
@@ -1181,15 +1202,14 @@ export async function resolveNotionFileUrl(
       if (!("properties" in page)) return null;
       const full = page as PageObjectResponse;
       const coverProp = full.properties["Cover"];
-      const first = coverProp?.type === "files" ? coverProp.files[0] : undefined;
-      if (first?.type === "file") file = first.file;
-      else if (full.cover?.type === "file") file = full.cover.file;
+      file =
+        pickFile(coverProp?.type === "files" ? coverProp.files : undefined, v) ??
+        (full.cover?.type === "file" && mediaVersion(full.cover.file.url) === v ? full.cover.file : null);
     } else {
       const page = await withNotionRetry(() => client.pages.retrieve({ page_id: id }), deadline);
       if (!("properties" in page)) return null;
       const prop = (page as PageObjectResponse).properties["Image"];
-      const first = prop?.type === "files" ? prop.files[0] : undefined;
-      if (first?.type === "file") file = first.file;
+      file = pickFile(prop?.type === "files" ? prop.files : undefined, v);
     }
   } catch (e) {
     console.warn(`[notion] resolveNotionFileUrl failed for ${kind}:${id}:`, e);
