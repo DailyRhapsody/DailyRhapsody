@@ -259,8 +259,10 @@ export const markdownHeadingClass =
  * 不经过这里。
  */
 export function entrySummaryProseClass(expanded: boolean): string {
-  const base = `${markdownPreviewProseClass} text-[0.8125rem] leading-relaxed [&_:is(p,li):not(.dr-mermaid_*)]:text-justify [&_:is(strong,b,th)]:font-normal [&_th]:bg-zinc-100/70 [&_th:not([align])]:text-left dark:[&_th]:bg-zinc-800/60 [&_a]:break-all [&_:is(blockquote,.dr-caption)]:text-zinc-500 dark:[&_:is(blockquote,.dr-caption)]:text-zinc-400`;
+  // 折叠态把正文加粗压平（滚动流里保持安静）；展开后必须恢复 strong 的默认字重，
+  // 否则 Notion 里专门加粗的重点段落在阅读态看起来和普通正文一样。
+  const base = `${markdownPreviewProseClass} text-[0.8125rem] leading-relaxed [&_:is(p,li):not(.dr-mermaid_*)]:text-justify [&_th]:bg-zinc-100/70 [&_th:not([align])]:text-left dark:[&_th]:bg-zinc-800/60 [&_a]:break-all [&_:is(blockquote,.dr-caption)]:text-zinc-500 dark:[&_:is(blockquote,.dr-caption)]:text-zinc-400`;
   return expanded
     ? `${base} ${markdownHeadingClass} [&_summary]:cursor-pointer [&_summary]:select-none`
-    : `${base} max-h-36 overflow-hidden [&_summary]:pointer-events-none [&_summary]:cursor-default [&_summary::before]:hidden`;
+    : `${base} [&_:is(strong,b,th)]:font-normal max-h-36 overflow-hidden [&_summary]:pointer-events-none [&_summary]:cursor-default [&_summary::before]:hidden`;
 }

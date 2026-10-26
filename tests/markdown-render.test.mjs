@@ -183,6 +183,8 @@ test("折叠态类名不含任何标题层级 token，展开态才放开 h1-h3",
   assert.ok(expanded.includes("[&_h3]:text-[1.08em]"), expanded);
   assert.ok(expanded.includes("[&_h1]:font-semibold"), expanded);
   assert.ok(!expanded.includes("max-h-36"), expanded);
+  // 展开态必须恢复正文 strong 字重；不能沿用折叠态的压平规则
+  assert.ok(!expanded.includes("[&_:is(strong,b,th)]:font-normal"), expanded);
 
   // 展开态不加重直外边距：块间距由 space-y-[1.15em] 负责，叠加会外边距合并
   assert.ok(!/\[&_h[1-3]\]:m[tb]-/.test(expanded), expanded);
