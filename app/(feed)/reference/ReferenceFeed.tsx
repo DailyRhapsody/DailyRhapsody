@@ -81,6 +81,20 @@ export default function ReferenceFeed({
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
 
+  /**
+   * 点卡片本体切换选中：再点一次清除 focus。选中只改 URL，不滚动、不跳详情，
+   * 详情由卡片标题与「阅读」进入。
+   */
+  const toggleSelect = (id: string) => {
+    const willSelect = selectedId !== id;
+    // 点击选中不滚动：先把 ref 对齐，scroll effect 认为「已经处理过」。
+    focusedRef.current = willSelect ? id : null;
+    replaceParams((params) => {
+      if (willSelect) params.set("focus", id);
+      else params.delete("focus");
+    });
+  };
+
   const [rules, setRules] = useState<FilterRule[]>([]);
   const [logic, setLogic] = useState<FilterLogic>("and");
   const filteredItems = useMemo(
@@ -132,28 +146,70 @@ export default function ReferenceFeed({
     });
   };
 
+  /**
+   * 排行榜 / 深链带进 `?focus=` 时，把目标卡滚到视口中间。
+   * 不用 hash 锚点：锚点是「顶对齐 + scroll-mt」，会停在吸顶头下方偏上的位置，
+   * 看起来像落到了上一张卡；也不直接用 scrollIntoView：参考卡在 3D 面板里，
+   * 可视盒被投影压缩，按可视 rect 算会偏。这里用 offsetTop 链算布局坐标再校正一次，
+   * 兜住图片解码、吸顶头收缩与分页加载带来的位移。
+   */
   useEffect(() => {
     if (!selectedId) {
       focusedRef.current = null;
       return;
     }
-    // 已经处理过这个选中项：搜索/筛选/分页导致列表长度变化时不要再把人拉回去。
     if (focusedRef.current === selectedId) return;
-    const el = document.getElementById(`reference-${selectedId}`);
-    if (!el) return;
-    focusedRef.current = selectedId;
-    const rect = el.getBoundingClientRect();
-    if (rect.top >= 0 && rect.bottom <= window.innerHeight) return; // 已经完整可见
-    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    const frame = requestAnimationFrame(() => {
-      el.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
-    });
-    return () => cancelAnimationFrame(frame);
+
+    let cancelled = false;
+    let frames = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const layoutTop = (el: HTMLElement) => {
+      let y = 0;
+      let node: HTMLElement | null = el;
+      while (node) {
+        y += node.offsetTop;
+        node = node.offsetParent as HTMLElement | null;
+      }
+      return y;
+    };
+
+    const centerOn = (el: HTMLElement) => {
+      const top = layoutTop(el);
+      const centered = top - Math.max(0, (window.innerHeight - el.offsetHeight) / 2);
+      const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      window.scrollTo({ top: Math.max(0, centered), behavior: reduceMotion ? "auto" : "smooth" });
+    };
+
+    const run = () => {
+      if (cancelled) return;
+      const el = document.getElementById(`reference-${selectedId}`);
+      if (!el) {
+        // 列表还没渲染出目标卡（首屏仍在加载）：等下一帧再找，最多约 2.5 秒。
+        if (frames++ < 150) requestAnimationFrame(run);
+        return;
+      }
+      focusedRef.current = selectedId;
+      centerOn(el);
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        const rect = el.getBoundingClientRect();
+        const delta = rect.top + rect.height / 2 - window.innerHeight / 2;
+        if (Math.abs(delta) > 8) centerOn(el);
+      }, 450);
+    };
+
+    requestAnimationFrame(run);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [selectedId, visibleItems.length]);
 
   /**
    * 选中只用于排行榜定位（`?focus=`），不作常驻高亮：点卡片以外的空白处即撤销。
    * 卡片、链接与表单控件上的点击不参与，否则开详情、换筛选时会被顺手清掉。
+   * 用捕获阶段：卡片与覆盖层里有人 stopPropagation 时，冒泡阶段的监听会被吞掉。
    */
   useEffect(() => {
     if (!selectedId) return;
@@ -163,8 +219,8 @@ export default function ReferenceFeed({
       if (target.closest("a,button,input,select,textarea,[role='button'],[data-ref-card]")) return;
       replaceParams((params) => params.delete("focus"));
     };
-    document.addEventListener("click", onDocumentClick);
-    return () => document.removeEventListener("click", onDocumentClick);
+    document.addEventListener("click", onDocumentClick, true);
+    return () => document.removeEventListener("click", onDocumentClick, true);
     // replaceParams 每次渲染都是新函数，放进依赖会让监听器反复重建。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
@@ -256,6 +312,7 @@ export default function ReferenceFeed({
                       item={it}
                       like={likes[it.id]}
                       onLike={toggle}
+                      onSelect={toggleSelect}
                       selected={selectedId === it.id}
                     />
                   </div>
