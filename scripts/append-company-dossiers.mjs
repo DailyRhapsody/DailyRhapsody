@@ -12,6 +12,9 @@ import path from "node:path";
 const ROOT = process.cwd();
 const DRY = process.argv.includes("--dry-run");
 const UPDATE_SUMMARY = process.argv.includes("--update-summary");
+const TRANSLATE_BODIES = process.argv.includes("--translate-bodies");
+const onlyArg = process.argv.find((arg) => arg.startsWith("--only="));
+const ONLY = onlyArg?.slice("--only=".length) || null;
 const dirArg = process.argv.find((arg) => arg.startsWith("--dir="));
 const DOSSIER_DIR =
   dirArg?.slice("--dir=".length) ||
@@ -33,6 +36,12 @@ const env = loadEnv();
 const NOTION_TOKEN = env.NOTION_TOKEN;
 const DB_ID = env.NOTION_REFERENCE_DB_ID;
 const NOTION_VERSION = "2022-06-28";
+const KV_URL = env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL;
+const KV_TOKEN = env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN;
+const LLM_URL = env.PERSONA_LLM_BASE_URL;
+const LLM_KEY = env.PERSONA_LLM_API_KEY;
+const LLM_MODEL = env.PERSONA_LLM_MODEL || "deepseek-chat";
+const BODY_EN_KEY = "dr:reference:body:en:v1";
 
 async function notion(pathname, init = {}) {
   const res = await fetch(`https://api.notion.com/v1${pathname}`, {
@@ -176,6 +185,7 @@ function plain(value) {
 const FILE_ALIASES = {
   "amazon-astro": ["Amazon Astro", "亚马逊 Astro"],
   "cobalt-robotics": ["Cobalt Robotics", "Cobalt AI"],
+  "siemens-robotics": ["Siemens Robot Control Suite", "Siemens"],
   "sony-aibo": ["Sony Aibo", "索尼 Aibo", "aibo"],
   savioke: ["Savioke"],
 };
@@ -247,10 +257,83 @@ async function appendBlocks(pageId, blocks) {
   }
 }
 
+async function kv(pathname, init = {}) {
+  const res = await fetch(`${KV_URL}/${pathname}`, {
+    ...init,
+    headers: { Authorization: `Bearer ${KV_TOKEN}`, ...(init.headers || {}) },
+  });
+  if (!res.ok) throw new Error(`KV ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return res.json();
+}
+
+async function hasBodyEn(pageId) {
+  if (!KV_URL || !KV_TOKEN) return false;
+  try {
+    const data = await kv(`hget/${BODY_EN_KEY}/${encodeURIComponent(pageId)}`);
+    return Boolean(data?.result);
+  } catch {
+    return false;
+  }
+}
+
+function stripFence(text) {
+  return text.replace(/^```(?:markdown|md)?\s*/i, "").replace(/```\s*$/i, "").trim();
+}
+
+async function translateBody(markdown) {
+  if (!LLM_URL || !LLM_KEY) throw new Error("缺少 PERSONA_LLM_* 配置");
+  const res = await fetch(`${LLM_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${LLM_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: LLM_MODEL,
+      temperature: 0,
+      max_tokens: 8000,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Translate Chinese company-research Markdown into concise professional English. " +
+            "Preserve every Markdown heading, list, table, URL, number, company name, product name and person name. " +
+            "Translate the confidence markers [确认] to [Confirmed], [推测] to [Speculative], [未获取] to [Unavailable]. " +
+            "Do not add facts, do not omit sections, do not wrap the answer in a code fence.",
+        },
+        { role: "user", content: markdown },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  return stripFence(data.choices?.[0]?.message?.content ?? "");
+}
+
+async function cacheBodyEn(pageId, markdown, label) {
+  if (!KV_URL || !KV_TOKEN) throw new Error("缺少 KV 配置");
+  if (await hasBodyEn(pageId)) {
+    console.log(`  · ${label}: 正文英文已存在，跳过`);
+    return;
+  }
+  const translated = await translateBody(markdown);
+  if (!translated || translated.length < 200) throw new Error("译文为空或过短");
+  await kv(`hset/${BODY_EN_KEY}/${encodeURIComponent(pageId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(translated),
+  });
+  console.log(`  · ${label}: 正文英文 ${translated.length} 字符`);
+}
+
 async function main() {
   if (!NOTION_TOKEN || !DB_ID) throw new Error("缺少 NOTION_TOKEN 或 NOTION_REFERENCE_DB_ID");
   if (!fs.existsSync(DOSSIER_DIR)) throw new Error(`目录不存在：${DOSSIER_DIR}`);
-  const files = fs.readdirSync(DOSSIER_DIR).filter((file) => file.endsWith(".md")).sort();
+  const files = fs
+    .readdirSync(DOSSIER_DIR)
+    .filter((file) => file.endsWith(".md"))
+    .filter((file) => !ONLY || file === ONLY)
+    .sort();
   const pages = await listPages();
   console.log(`扫描 ${files.length} 份档案，Notion ${pages.length} 条`);
 
@@ -276,6 +359,16 @@ async function main() {
     }
     const found = pageName(match.page);
     const label = found.titleZh || found.name || dossierName;
+    if (TRANSLATE_BODIES) {
+      if (DRY) console.log(`- ${file}: ${label} 将翻译正文`);
+      else {
+        try {
+          await cacheBodyEn(match.page.id, markdown, label);
+        } catch (error) {
+          console.log(`  ! ${label}: 正文翻译失败（${error.message}）`);
+        }
+      }
+    }
     if (await hasDeepDossier(match.page.id)) {
       console.log(`- ${file}: ${label} 已有深度正文，跳过`);
       continue;
