@@ -35,9 +35,6 @@ const nextConfig: NextConfig = {
       { source: "/the-moment", destination: "/moments", permanent: true },
     ];
   },
-  async rewrites() {
-    return [{ source: "/moments", destination: "/blog" }];
-  },
   async headers() {
     return [
       {

@@ -1,0 +1,46 @@
+import type { Metadata } from "next";
+import { getProfile } from "@/lib/profile-store";
+import { getCachedReferenceItems, referenceTagCounts, type ReferenceItem } from "@/lib/notion-reference";
+import EntriesPageClient from "../blog/EntriesPageClient";
+
+/** 顶部卡片的篇数按查看者过滤（站长含私密），必须逐请求渲染；别让它依赖缓存客户端的默认值。 */
+export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: { absolute: "DailyRhapsody ｜ 时刻" },
+};
+
+/**
+ * /blog 与 /moments 共用同一套客户端组件，但各自有独立路由与 metadata。
+ * 显示哪个 tab 由客户端按地址决定，两个 tab 之间切换不重载页面。
+ *
+ * Server component: 预取 profile 后再把结果作为 initialProfile 下传给客户端组件，
+ * 避免首帧 profile===null 时 StickyProfileHeader 走居中兜底 → 数据到达后跳到左对齐。
+ *
+ * 微信读书阅读数据同样在服务端预取：它是只读 Redis 缓存，不带 API Key 进浏览器，
+ * 也不需要新增公开路由与 proxy matcher 条目。缓存由每日 Cron 预热。
+ */
+export default async function MomentsPage() {
+  let initialProfile = null;
+  try {
+    initialProfile = await getProfile();
+  } catch {
+    initialProfile = null;
+  }
+
+  let referenceItems: ReferenceItem[] = [];
+  try {
+    referenceItems = (await getCachedReferenceItems())?.filter((item) => item.isPublic) ?? [];
+  } catch {
+    referenceItems = [];
+  }
+
+  return (
+    <EntriesPageClient
+      initialProfile={initialProfile}
+      initialReferenceItems={referenceItems}
+      initialReferenceTotal={referenceItems.length}
+      initialReferenceTagCounts={referenceTagCounts(referenceItems)}
+    />
+  );
+}
