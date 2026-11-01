@@ -96,7 +96,7 @@ export default function EntriesPageClient({
   const activeTabRef = useRef(activeTopTab);
   useEffect(() => {
     activeTabRef.current = activeTopTab;
-    document.title = ["DailyRhapsody ｜ 博客", "DailyRhapsody ｜ 时刻", "DailyRhapsody ｜ Reference"][activeTopTab];
+    document.title = ["DailyRhapsody ｜ Blog", "DailyRhapsody ｜ Moments", "DailyRhapsody ｜ Reference"][activeTopTab];
   }, [activeTopTab]);
   const setActiveTopTab = useCallback((next: SetStateAction<number>) => {
     const current = activeTabRef.current;
