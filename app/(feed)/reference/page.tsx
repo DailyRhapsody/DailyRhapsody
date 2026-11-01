@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const title = t(lang, "reference.title");
   const description = t(lang, "reference.meta.description");
   return {
-    title: `${title} | DailyRhapsody`,
+    title: { absolute: "DailyRhapsody ｜ Reference" },
     description,
     alternates: { canonical: "/reference" },
     openGraph: {
