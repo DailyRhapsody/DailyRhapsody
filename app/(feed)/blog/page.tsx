@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { getProfile } from "@/lib/profile-store";
 import { getCachedReferenceItems, referenceTagCounts, type ReferenceItem } from "@/lib/notion-reference";
 import EntriesPageClient from "./EntriesPageClient";
@@ -5,8 +6,12 @@ import EntriesPageClient from "./EntriesPageClient";
 /** 顶部卡片的篇数按查看者过滤（站长含私密），必须逐请求渲染；别让它依赖缓存客户端的默认值。 */
 export const dynamic = "force-dynamic";
 
+export const metadata: Metadata = {
+  title: { absolute: "DailyRhapsody ｜ 博客" },
+};
+
 /**
- * /blog 与 /moments 共用这一页（/moments 由 next.config.ts 重写到 /blog），
+ * /blog 与 /moments 共用同一套客户端组件，但各自有独立路由与 metadata。
  * 显示哪个 tab 由客户端按地址决定，两个 tab 之间切换不重载页面。
  *
  * Server component: 预取 profile 后再把结果作为 initialProfile 下传给客户端组件，
