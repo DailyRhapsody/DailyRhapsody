@@ -7,7 +7,7 @@ import EntriesPageClient from "./EntriesPageClient";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: { absolute: "DailyRhapsody ｜ 博客" },
+  title: { absolute: "DailyRhapsody ｜ Blog" },
 };
 
 /**
