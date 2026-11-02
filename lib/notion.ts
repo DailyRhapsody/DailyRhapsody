@@ -174,19 +174,28 @@ function parseEntry(data: CacheEntry | Diary[] | null): CacheEntry | null {
   return data;
 }
 
-async function getCached(): Promise<CachedDiaries | null> {
+/**
+ * 读缓存，并把「Redis 读失败」与「确实没有缓存」分开：前者抛错，后者返回 null。
+ * 读路径用下面的 getCached()（吞错按缓存缺失处理，保住页面可用）；
+ * 刷新路径必须用这一版，原因见 refreshDiariesFromNotion 里读旧快照处的注释。
+ */
+async function getCachedStrict(): Promise<CachedDiaries | null> {
   const redis = await getRedis();
   if (!redis) return null;
+  const [raw, invalidatedAt] = await redis.mget<[CacheEntry | Diary[] | null, number | null]>(
+    CACHE_KEY,
+    INVALIDATED_KEY
+  );
+  const entry = parseEntry(raw);
+  if (entry) return { ...entry, invalidatedAt: Number(invalidatedAt) || 0 };
+  // 新键还没写过（刚上线）：旧键数据当作已过期的种子返回，调用方会立即后台重拉
+  const legacy = parseEntry(await redis.get<CacheEntry | Diary[]>(LEGACY_CACHE_KEY));
+  return legacy ? { data: legacy.data, refreshedAt: 0, invalidatedAt: 0 } : null;
+}
+
+async function getCached(): Promise<CachedDiaries | null> {
   try {
-    const [raw, invalidatedAt] = await redis.mget<[CacheEntry | Diary[] | null, number | null]>(
-      CACHE_KEY,
-      INVALIDATED_KEY
-    );
-    const entry = parseEntry(raw);
-    if (entry) return { ...entry, invalidatedAt: Number(invalidatedAt) || 0 };
-    // 新键还没写过（刚上线）：旧键数据当作已过期的种子返回，调用方会立即后台重拉
-    const legacy = parseEntry(await redis.get<CacheEntry | Diary[]>(LEGACY_CACHE_KEY));
-    return legacy ? { data: legacy.data, refreshedAt: 0, invalidatedAt: 0 } : null;
+    return await getCachedStrict();
   } catch {
     return null;
   }
@@ -976,7 +985,19 @@ async function refreshDiariesFromNotion(deadline: number): Promise<Diary[]> {
     cursor = response.has_more ? response.next_cursor ?? undefined : undefined;
   } while (cursor);
 
-  const previous = new Map((await getCached())?.data.map((d) => [d.id, d]) ?? []);
+  // 旧快照必须真的读到（或确认不存在）才能往下走。getCached() 把 Redis 读失败吞成 null，
+  // 这里若也把它当成「没有旧缓存」，所有正文都会进待抓队列，抓不到的文章落成只剩标题，
+  // 随后 setCache 成功，上一版完整快照就被覆盖了（2026-09「110 篇只剩标题」是同一个形状）。
+  // 读失败就放弃本轮：旧缓存原样保留，失败冷却过后的下一次访问再刷。
+  let prior: CachedDiaries | null;
+  try {
+    prior = await getCachedStrict();
+  } catch (e) {
+    throw new Error(
+      `[notion] 读取旧快照失败，本轮刷新不写缓存：${e instanceof Error ? e.message : String(e)}`
+    );
+  }
+  const previous = new Map(prior?.data.map((d) => [d.id, d]) ?? []);
   const reusable = (page: PageObjectResponse) => bodyIsCurrent(previous.get(page.id), page.last_edited_time);
   const pending = pages.filter((p) => !reusable(p));
   // 老转换器产出的完整正文要重抓，但 281 篇跑不进 200s 预算：一轮只迁移一批，
