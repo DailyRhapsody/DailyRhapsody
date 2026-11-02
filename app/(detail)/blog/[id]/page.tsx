@@ -5,8 +5,8 @@ import { cache } from "react";
 import { isAdmin } from "@/lib/auth";
 import { getProfile } from "@/lib/profile-store";
 import { getCachedDiaryById, type Diary } from "@/lib/notion";
-import { entrySummaryProseClass, renderMarkdown } from "@/lib/markdown";
 import { summaryToPlainForCard } from "@/lib/share-card";
+import { BlogEntryBody } from "./BlogEntryBody";
 
 export const dynamic = "force-dynamic";
 
@@ -98,8 +98,6 @@ export default async function BlogEntryPage({
 
   const profile = await getProfile().catch(() => null);
   const title = titleOf(item);
-  const body = item.summary.replace(/^#\s+[^\n]*\n+/, "");
-  const renderedHtml = renderMarkdown(body);
   const date = item.publishedAt?.slice(0, 10) || item.date;
 
   return (
@@ -134,10 +132,8 @@ export default async function BlogEntryPage({
             ))}
           </div>
         )}
-        <article
-          className={`${entrySummaryProseClass(true)} mt-8 text-[0.95rem]`}
-          dangerouslySetInnerHTML={{ __html: renderedHtml }}
-        />
+        {/* 正文不进服务端 HTML，握手完成后由浏览器读取（原因见 BlogEntryBody） */}
+        <BlogEntryBody id={item.id} />
       </main>
     </div>
   );
