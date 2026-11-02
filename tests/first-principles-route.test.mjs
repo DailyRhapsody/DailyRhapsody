@@ -10,7 +10,7 @@ test('全量分析接口：分批、缓存、并发、撤回和失败恢复（�
  const env={UPSTASH_REDIS_REST_URL:'https://redis.test.invalid',UPSTASH_REDIS_REST_TOKEN:'test-token',VERCEL_ENV:'test'};
  const previous=Object.fromEntries(Object.keys(env).map(k=>[k,process.env[k]]));Object.assign(process.env,env);
  t.after(()=>{hooks.deregister();for(const[k,v]of Object.entries(previous)){if(v===undefined)delete process.env[k];else process.env[k]=v;}assert.equal(fetch.mock.callCount(),0);assert.equal(connect.mock.callCount(),0);});
- const db=new Map(),writes=[];let sourceCalls=0, modelCalls=0,authorizeCalls=0,changeDuringModel=false,broken=false,gate;
+ const db=new Map(),writes=[],violations=[];let sourceCalls=0, modelCalls=0,authorizeCalls=0,granted=0,quotaShut=false,changeDuringModel=false,broken=false,gate;
  // 拒答相关开关：refuseMark 是触发拒答的原文片段，refuseMode 决定它以哪种形态到达
  // （建立连接时抛出 vs 读流时以流内错误到达）；其余几个用来压收敛的边界。
  let refuseMark=null,refuseMode='throw',networkFailAt=0,batchOnlyRefusal=false,pipelineBroken=false;
@@ -25,7 +25,11 @@ test('全量分析接口：分批、缓存、并发、撤回和失败恢复（�
   async eval(_,[key],[token]){return db.get(key)===token?Number(db.delete(key)):0;}
  }}});
  t.mock.module(new URL('../lib/persona/llm.ts',import.meta.url).href,{namedExports:{streamChat:async opts=>{
-  modelCalls++;assert.equal(opts.strict,true);assert(opts.signal);if(gate)await gate.promise;
+  modelCalls++;
+  // 全局不变式，每条用例都在检查：每次模型调用之前恰好新放行一次全站分析额度（1:1、先授权后调用），
+  // 闸门拒绝之后本请求不再调用模型。哪条路径新增了不过闸的模型调用，走到它的用例就会变红。
+  if(granted!==modelCalls||quotaShut){const v=`第 ${modelCalls} 次模型调用没有先单独过全站分析额度（已放行 ${granted} 次${quotaShut?'，且闸门已拒绝':''}）`;violations.push(v);throw new Error(v);}
+  assert.equal(opts.strict,true);assert(opts.signal);if(gate)await gate.promise;
   if(networkFailAt&&modelCalls===networkFailAt)throw new Error('network down');
   const input=JSON.parse(opts.messages[0].content);
   // 只有含 refuseMark 的切块会触发拒答；batchOnlyRefusal 模拟「整批组合才被拒」的不可归因情形
@@ -39,10 +43,13 @@ test('全量分析接口：分批、缓存、并发、撤回和失败恢复（�
  const {runFirstPrinciples}=await import('../lib/persona/first-principles-route.ts');
  const {makeCorpus}=await import('../lib/persona/first-principles.ts');
  const request=()=>new Request('http://local.test/api/chat',{method:'POST',body:'{}'});
- const auth=async()=>{authorizeCalls++;return null;};
+ // 全站分析额度闸门的替身：先放行 allowed 次，之后一律拒绝
+ const quota=(allowed=Infinity)=>async()=>{authorizeCalls++;if(allowed-->0){granted++;return null;}quotaShut=true;return new Response('quota',{status:429});};
+ const auth=quota();
+ t.afterEach(()=>assert.deepEqual(violations.splice(0),[],'每次模型调用都必须先单独过全站分析额度'));
  const run=()=>runFirstPrinciples(request(),auth);
  const skipKeys=()=>[...db.keys()].filter(k=>k.includes(':skip:'));
- const reset=()=>{db.clear();writes.length=0;diaries=[make('a'),make('b')];modelCalls=0;authorizeCalls=0;changeDuringModel=false;broken=false;gate=undefined;refuseMark=null;refuseMode='throw';networkFailAt=0;batchOnlyRefusal=false;pipelineBroken=false;};
+ const reset=()=>{db.clear();writes.length=0;diaries=[make('a'),make('b')];modelCalls=0;authorizeCalls=0;granted=0;quotaShut=false;changeDuringModel=false;broken=false;gate=undefined;refuseMark=null;refuseMode='throw';networkFailAt=0;batchOnlyRefusal=false;pipelineBroken=false;};
  await t.test('202提炼→最终报告→缓存命中；缓存不消耗模型额度',async()=>{
   reset();assert.equal((await run()).status,202);
   const report=await run();assert.equal(report.status,200);assert((await report.text()).includes('2 篇公开文章'));
@@ -54,7 +61,7 @@ test('全量分析接口：分批、缓存、并发、撤回和失败恢复（�
  await t.test('生成中撤回公开文章，禁止写入旧依据或报告',async()=>{reset();changeDuringModel=true;const r=await run();assert.equal(r.status,202);assert.equal((await r.json()).phase,'sources');assert.equal(writes.length,0);});
  await t.test('模型中断不提交，下一次从已完成进度继续',async()=>{reset();broken=true;await assert.rejects(run());assert.equal(writes.length,0);assert(![...db.keys()].some(k=>k.endsWith('build-lock')));broken=false;assert.equal((await run()).status,202);});
  await t.test('并发点击仅一个模型调用',async()=>{reset();gate=Promise.withResolvers();const one=run();while(!modelCalls)await new Promise(r=>setImmediate(r));const two=await run();assert.equal(two.status,202);assert.equal(modelCalls,1);gate.resolve();await one;assert.equal(modelCalls,1);});
- await t.test('额度拒绝不调用模型且释放锁',async()=>{reset();const r=await runFirstPrinciples(request(),async()=>new Response('quota',{status:429}));assert.equal(r.status,429);assert.equal(modelCalls,0);assert.equal(db.size,0);});
+ await t.test('额度拒绝不调用模型且释放锁',async()=>{reset();const r=await runFirstPrinciples(request(),quota(0));assert.equal(r.status,429);assert.equal(modelCalls,0);assert.equal(db.size,0);});
  await t.test('多层综合：中间层必须落盘，否则同一组被反复重算',async()=>{
   // 2 篇文章只有一组、一步到最终层，覆盖不到中间层。这里造 40 篇逼出多个综合组：
   // 曾经把 `work.final ? validateSynthesis(...) : null` 写进缓存，中间层落的全是 null，
@@ -90,6 +97,7 @@ test('全量分析接口：分批、缓存、并发、撤回和失败恢复（�
   assert.equal(skipKeys().length,1,`只该标记真正被拒的那一块，实际 ${skipKeys().length} 块`);
   assert(skipKeys()[0].endsWith(`:skip:${guilty.key}`),'标记必须落在真正被拒的切块上');
   assert(modelCalls>=2&&modelCalls<=9,`二分探测有上界（1 次原始失败 + ≤8 次探测），实际 ${modelCalls}`);
+  assert.equal(authorizeCalls,modelCalls,'每次真实模型调用（含二分探测）都要先过全站分析额度');
   // 标记之后进度必须继续：剩下的 11 块照常提炼，最终报告如实声明 1 篇未纳入
   let report=null;
   for(let round=0;round<6&&!report;round++){const r=await run();if(r.status===200)report=await r.text();}
@@ -97,6 +105,7 @@ test('全量分析接口：分批、缓存、并发、撤回和失败恢复（�
   assert.match(report,/另有 1 篇的部分正文被模型供应商的内容策略拒绝处理/);
   assert.doesNotMatch(report,/另有 12 篇/);
   assert(report.includes('12 篇公开文章'));
+  assert.equal(authorizeCalls,modelCalls,'每次真实模型调用（含二分探测）都要先过全站分析额度');
  });
  await t.test('拒答在读流期间才到达（流内错误形态）时同样收敛到单块，下次请求据此跳过',async()=>{
   reset();
@@ -111,6 +120,7 @@ test('全量分析接口：分批、缓存、并发、撤回和失败恢复（�
   assert.equal(skipKeys().length,1,`流内拒答同样只该标记 1 块，实际 ${skipKeys().length} 块`);
   assert(skipKeys()[0].endsWith(`:skip:${guilty.key}`));
   assert(modelCalls>=2&&modelCalls<=9,`探测次数必须有界，实际 ${modelCalls}`);
+  assert.equal(authorizeCalls,modelCalls,'每次真实模型调用（含二分探测）都要先过全站分析额度');
   // 下一次请求读回 skip 标记，视为已了结：剩余正文照常提炼，报告声明 1 篇未纳入
   let report=null;
   for(let round=0;round<4&&!report;round++){const r=await run();if(r.status===200)report=await r.text();}
@@ -124,6 +134,7 @@ test('全量分析接口：分批、缓存、并发、撤回和失败恢复（�
   diaries=Array.from({length:12},(_,i)=>make(`k${String(i).padStart(2,'0')}`,`第 ${i} 篇：判断必须回到原文。`));
   diaries[11].summary+=refuseMark;
   await assert.rejects(run(),/network down/);
+  assert.equal(modelCalls,2);assert.equal(authorizeCalls,modelCalls,'每次真实模型调用（含二分探测）都要先过全站分析额度');
   assert.equal(skipKeys().length,0,'网络失败绝不能被当成拒答去写排除标记');
   assert.equal(writes.length,0);
   assert(![...db.keys()].some(k=>k.endsWith('build-lock')),'锁必须释放');
@@ -135,6 +146,25 @@ test('全量分析接口：分批、缓存、并发、撤回和失败恢复（�
   await assert.rejects(run(),/Content Exists Risk/);
   assert.equal(skipKeys().length,0,'归因不出来就不猜，宁可不写排除声明');
   assert(modelCalls<=9,`探测次数必须有界，实际 ${modelCalls}`);
+  assert.equal(authorizeCalls,modelCalls,'每次真实模型调用（含二分探测）都要先过全站分析额度');
+ });
+ await t.test('额度在二分探测途中用完：立即停止探测，不写排除标记，返回额度拒绝',async()=>{
+  // 12 块、被拒块在末尾：原始调用 1 次 + 探测 6 次。额度在第 allowed+1 次调用前用完，
+  // 覆盖首次探测、中途与最后一次探测各个位置。
+  for(const allowed of [1,2,3,6]){
+   reset();
+   refuseMark='【触发拒答的段落】';
+   diaries=Array.from({length:12},(_,i)=>make(`k${String(i).padStart(2,'0')}`,`第 ${i} 篇：判断必须回到原文。`));
+   diaries[11].summary+=refuseMark;
+   const r=await runFirstPrinciples(request(),quota(allowed));
+   assert.equal(r.status,429,`额度用完要把闸门的拒绝原样返回（allowed=${allowed}）`);
+   assert.equal(await r.text(),'quota');
+   assert.equal(modelCalls,allowed,`额度拒绝之后不能再调用模型（allowed=${allowed}），实际 ${modelCalls}`);
+   assert.equal(authorizeCalls,allowed+1,'被拒绝的那次授权之后不再授权');
+   assert.equal(skipKeys().length,0,'收敛没走完就不能写排除标记');
+   assert.equal(writes.length,0);
+   assert(![...db.keys()].some(k=>k.endsWith('build-lock')),'锁必须释放');
+  }
  });
  await t.test('标记写入失败不吞掉拒答：请求失败、锁释放，不留半截状态',async()=>{
   reset();

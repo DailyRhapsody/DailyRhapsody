@@ -17,8 +17,8 @@ test('核心价值观接口：分批、缓存、并发、撤回、拒答与命�
   const previous = Object.fromEntries(Object.keys(env).map(k => [k, process.env[k]])); Object.assign(process.env, env);
   t.after(() => { hooks.deregister(); for (const [k, v] of Object.entries(previous)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } assert.equal(fetch.mock.callCount(), 0); assert.equal(connect.mock.callCount(), 0); });
 
-  const db = new Map(), writes = [], tokens = [];
-  let sourceCalls = 0, modelCalls = 0, authorizeCalls = 0, gate;
+  const db = new Map(), writes = [], tokens = [], violations = [];
+  let sourceCalls = 0, modelCalls = 0, authorizeCalls = 0, granted = 0, quotaShut = false, gate;
   let changeDuringModel = false, broken = false, refuseMark = null, refuseMode = 'throw', networkFailAt = 0, batchOnlyRefusal = false, pipelineBroken = false;
   const make = (id, text = `证据${id}：宁可慢一点，也不把判断交给别人。`) => ({ id, date: '2026-10-08', summary: text, isPublic: true, bodyStatus: 'complete' });
   let diaries = [make('a'), make('b')];
@@ -32,7 +32,14 @@ test('核心价值观接口：分批、缓存、并发、撤回、拒答与命�
     async eval(_, [key], [token]) { return db.get(key) === token ? Number(db.delete(key)) : 0; }
   } } });
   t.mock.module(new URL('../lib/persona/llm.ts', import.meta.url).href, { namedExports: { streamChat: async opts => {
-    modelCalls++; tokens.push(opts.maxTokens); assert.equal(opts.strict, true); assert(opts.signal); if (gate) await gate.promise;
+    modelCalls++;
+    // 全局不变式，每条用例都在检查：每次模型调用之前恰好新放行一次全站分析额度（1:1、先授权后调用），
+    // 闸门拒绝之后本请求不再调用模型。哪条路径新增了不过闸的模型调用，走到它的用例就会变红。
+    if (granted !== modelCalls || quotaShut) {
+      const v = `第 ${modelCalls} 次模型调用没有先单独过全站分析额度（已放行 ${granted} 次${quotaShut ? '，且闸门已拒绝' : ''}）`;
+      violations.push(v); throw new Error(v);
+    }
+    tokens.push(opts.maxTokens); assert.equal(opts.strict, true); assert(opts.signal); if (gate) await gate.promise;
     // 网络、超时一类非拒答失败：必须与拒答区分开，否则会被当成拒答继续烧探测调用
     if (networkFailAt && modelCalls === networkFailAt) throw new Error('network down');
     const input = JSON.parse(opts.messages[0].content);
@@ -54,11 +61,14 @@ test('核心价值观接口：分批、缓存、并发、撤回、拒答与命�
   const { runCoreValues } = await import('../lib/persona/core-values-route.ts');
   const { makeValuesCorpus } = await import('../lib/persona/core-values.ts');
   const request = () => new Request('http://local.test/api/chat', { method: 'POST', body: '{}' });
-  const auth = async () => { authorizeCalls++; return null; };
+  // 全站分析额度闸门的替身：先放行 allowed 次，之后一律拒绝
+  const quota = (allowed = Infinity) => async () => { authorizeCalls++; if (allowed-- > 0) { granted++; return null; } quotaShut = true; return new Response('quota', { status: 429 }); };
+  const auth = quota();
+  t.afterEach(() => assert.deepEqual(violations.splice(0), [], '每次模型调用都必须先单独过全站分析额度'));
   const run = () => runCoreValues(request(), auth);
   const skipKeys = () => [...db.keys()].filter(k => k.includes(':skip:'));
   const lockKeys = () => [...db.keys()].filter(k => k.endsWith('build-lock'));
-  const reset = () => { db.clear(); writes.length = 0; tokens.length = 0; diaries = [make('a'), make('b')]; modelCalls = 0; authorizeCalls = 0; changeDuringModel = false; broken = false; gate = undefined; refuseMark = null; refuseMode = 'throw'; networkFailAt = 0; batchOnlyRefusal = false; pipelineBroken = false; };
+  const reset = () => { db.clear(); writes.length = 0; tokens.length = 0; diaries = [make('a'), make('b')]; modelCalls = 0; authorizeCalls = 0; granted = 0; quotaShut = false; changeDuringModel = false; broken = false; gate = undefined; refuseMark = null; refuseMode = 'throw'; networkFailAt = 0; batchOnlyRefusal = false; pipelineBroken = false; };
 
   await t.test('202提炼→最终报告→缓存命中；缓存不消耗模型额度', async () => {
     reset(); assert.equal((await run()).status, 202);
@@ -120,7 +130,7 @@ test('核心价值观接口：分批、缓存、并发、撤回、拒答与命�
 
   await t.test('额度拒绝不调用模型且释放锁', async () => {
     reset();
-    const r = await runCoreValues(request(), async () => new Response('quota', { status: 429 }));
+    const r = await runCoreValues(request(), quota(0));
     assert.equal(r.status, 429); assert.equal(modelCalls, 0); assert.equal(db.size, 0);
   });
 
@@ -137,11 +147,13 @@ test('核心价值观接口：分批、缓存、并发、撤回、拒答与命�
     assert.equal(skipKeys().length, 1, `只该标记真正被拒的那一块，实际 ${skipKeys().length} 块`);
     assert(skipKeys()[0].endsWith(`:skip:${guilty.key}`));
     assert(modelCalls >= 2 && modelCalls <= 9, `二分探测有上界，实际 ${modelCalls}`);
+    assert.equal(authorizeCalls, modelCalls, '每次真实模型调用（含二分探测）都要先过全站分析额度');
     let report = null;
     for (let round = 0; round < 6 && !report; round++) { const r = await run(); if (r.status === 200) report = await r.text(); }
     assert.ok(report, '被拒切块标记后必须能走到报告');
     assert.match(report, /另有 1 篇的部分正文被模型供应商的内容策略拒绝处理/);
     assert(report.includes('12 篇公开文章'));
+    assert.equal(authorizeCalls, modelCalls, '每次真实模型调用（含二分探测）都要先过全站分析额度');
   });
 
   await t.test('拒答在读流期间才到达（流内错误形态）时同样收敛到单块', async () => {
@@ -156,6 +168,7 @@ test('核心价值观接口：分批、缓存、并发、撤回、拒答与命�
     assert.equal(skipKeys().length, 1, `流内拒答同样只该标记 1 块，实际 ${skipKeys().length} 块`);
     assert(skipKeys()[0].endsWith(`:skip:${guilty.key}`));
     assert(modelCalls >= 2 && modelCalls <= 9, `探测次数必须有界，实际 ${modelCalls}`);
+    assert.equal(authorizeCalls, modelCalls, '每次真实模型调用（含二分探测）都要先过全站分析额度');
     let report = null;
     for (let round = 0; round < 4 && !report; round++) { const r = await run(); if (r.status === 200) report = await r.text(); }
     assert.ok(report, '跳过被拒切块后必须能走到报告');
@@ -168,6 +181,7 @@ test('核心价值观接口：分批、缓存、并发、撤回、拒答与命�
     diaries = Array.from({ length: 12 }, (_, i) => make(`k${String(i).padStart(2, '0')}`, `第 ${i} 篇：宁可慢一点，也不把判断交给别人。`));
     diaries[11].summary += refuseMark;
     await assert.rejects(run(), /network down/);
+    assert.equal(modelCalls, 2); assert.equal(authorizeCalls, modelCalls, '每次真实模型调用（含二分探测）都要先过全站分析额度');
     assert.equal(skipKeys().length, 0, '网络失败绝不能被当成拒答去写排除标记');
     assert.equal(writes.length, 0);
     assert.equal(lockKeys().length, 0, '锁必须释放');
@@ -180,6 +194,26 @@ test('核心价值观接口：分批、缓存、并发、撤回、拒答与命�
     await assert.rejects(run(), /Content Exists Risk/);
     assert.equal(skipKeys().length, 0, '归因不出来就不猜，宁可不写排除声明');
     assert(modelCalls <= 9, `探测次数必须有界，实际 ${modelCalls}`);
+    assert.equal(authorizeCalls, modelCalls, '每次真实模型调用（含二分探测）都要先过全站分析额度');
+  });
+
+  await t.test('额度在二分探测途中用完：立即停止探测，不写排除标记，返回额度拒绝', async () => {
+    // 12 块、被拒块在末尾：原始调用 1 次 + 探测 6 次。额度在第 allowed+1 次调用前用完，
+    // 覆盖首次探测、中途与最后一次探测各个位置。
+    for (const allowed of [1, 2, 3, 6]) {
+      reset();
+      refuseMark = '【触发拒答的段落】';
+      diaries = Array.from({ length: 12 }, (_, i) => make(`k${String(i).padStart(2, '0')}`, `第 ${i} 篇：宁可慢一点，也不把判断交给别人。`));
+      diaries[11].summary += refuseMark;
+      const r = await runCoreValues(request(), quota(allowed));
+      assert.equal(r.status, 429, `额度用完要把闸门的拒绝原样返回（allowed=${allowed}）`);
+      assert.equal(await r.text(), 'quota');
+      assert.equal(modelCalls, allowed, `额度拒绝之后不能再调用模型（allowed=${allowed}），实际 ${modelCalls}`);
+      assert.equal(authorizeCalls, allowed + 1, '被拒绝的那次授权之后不再授权');
+      assert.equal(skipKeys().length, 0, '收敛没走完就不能写排除标记');
+      assert.equal(writes.length, 0);
+      assert.equal(lockKeys().length, 0, '锁必须释放');
+    }
   });
 
   await t.test('标记写入失败不吞掉拒答：请求失败、锁释放，不留半截状态', async () => {

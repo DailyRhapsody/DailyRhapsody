@@ -5,7 +5,7 @@ import { getAnalysisDiaries } from "@/lib/notion";
 import { withAntiScrapeHeaders } from "@/lib/request-guard";
 import { streamChat } from "@/lib/persona/llm";
 import {
-  ANALYSIS_VERSION, analysisPrompt, isProviderRefusal, makeCorpus, parseJson, planAnalysis,
+  ANALYSIS_VERSION, QuotaRejected, analysisPrompt, isProviderRefusal, makeCorpus, parseJson, planAnalysis,
   renderAnalysis, validateExtraction, validateSynthesis, type AnalysisWork, type Chunk, type Corpus,
 } from "@/lib/persona/first-principles";
 
@@ -27,7 +27,7 @@ async function unchanged(corpus: Corpus): Promise<boolean> {
   return latest !== null && makeCorpus(latest).hash === corpus.hash;
 }
 
-/** 一个请求最多一次模型调用，逐批持久化。任何访客均只分析公开博客，与人设记忆隔离。 */
+/** 一个请求通常一次模型调用（拒答二分探测例外，每次调用各计全站分析额度），逐批持久化。任何访客均只分析公开博客，与人设记忆隔离。 */
 export async function runFirstPrinciples(req: Request, authorizeModel: () => Promise<Response | null>): Promise<Response> {
   const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
@@ -62,11 +62,12 @@ export async function runFirstPrinciples(req: Request, authorizeModel: () => Pro
     const lockedPlan = await planAnalysis(corpus, read);
     if (lockedPlan.result) return pending(lockedPlan.completed, lockedPlan.total, "synthesize");
     work = lockedPlan.work!;
-    const rejected = await authorizeModel();
-    if (rejected) return rejected;
     const signal = AbortSignal.any([req.signal, AbortSignal.timeout(45_000)]);
     /** 真的跑一次模型。拒答、网络、超时都原样抛出，由调用方分辨是不是内容策略拒答。 */
     const runModel = async (item: AnalysisWork): Promise<string> => {
+      // 每次真实模型调用先过全站分析额度；拒绝以 QuotaRejected 冒泡，由最外层换回闸门的响应
+      const rejected = await authorizeModel();
+      if (rejected) throw new QuotaRejected(rejected);
       const stream = await streamChat({ system: analysisPrompt(item),
         messages: [{ role: "user", content: item.input }], maxTokens: 6_144,
         temperature: 0.2, strict: true, signal });
@@ -161,6 +162,9 @@ export async function runFirstPrinciples(req: Request, authorizeModel: () => Pro
       }));
     }
     return pending(plan.completed, plan.total, work.phase);
+  } catch (e) {
+    if (e instanceof QuotaRejected) return e.response;
+    throw e;
   } finally {
     await redis.eval(RELEASE, [lockKey], [lockToken]).catch(() => {});
   }
