@@ -9,6 +9,9 @@ export function isGateIssuingPath(pathname: string): boolean {
   // 否则分享图会被打上 no-store 并下发一个无关的 dr_seed cookie。
   if (/^\/reference\/[0-9a-f]{32}$/i.test(pathname)) return true;
   if (/^\/reference\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(pathname)) return true;
+  // 单篇文章页（分享链接的落地页）：正文在握手完成后才从 /api/diaries/[id] 读取。
+  // 不在这里签发种子，从链接直接进来的访客没有 dr_seed、做不了握手，正文永远 403。
+  if (/^\/blog\/(?:[0-9a-f]{32}|[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})$/i.test(pathname)) return true;
   return (
     pathname === "/" ||
     pathname === "/blog" ||
