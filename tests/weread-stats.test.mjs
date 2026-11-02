@@ -90,6 +90,17 @@ test("缺少总时长即返回 null，不编造数字", () => {
   assert.equal(buildReadingStats({ totalReadTime: "abc" }, null), null);
 });
 
+test("月初本月为 0 时，累计数据仍能保住卡片", () => {
+  const s = buildReadingStats(
+    { totalReadTime: 0, readDays: 0, readTimes: {} },
+    { totalReadTime: 4292133, readDays: 1488, readStat: [{ stat: "读过", counts: "404本" }] },
+  );
+  assert.ok(s);
+  assert.equal(s.monthMinutes, 0);
+  assert.ok(s.totalMinutes > 0);
+  assert.equal(isUsableCachedStats(s), true);
+});
+
 test("秒换算成分钟，不是分钟或小时", () => {
   const s = buildReadingStats({ totalReadTime: 11685 }, null);
   assert.equal(s.monthMinutes, 195, "11685 秒 = 194.75 分 → 195 分");
