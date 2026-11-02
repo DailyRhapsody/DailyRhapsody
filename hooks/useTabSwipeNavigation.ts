@@ -16,9 +16,20 @@ const TOUCH_TRIGGER_DELTA = 50;
  * - data-pet-chat：AI-Persona 面板自己处理交互。
  * - data-hscroll：自身要横向滚动的容器（/blog 顶部卡片条）。触屏横滑在这里被
  *   preventDefault 会让容器永远滑不动，四张卡在窄屏只剩前两张可达。
+ * - 正文里的代码块、宽表格、KaTeX 公式块、Mermaid 图：lib/markdown.ts 给它们开了
+ *   overflow-x-auto，内容放不下时要能自己横滚。不豁免的话，横滚被 preventDefault 吞掉、
+ *   滚不动，累计 40px 还会把列表切到下一个 tab。只在内容确实溢出时豁免：放得下的短代码块、
+ *   窄表格上横滑照常切 tab。
  */
-function isExempt(target: EventTarget | null): boolean {
-  return !!(target as Element | null)?.closest?.("[data-pet-chat], [data-hscroll]");
+const PROSE_HSCROLL_SELECTOR = "pre, table, .katex-display, .dr-mermaid";
+
+export function isSwipeExempt(target: EventTarget | null): boolean {
+  const el = target as Element | null;
+  if (!el?.closest) return false;
+  if (el.closest("[data-pet-chat], [data-hscroll]")) return true;
+  const block = el.closest(PROSE_HSCROLL_SELECTOR);
+  // 宽度取整后可能差 1px：放得下的块不当成可横滚
+  return !!block && block.scrollWidth > block.clientWidth + 1;
 }
 
 /**
@@ -68,8 +79,8 @@ export function useTabSwipeNavigation(
     }
 
     function onWheel(e: WheelEvent) {
-      // AI-Persona 面板里的横滚、卡片条自身的横滚都留给它们自己
-      if (isExempt(e.target)) return;
+      // AI-Persona 面板、卡片条与正文里溢出的代码块、表格、公式的横滚都留给它们自己
+      if (isSwipeExempt(e.target)) return;
       // 只关心横向意图：deltaX 的绝对值要大于 deltaY 才算横滚
       if (!(Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 2)) return;
       e.preventDefault();
@@ -119,7 +130,7 @@ export function useTabSwipeNavigation(
       startX = e.touches[0]?.clientX ?? 0;
       startY = e.touches[0]?.clientY ?? 0;
       isHz = null;
-      exempt = isExempt(e.target);
+      exempt = isSwipeExempt(e.target);
     }
     function onTouchMove(e: TouchEvent) {
       if (exempt || isHz === false) return;
