@@ -225,21 +225,21 @@ export async function guardApiRequest(
   const ip = getClientIpFromRequest(req);
 
   if (blockSuspicious && isSuspiciousRequest(req)) {
-    await recordViolation(ip, `suspicious req scope=${scope}`);
+    await recordViolation(ip, `suspicious req scope=${scope}`, req.headers);
     return withAntiScrapeHeaders(
       NextResponse.json({ error: "请求由于可疑行为被拦截" }, { status: 403 })
     );
   }
 
   if (checkOrigin && !checkOriginOrReferer(req)) {
-    await recordViolation(ip, `bad origin scope=${scope}`);
+    await recordViolation(ip, `bad origin scope=${scope}`, req.headers);
     return withAntiScrapeHeaders(
       NextResponse.json({ error: "禁止跨域抓取" }, { status: 403 })
     );
   }
 
   if (checkSecFetch && !checkSecFetchSiteSameOrigin(req)) {
-    await recordViolation(ip, `bad sec-fetch scope=${scope}`);
+    await recordViolation(ip, `bad sec-fetch scope=${scope}`, req.headers);
     return withAntiScrapeHeaders(
       NextResponse.json({ error: "请求来源异常" }, { status: 403 })
     );
@@ -249,7 +249,7 @@ export async function guardApiRequest(
   // 拼出来的 string 必须显式断言一下才能塞回去
   const allowed = await limitByIp(scope, ip, limit, `${windowMs} ms` as `${number} ms`);
   if (!allowed) {
-    if (recordRateLimitViolation) await recordViolation(ip, `rate limit scope=${scope}`);
+    if (recordRateLimitViolation) await recordViolation(ip, `rate limit scope=${scope}`, req.headers);
     return tooManyRequests(Date.now() + 60_000);
   }
 
@@ -266,7 +266,7 @@ export async function guardApiRequest(
   buckets.set(key, bucket);
 
   if (bucket.count > limit) {
-    if (recordRateLimitViolation) await recordViolation(ip, `local bucket scope=${scope}`);
+    if (recordRateLimitViolation) await recordViolation(ip, `local bucket scope=${scope}`, req.headers);
     return tooManyRequests(bucket.resetAt);
   }
 

@@ -55,7 +55,7 @@ export async function POST(req: Request) {
   if (sfs !== "same-origin" || sfm !== "cors" || sfd !== "empty") {
     // 不再 blockIp：Surge MITM 等代理可能篡改 Sec-Fetch-* 头，
     // 一次失败就封 24h 会误伤真人。改为 recordViolation 计数，到阈值再封。
-    await recordViolation(clientIp, `gate/issue bad sec-fetch sfs=${sfs} sfm=${sfm} sfd=${sfd}`);
+    await recordViolation(clientIp, `gate/issue bad sec-fetch sfs=${sfs} sfm=${sfm} sfd=${sfd}`, req.headers);
     return withAntiScrapeHeaders(
       NextResponse.json({ error: "请求来源异常" }, { status: 403 })
     );
@@ -103,7 +103,7 @@ export async function POST(req: Request) {
   if (!checkPow(seedInfo.nonce, counter)) {
     // 不再 blockIp：网络抖动、页面长时间挂起后重试等真实场景可能导致 PoW 失败，
     // 一次失败就封 24h 过于激进。改为 recordViolation 计数，到阈值再封。
-    await recordViolation(clientIp, `gate/issue bad PoW`);
+    await recordViolation(clientIp, `gate/issue bad PoW`, req.headers);
     return withAntiScrapeHeaders(
       NextResponse.json(
         { error: "校验失败", difficulty: POW_DIFFICULTY },
@@ -119,7 +119,7 @@ export async function POST(req: Request) {
   if (!fresh) {
     // 不再 blockIp：WiFi↔4G 切网/页面快速刷新等真实场景会触发 nonce 复用，
     // 直接封 IP 会误伤真人。改为 recordViolation 记入计数，到阈值再处理。
-    await recordViolation(clientIp, "gate/issue replay nonce");
+    await recordViolation(clientIp, "gate/issue replay nonce", req.headers);
     return withAntiScrapeHeaders(
       NextResponse.json({ error: "请刷新页面重试" }, { status: 403 })
     );

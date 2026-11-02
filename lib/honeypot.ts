@@ -1,4 +1,5 @@
 import { Redis } from "@upstash/redis";
+import { isCrossSiteInduced } from "@/lib/fetch-metadata";
 
 const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
 const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
@@ -85,10 +86,15 @@ export async function markNonceUsed(nonce: string): Promise<boolean> {
 /**
  * 记一次违规（命中限流 / 可疑特征 / 跨域抓取等）。
  * 短窗口内累计达到阈值会自动封禁该 IP 24 小时。
+ *
+ * headers 必传：第三方页面诱导的跨站请求在这里统一放过，只拒绝不计数（判据见
+ * lib/fetch-metadata.ts）。做成必填参数，是为了让新加的调用点在编译期就必须带上请求头，
+ * 不会有哪一处漏掉这条判断。
  */
-export async function recordViolation(ip: string, reason: string): Promise<void> {
+export async function recordViolation(ip: string, reason: string, headers: Headers): Promise<void> {
   if (!redis) return;
   if (!ip || ip === "unknown") return;
+  if (isCrossSiteInduced(headers)) return;
   const key = `${VIOL_PREFIX}${ip}`;
   try {
     const count = await redis.incr(key);
