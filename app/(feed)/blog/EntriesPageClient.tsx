@@ -271,8 +271,15 @@ export default function EntriesPageClient({
   const scrollToTreeTarget = useCallback((id: string) => {
     const el = document.getElementById(`entry-${id}`);
     if (!el) return false;
-    treeTargetRef.current = id;
-    window.history.replaceState(null, "", `/blog#entry-${id}`);
+    // 目标已经在页面上：交给下面的对齐循环，待定目标随即清空。treeTargetRef 只表示「还没加载到、
+    // 等列表变化后再定位」的目标。旧写法在对齐期间一直挂着它，读者一滚就取消了对齐，ref 却不清：
+    // 之后翻页、点时间轴、切标签都会让下方的 effect 再次命中，把读者拽回这篇文章，每次还多起一轮对齐。
+    treeTargetRef.current = null;
+    // 也不往地址栏写 #entry-：useEntries 的深链 effect 会把它当成还没落地的分享锚点，下一次翻页
+    // 再把读者拉回来一次。和时间轴跳转一样（ScrollTimeline 的 jump），顺手清掉残留的旧锚点。
+    if (window.location.hash.startsWith("#entry-")) {
+      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    }
     let attempts = 0;
     let cancelled = false;
     const cancel = () => { cancelled = true; cleanup(); };
@@ -294,10 +301,7 @@ export default function EntriesPageClient({
       }
       attempts++;
       if (attempts < 60) window.setTimeout(align, 100);
-      else {
-        cleanup();
-        if (treeTargetRef.current === id) treeTargetRef.current = null;
-      }
+      else cleanup();
     };
     align();
     return true;
