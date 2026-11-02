@@ -9,8 +9,6 @@ export type ShareCardInput = {
   entryId: string | number;
   authorName: string;
   tags?: string[];
-  /** 原文链接：分享图与预览里必须带上，否则图片脱离页面后无法回到原文 */
-  url?: string;
 };
 
 const CARD_WIDTH_PX = 340;
@@ -88,7 +86,6 @@ export function createShareCardElement(props: ShareCardInput): HTMLDivElement {
   const body = summaryToPlainForCard(props.summary);
   const { day, yearMonth } = getCardDateParts(props.date, props.publishedAt);
   const authorTrimmed = props.authorName.trim();
-  const shareUrl = (props.url ?? "").trim();
   const showAuthorLine =
     authorTrimmed.length > 0 && authorTrimmed !== DEFAULT_SHARE_AUTHOR_LABEL;
   const bodyHtml = escapeHtml(body).replace(/\n/g, "<br/>");
@@ -243,21 +240,6 @@ export function createShareCardElement(props: ShareCardInput): HTMLDivElement {
   footerBottomRow.appendChild(brand);
   if (showAuthorLine) footer.appendChild(authorLine);
   footer.appendChild(footerBottomRow);
-
-  if (shareUrl) {
-    const linkEl = document.createElement("div");
-    linkEl.textContent = shareUrl;
-    linkEl.style.cssText = [
-      "margin-top:8px",
-      "font-size:9px",
-      "font-weight:400",
-      "color:#a8a8a8",
-      "line-height:1.45",
-      "word-break:break-all",
-      "text-align:left",
-    ].join(";");
-    footer.appendChild(linkEl);
-  }
 
   root.appendChild(dateBox);
   root.appendChild(main);

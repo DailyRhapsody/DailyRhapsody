@@ -100,7 +100,6 @@ export function EntryCard({
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [sharePreviewSrc, setSharePreviewSrc] = useState<string | null>(null);
   const [shareModalError, setShareModalError] = useState<string | null>(null);
-  const [shareUrl, setShareUrl] = useState("");
   const [copyLinkHint, setCopyLinkHint] = useState<"ok" | "fail" | null>(null);
   // 优化器回源偶发失败（线上见过 /_next/image 400）时，改为直接加载代理原图
   const [unoptimizedSrcs, setUnoptimizedSrcs] = useState<ReadonlySet<string>>(() => new Set());
@@ -183,7 +182,6 @@ export function EntryCard({
     setShareModalOpen(false);
     setSharePreviewSrc(null);
     setShareModalError(null);
-    setShareUrl("");
     setCopyLinkHint(null);
     if (copyLinkHintTimerRef.current) {
       clearTimeout(copyLinkHintTimerRef.current);
@@ -236,21 +234,10 @@ export function EntryCard({
     copyLinkHintTimerRef.current = setTimeout(() => setCopyLinkHint(null), 2600);
   }
 
-  /** 让地址栏带上当前文章锚点：浏览器自带分享、复制地址时都能回到原文 */
-  const markEntryUrl = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const hash = `#entry-${item.id}`;
-    if (window.location.pathname === "/blog" && window.location.hash === hash) return;
-    const query = window.location.search;
-    window.history.replaceState(null, "", `/blog${query}${hash}`);
-  }, [item.id]);
-
   async function openShareImageModal() {
     if (typeof window === "undefined") return;
-    markEntryUrl();
     const shareUrl = `${window.location.origin}/blog#entry-${item.id}`;
     shareUrlRef.current = shareUrl;
-    setShareUrl(shareUrl);
     const gen = ++shareGenRef.current;
     setMenuOpen(false);
     setShareModalOpen(true);
@@ -271,7 +258,6 @@ export function EntryCard({
       entryId: item.id,
       authorName,
       tags: item.tags,
-      url: shareUrl,
     });
     host.appendChild(card);
     document.body.appendChild(host);
@@ -368,7 +354,6 @@ export function EntryCard({
     <article
       id={`entry-${item.id}`}
       className="group relative flex flex-col gap-3 rounded-2xl px-3 py-4 transition-apple scroll-mt-24 hover:bg-zinc-100/70 hover:shadow-md dark:hover:bg-zinc-900/80 dark:hover:shadow-black/10"
-      onClick={markEntryUrl}
       // 线程距文章顶 16px（top-4），再留出与底边同样的 16px
       style={marginThread && marginHeight > 0 ? { minHeight: marginHeight + 32 } : undefined}
     >
@@ -685,28 +670,6 @@ export function EntryCard({
                   </span>
                 )}
               </span>
-              {shareUrl && (
-                <div className="mt-1 flex w-full items-center gap-2">
-                  <label htmlFor={`share-url-${item.id}`} className="shrink-0 text-[0.65rem] text-zinc-500 dark:text-zinc-400">
-                    原文链接
-                  </label>
-                  <input
-                    id={`share-url-${item.id}`}
-                    readOnly
-                    value={shareUrl}
-                    onFocus={(e) => e.currentTarget.select()}
-                    className="min-w-0 flex-1 rounded border border-zinc-200 bg-zinc-50 px-2 py-1 text-[0.65rem] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-                  />
-                  <a
-                    href={shareUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="shrink-0 text-[0.65rem] text-zinc-500 underline underline-offset-2 dark:text-zinc-400"
-                  >
-                    打开
-                  </a>
-                </div>
-              )}
             </div>
           </div>
         </div>,
