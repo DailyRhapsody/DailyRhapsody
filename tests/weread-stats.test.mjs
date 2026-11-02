@@ -85,9 +85,15 @@ test("缺少总时长即返回 null，不编造数字", () => {
   assert.equal(buildReadingStats(null, null), null);
   assert.equal(buildReadingStats({}, null), null);
   assert.equal(buildReadingStats({ readDays: 3 }, null), null);
-  assert.equal(buildReadingStats({ totalReadTime: 0 }, null), null);
   assert.equal(buildReadingStats({ totalReadTime: -60 }, null), null);
   assert.equal(buildReadingStats({ totalReadTime: "abc" }, null), null);
+});
+
+test("本月为 0 是有效数据，卡片仍应存在", () => {
+  const zero = buildReadingStats({ totalReadTime: 0, readDays: 0, readTimes: {} }, null);
+  assert.ok(zero);
+  assert.equal(zero.monthMinutes, 0);
+  assert.equal(isUsableCachedStats(zero), true);
 });
 
 test("月初本月为 0 时，累计数据仍能保住卡片", () => {
@@ -740,7 +746,7 @@ test("缓存形状校验与构建器同口径，不误杀合法缓存", () => {
   assert.equal(isUsableCachedStats({ ...good, monthStat: undefined }), false, "详情层缺 readStat 的旧结构必须拒");
   assert.equal(isUsableCachedStats({ ...good, medals: null }), false);
   assert.equal(isUsableCachedStats({ ...good, preferBooks: undefined }), false);
-  assert.equal(isUsableCachedStats({ ...good, monthMinutes: 0 }), false, "与构建器一致：总时长为 0 不接受");
+  assert.equal(isUsableCachedStats({ ...good, monthMinutes: 0 }), true, "0 是合法的本月空数据");
   assert.equal(isUsableCachedStats({ ...good, monthMinutes: -1 }), false);
   // 空数组是合法状态（当月没读到书、时段未达阈值），不能因此回源
   assert.equal(isUsableCachedStats({ ...good, books: [], hourly: [] }), true);
