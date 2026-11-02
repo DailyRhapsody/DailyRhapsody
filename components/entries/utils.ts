@@ -66,6 +66,82 @@ export function legacyCopyTextToClipboard(text: string): boolean {
   return ok;
 }
 
+
+/** 分享卡里的正文块：文字与图片按原文顺序排列。 */
+export type ShareBodyBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; src: string; alt: string };
+
+const STANDALONE_IMAGE_LINE_WITH_ALT =
+  /^[ \t]*!\[([^\]\n]*)\]\(\s*<?((?:[^\s()<>]|\([^\s()<>]*\))+)>?(?:\s+"[^"\n]*")?\s*\)[ \t]*$/;
+
+/**
+ * 把正文拆成文字/图片块，保留图片在原文中的顺序。
+ * 分享图只取节选，避免 2 万字长文生成的超高图片在预览里被压糊。
+ */
+export function splitShareBlocks(summary: string): ShareBodyBlock[] {
+  const blocks: ShareBodyBlock[] = [];
+  let buffer: string[] = [];
+  let fence: string | null = null;
+
+  const flush = () => {
+    if (buffer.length === 0) return;
+    const text = buffer.join("\n").replace(/^\n+|\n+$/g, "");
+    if (text.trim()) blocks.push({ type: "text", text });
+    buffer = [];
+  };
+
+  for (const line of summary.split("\n")) {
+    const fenceMatch = /^[ \t]{0,3}(`{3,})/.exec(line);
+    if (fenceMatch) {
+      if (fence === null) fence = fenceMatch[1];
+      else if (line.trim().startsWith(fence)) fence = null;
+      buffer.push(line);
+      continue;
+    }
+    if (fence === null) {
+      const image = STANDALONE_IMAGE_LINE_WITH_ALT.exec(line);
+      if (image) {
+        flush();
+        blocks.push({ type: "image", src: image[2], alt: image[1] });
+        continue;
+      }
+    }
+    buffer.push(line);
+  }
+  flush();
+  return blocks;
+}
+
+/** 分享卡正文节选：长文只取前 1400 字，最多 6 张正文图，保证导出图清晰。 */
+export function trimShareBlocks(
+  blocks: ShareBodyBlock[],
+  maxChars = 1400,
+  maxImages = 6
+): ShareBodyBlock[] {
+  const out: ShareBodyBlock[] = [];
+  let chars = 0;
+  let images = 0;
+  for (const block of blocks) {
+    if (block.type === "image") {
+      if (images < maxImages) {
+        out.push(block);
+        images++;
+      }
+      continue;
+    }
+    const remaining = maxChars - chars;
+    if (remaining <= 0) break;
+    const text = block.text.length > remaining ? `${block.text.slice(0, remaining).trimEnd()}…` : block.text;
+    if (text.trim()) {
+      out.push({ type: "text", text });
+      chars += text.length;
+    }
+    if (text.endsWith("…")) break;
+  }
+  return out;
+}
+
 export function getSizeClass(count: number, maxCount: number) {
   if (maxCount <= 0) return "text-xs";
   const r = count / maxCount;

@@ -11,7 +11,7 @@ import { DefaultAvatar } from "./DefaultAvatar";
 import { EntrySummary } from "./EntrySummary";
 import { PinnedIcon } from "./PinnedIcon";
 import { CommentBubbleIcon, EntryComments } from "./EntryComments";
-import { legacyCopyTextToClipboard, splitBodyImages } from "./utils";
+import { legacyCopyTextToClipboard, splitShareBlocks, trimShareBlocks } from "./utils";
 import type { Diary } from "./types";
 
 const SHARE_TIMEOUT_MS = 20_000;
@@ -68,6 +68,34 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+/** 等分享卡里的正文图片解码完再截图：html2canvas 不会替未加载的图片等太久。 */
+function waitForShareImages(root: HTMLElement): Promise<void> {
+  const images = Array.from(root.querySelectorAll("img"));
+  if (images.length === 0) return Promise.resolve();
+  return Promise.all(
+    images.map(
+      (img) =>
+        new Promise<void>((resolve) => {
+          if (img.complete) {
+            resolve();
+            return;
+          }
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            img.removeEventListener("load", finish);
+            img.removeEventListener("error", finish);
+            resolve();
+          };
+          img.addEventListener("load", finish);
+          img.addEventListener("error", finish);
+          window.setTimeout(finish, 8_000);
+        })
+    )
+  ).then(() => undefined);
+}
+
 export function EntryCard({
   item,
   authorName,
@@ -112,8 +140,11 @@ export function EntryCard({
   /** 系统分享用的图片文件；预览与下载用 data URL（微信等内置浏览器长按保存取不到 blob: 地址） */
   const shareBlobRef = useRef<Blob | null>(null);
   const menuRootRef = useRef<HTMLDivElement | null>(null);
-  /** 分享卡只取纯文本；正文图片仍按 Markdown 原位置渲染。 */
-  const shareText = useMemo(() => splitBodyImages(item.summary).text, [item.summary]);
+  /** 分享卡按原文顺序保留正文图片；长文只取节选，避免导出图过高被压糊。 */
+  const shareBlocks = useMemo(
+    () => trimShareBlocks(splitShareBlocks(item.summary)),
+    [item.summary]
+  );
   /** 顶部首图只认 Notion 的 Image 字段；正文图片不抽出来。 */
   const images = useMemo(
     () => [...new Set(item.images ?? [])].filter((src) => !brokenSrcs.has(src)),
@@ -236,7 +267,7 @@ export function EntryCard({
 
   async function openShareImageModal() {
     if (typeof window === "undefined") return;
-    const shareUrl = `${window.location.origin}/blog#entry-${item.id}`;
+    const shareUrl = `${window.location.origin}/blog/${item.id}`;
     shareUrlRef.current = shareUrl;
     const gen = ++shareGenRef.current;
     setMenuOpen(false);
@@ -252,7 +283,8 @@ export function EntryCard({
       "position:fixed;left:-9999px;top:0;overflow:visible;opacity:1;pointer-events:none;z-index:-1";
 
     const card = createShareCardElement({
-      summary: shareText,
+      summary: item.summary,
+      blocks: shareBlocks,
       date: item.date,
       publishedAt: item.publishedAt,
       entryId: item.id,
@@ -268,6 +300,7 @@ export function EntryCard({
       timer = setTimeout(() => reject(new Error("share-timeout")), SHARE_TIMEOUT_MS);
     });
     try {
+      await Promise.race([waitForShareImages(card), timeout]);
       const { default: html2canvas } = await Promise.race([import("html2canvas"), timeout]);
       if (gen !== shareGenRef.current) return;
       // 读 offsetHeight 会强制排版，不用再等一帧（后台标签页里 requestAnimationFrame 不触发）
