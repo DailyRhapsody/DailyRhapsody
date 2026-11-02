@@ -2,8 +2,14 @@
  * 前台「分享为图」：离屏 DOM，风格对齐 flomo 类卡片（品牌为 DailyRhapsody）。
  */
 
+export type ShareCardBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; src: string; alt?: string };
+
 export type ShareCardInput = {
   summary: string;
+  /** 按原文顺序排列的文字/图片块；提供时覆盖 summary 的纯文本回退。 */
+  blocks?: ShareCardBlock[];
   date: string;
   publishedAt?: string;
   entryId: string | number;
@@ -84,6 +90,7 @@ export function getCardDateParts(
  */
 export function createShareCardElement(props: ShareCardInput): HTMLDivElement {
   const body = summaryToPlainForCard(props.summary);
+  const blocks = props.blocks ?? [];
   const { day, yearMonth } = getCardDateParts(props.date, props.publishedAt);
   const authorTrimmed = props.authorName.trim();
   const showAuthorLine =
@@ -151,7 +158,47 @@ export function createShareCardElement(props: ShareCardInput): HTMLDivElement {
     "color:#333333",
     "word-break:break-word",
   ].join(";");
-  main.innerHTML = bodyHtml;
+  if (blocks.length > 0) {
+    for (const block of blocks) {
+      if (block.type === "text") {
+        const plain = summaryToPlainForCard(block.text);
+        if (!plain.trim()) continue;
+        const textEl = document.createElement("div");
+        textEl.style.cssText = [
+          "margin:0 0 0.9em",
+          "font-size:15px",
+          "font-weight:400",
+          "line-height:1.58",
+          "color:#333333",
+          "word-break:break-word",
+          "text-align:left",
+        ].join(";");
+        textEl.innerHTML = escapeHtml(plain).replace(/\n/g, "<br/>");
+        main.appendChild(textEl);
+      } else {
+        const figure = document.createElement("div");
+        figure.style.cssText = "margin:12px 0 16px;text-align:center";
+        const img = document.createElement("img");
+        img.src = block.src;
+        img.alt = block.alt?.trim() || "文章图片";
+        img.loading = "eager";
+        img.style.cssText = [
+          "display:block",
+          "max-width:100%",
+          "max-height:480px",
+          "width:auto",
+          "height:auto",
+          "margin:0 auto",
+          "border-radius:8px",
+          "background:#f1f1f1",
+        ].join(";");
+        figure.appendChild(img);
+        main.appendChild(figure);
+      }
+    }
+  } else {
+    main.innerHTML = bodyHtml;
+  }
 
   const tags = (props.tags ?? [])
     .map((t) => String(t).trim())
