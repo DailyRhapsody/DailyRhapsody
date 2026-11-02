@@ -923,7 +923,11 @@ export function buildReadingStats(
 ): ReadingStats | null {
   if (!monthly) return null;
   const monthMinutes = toMinutes(monthly.totalReadTime);
-  if (monthMinutes === null || monthMinutes <= 0) return null;
+  if (monthMinutes === null) return null;
+  // 月初还没阅读时本月为 0，但累计数据仍然有效：不能因为本月为空就把整张卡藏掉。
+  // 只有本月和累计都为空时才 fail closed。
+  const overallMinutes = toMinutes(overall?.totalReadTime);
+  if (monthMinutes <= 0 && (overallMinutes === null || overallMinutes <= 0)) return null;
 
   const { month, elapsedDays } = shanghaiMonthProgress();
   const daily = normalizeDaily(monthly.readTimes, month, elapsedDays);
@@ -984,7 +988,10 @@ export function isUsableCachedStats(value: unknown): value is ReadingStats {
     typeof v.month === "string" &&
     // 与构建器同口径：buildReadingStats 在总时长 <= 0 时返回 null，缓存也不该接受这种值
     typeof v.monthMinutes === "number" &&
-    v.monthMinutes > 0 &&
+    v.monthMinutes >= 0 &&
+    // 月初本月为 0 时，只要累计时长存在，卡片仍有内容可显示
+    (v.monthMinutes > 0 ||
+      (typeof v.totalMinutes === "number" && v.totalMinutes > 0)) &&
     typeof v.summary === "string" &&
     Array.isArray(v.daily) &&
     Array.isArray(v.books) &&
