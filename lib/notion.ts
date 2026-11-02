@@ -1083,6 +1083,21 @@ export async function warmDiariesCache(): Promise<number> {
 }
 
 /**
+ * 文章分享页（/blog/[id]）用：只从缓存取，缓存里没有就当不存在。
+ *
+ * 分享链接都来自列表，而列表读的正是这份缓存，缓存里没有的 id 不是本站分享出去的文章。
+ * getDiaryById 在缓存未命中时会回源 Notion（读页面 + 抓整篇正文），挂在公开页面上，
+ * 任意编一个 id 就能换来一串 Notion 调用，等于把配额交给访客消耗。
+ * 只有缓存整体缺失（冷启动、Redis 读不到）时才回源，这时与 getDiaryById 行为一致。
+ */
+export async function getCachedDiaryById(id: string): Promise<Diary | null> {
+  const cached = await getCached();
+  if (!cached) return fetchDiaryFromNotion(id);
+  if (isStale(cached)) triggerBackgroundRefresh();
+  return cached.data.find((d) => d.id === id) ?? null;
+}
+
+/**
  * Fetch a single diary entry by Notion page ID.
  */
 export async function getDiaryById(id: string): Promise<Diary | null> {
@@ -1094,7 +1109,11 @@ export async function getDiaryById(id: string): Promise<Diary | null> {
     const found = cached.data.find((d) => d.id === id);
     if (found) return found;
   }
+  return fetchDiaryFromNotion(id);
+}
 
+/** 按 id 直接读 Notion：页面属性加整篇正文。 */
+async function fetchDiaryFromNotion(id: string): Promise<Diary | null> {
   try {
     const client = getClient();
     const deadline = Date.now() + REQUEST_BUDGET_MS;

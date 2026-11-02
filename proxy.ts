@@ -273,6 +273,8 @@ export const config = {
     "/api/honeypot",
     "/",
     "/blog",
+    // 单篇文章页（分享链接的落地页）服务端渲染整篇正文：必须吃到 IP 黑名单与全局限流
+    "/blog/:path*",
     "/moments",
     "/about",
     "/reference",

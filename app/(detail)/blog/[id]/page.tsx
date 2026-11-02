@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 import { isAdmin } from "@/lib/auth";
 import { getProfile } from "@/lib/profile-store";
-import { getDiaryById, type Diary } from "@/lib/notion";
+import { getCachedDiaryById, type Diary } from "@/lib/notion";
 import { entrySummaryProseClass, renderMarkdown } from "@/lib/markdown";
 import { summaryToPlainForCard } from "@/lib/share-card";
 
@@ -13,8 +13,11 @@ export const dynamic = "force-dynamic";
 const siteUrl =
   process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://tengjun.org";
 
-/** metadata 与页面共用同一次请求，避免各拉一次 Notion/Redis。 */
-const getItem = cache((id: string) => getDiaryById(id));
+/**
+ * metadata 与页面共用同一次读取。只读缓存、不回源 Notion：这是公开页面，
+ * 缓存未命中就回源会让任意 id 都触发 Notion 调用（见 getCachedDiaryById）。
+ */
+const getItem = cache((id: string) => getCachedDiaryById(id));
 
 function titleOf(item: Diary): string {
   const name = item.name?.trim();
