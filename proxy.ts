@@ -166,7 +166,7 @@ export default async function proxy(req: NextRequest) {
   // 1. 全局机器人检测（API 路由必须）
   if (pathname.startsWith("/api/") && isLikelyBotUserAgent(ua)) {
     if (!isAdminReq) {
-      await recordViolation(ip, `bot UA on ${pathname}`);
+      await recordViolation(ip, `bot UA on ${pathname}`, req.headers);
     }
     return withAntiScrapeHeaders(
       NextResponse.json({ error: "请求被拒绝" }, { status: 403 })
@@ -177,12 +177,12 @@ export default async function proxy(req: NextRequest) {
   if (!isAdminReq && ip && ip !== "unknown") {
     const burstOk = await limitByIp("global:burst", ip, 40, "10 s");
     if (!burstOk) {
-      await recordViolation(ip, `burst on ${pathname}`);
+      await recordViolation(ip, `burst on ${pathname}`, req.headers);
       return tooManyResponse(10);
     }
     const sustainedOk = await limitByIp("global:sustained", ip, 150, "1 m");
     if (!sustainedOk) {
-      await recordViolation(ip, `sustained on ${pathname}`);
+      await recordViolation(ip, `sustained on ${pathname}`, req.headers);
       return tooManyResponse(60);
     }
   }
@@ -217,7 +217,7 @@ export default async function proxy(req: NextRequest) {
       // 合法浏览器在握手前并发请求是预期状态，不计违规；搜索引擎也放行，
       // 否则 Googlebot 抓一次 /api 就可能把搜索引擎 IP 计入黑名单，连累整站索引。
       if (!hasLegitSeed && !isLegitSearchBot(ua)) {
-        await recordViolation(ip, `no gate cookie on ${pathname}`);
+        await recordViolation(ip, `no gate cookie on ${pathname}`, req.headers);
       }
       return withAntiScrapeHeaders(
         NextResponse.json(

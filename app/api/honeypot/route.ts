@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { blockIp } from "@/lib/honeypot";
+import { isCrossSiteInduced } from "@/lib/fetch-metadata";
 import { getClientIpFromRequest } from "@/lib/client-ip";
 import { verifyAdminCookieValue } from "@/lib/auth";
 import {
@@ -29,6 +30,11 @@ import {
  *
  * admin 豁免：站主自己（或登录态下误触）不封自己的 IP——被封虽不影响
  * admin 会话本身，但会殃及同一出口 IP 的其他访客。
+ *
+ * 4. 跨站诱导（2026-11 修复）：第三方页面放一张 `<img src="…/api/honeypot">`，或用
+ *    跳转、iframe 把访客送到这里，浏览器会带着真实 UA 发请求；SameSite=Lax 的站长 cookie
+ *    不随跨站子资源发送，admin 豁免也失效。这类请求只拒绝、不封禁，判据见
+ *    lib/fetch-metadata.ts。顺着本站 DOM 抓链接的爬虫发的是同源请求，照旧撞上即封。
  */
 export async function GET(req: Request) {
   const ip = getClientIpFromRequest(req);
@@ -41,7 +47,7 @@ export async function GET(req: Request) {
     isAdmin ||
     isLegitSearchBot(ua) || isLegitRssClient(ua) || isLegitLinkPreviewBot(ua);
 
-  if (!isWhitelisted) {
+  if (!isWhitelisted && !isCrossSiteInduced(req.headers)) {
     await blockIp(ip, `Visited honeypot. UA: ${ua}`);
   }
 
