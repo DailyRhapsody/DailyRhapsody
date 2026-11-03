@@ -13,8 +13,8 @@ import { getAllowedHostnames } from "@/lib/site-hosts";
  *  - `Sec-Fetch-Site: cross-site / same-site`（Chrome、Firefox、Safari 16.4+ 都会发）；
  *  - 不发 Fetch Metadata 的旧浏览器：`Origin` 或 `Referer` 指向白名单之外的主机，
  *    或者 `Accept` 以 `image/` 开头（`<img>` 子资源；顺着链接抓页面的爬虫不会这样请求）。
- * curl、requests、scrapy 默认不带这些头，照旧计违规。手工伪造 cross-site 的脚本只是免于记违规，
- * 门闸、同源校验与限流照样拒绝它。
+ * curl、requests、scrapy 默认不带这些头，照旧计违规。手工伪造 cross-site 的脚本免于记违规，
+ * 全局限流也只扣它那份跨站额度（proxy.ts，交替声明最多拿到两份）；受保护接口仍要门闸凭据。
  */
 export function isCrossSiteInduced(headers: Headers): boolean {
   const site = headers.get("sec-fetch-site")?.trim().toLowerCase();

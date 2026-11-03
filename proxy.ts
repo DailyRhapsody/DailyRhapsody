@@ -13,6 +13,7 @@ import {
 } from "@/lib/scrape-gate";
 import { isLikelyBotUserAgent, isLegitSearchBot, withAntiScrapeHeaders } from "@/lib/request-guard";
 import { isIpBlocked, blockedTtlSeconds, recordViolation } from "@/lib/honeypot";
+import { isCrossSiteInduced } from "@/lib/fetch-metadata";
 import { blockedPageHtml, wantsHtml } from "@/lib/blocked-page";
 import { limitByIp } from "@/lib/upstash-rate-limit";
 import { getClientIpFromRequest } from "@/lib/client-ip";
@@ -173,14 +174,16 @@ export default async function proxy(req: NextRequest) {
     );
   }
 
-  // 2. 全局 per-IP 限流（覆盖所有匹配的页面 + API）
+  // 2. 全局 per-IP 限流（覆盖所有匹配的页面 + API）。跨站诱导的请求单独记账：第三方页面
+  // 能让访客的浏览器任意发这类请求，与访客自己的请求共用额度，就能把访客挤到超额、记违规。
   if (!isAdminReq && ip && ip !== "unknown") {
-    const burstOk = await limitByIp("global:burst", ip, 40, "10 s");
+    const bucket = isCrossSiteInduced(req.headers) ? ":xs" : "";
+    const burstOk = await limitByIp(`global:burst${bucket}`, ip, 40, "10 s");
     if (!burstOk) {
       await recordViolation(ip, `burst on ${pathname}`, req.headers);
       return tooManyResponse(10);
     }
-    const sustainedOk = await limitByIp("global:sustained", ip, 150, "1 m");
+    const sustainedOk = await limitByIp(`global:sustained${bucket}`, ip, 150, "1 m");
     if (!sustainedOk) {
       await recordViolation(ip, `sustained on ${pathname}`, req.headers);
       return tooManyResponse(60);
