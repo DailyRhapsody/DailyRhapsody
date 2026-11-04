@@ -15,6 +15,8 @@ import { SCRAPE_GATE_COOKIE, verifyGateValue } from "@/lib/scrape-gate";
  *
  * 限流排在鉴权之前：否则未鉴权的连发既不节流也不计违规（中间件之外还有一层兜底）。
  * 不强设 Cache-Control：受保护路径由 withAntiScrapeHeaders 统一给 private, no-store。
+ * Sec-Fetch-Site 校验（checkSecFetch）不能关：跨站顶层导航会带上 Lax 的 dr_gate，关掉后第三方页面
+ * 能替访客用光本路由额度，访客自己的取数随之超额计违规。
  */
 export async function GET(req: Request) {
   const blocked = await guardApiRequest(req, {
@@ -23,7 +25,6 @@ export async function GET(req: Request) {
     windowMs: 60_000,
     blockSuspicious: false,
     checkOrigin: false,
-    checkSecFetch: false,
   });
   if (blocked) return blocked;
 
