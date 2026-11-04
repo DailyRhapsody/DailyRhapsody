@@ -337,6 +337,9 @@ test("跨站请求不得占用访客自己的全局限流额度", async (t) => {
     );
     assert.equal(violations(ip), 0);
     assert.equal(isBlocked(ip), false);
+    // 窗口与主额度相同（1 分钟）：用满后推进 61 秒，跨站请求恢复 200
+    at(159 * 370 + 61_000);
+    assert.equal(await send("/blog?n=160", xsPopupNavigation(ip)), 200);
   });
 
   await t.test("对照：跨站额度按 IP 计，IP A 的跨站额度被 45 张跨站图用满后，IP B 从他站链接点进来照常 200、不计违规", async () => {
