@@ -67,19 +67,13 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
   const [tagCounts, setTagCounts] = useState<{ name: string; value: number }[]>([]);
   const [dateCountsFromApi, setDateCountsFromApi] = useState<PostCountsByDate>({});
   const [outline, setOutline] = useState<EntryOutlineItem[]>([]);
-  /** 首屏请求是否已经成功返回：gate 握手晚到时不重复清空列表。 */
-  const firstPageLoadedRef = useRef(false);
   const [pendingEntryId, setPendingEntryId] = useState<string | null>(null);
-  /** hash 深链落地滚动的中止函数（scrollToEntry 返回）。时间轴跳转或切 tag 接管、gate 重拉
-   *  卸载卡片、组件卸载时中止，否则两段逐帧滚动互相争抢，或追着已移出 DOM 的卡片把页面往上带。 */
+  /** hash 深链落地滚动的中止函数（scrollToEntry 返回）。时间轴跳转或切 tag 接管、组件卸载时
+   *  中止，否则两段逐帧滚动互相争抢，或追着已移出 DOM 的卡片把页面往上带。 */
   const hashScrollStopRef = useRef<(() => void) | null>(null);
-  /** 真正落地过的 hash 深链（锚点 + 当时的 tag）。gate 重拉卸载卡片、页面缩回顶部后据此重新定位；
-   *  读者之后切 tag、点时间轴、打断落地动画，就不再恢复。 */
-  const hashLandedRef = useRef<{ anchor: string; tag: string | null } | null>(null);
   const requestEntry = useCallback((id: string | null) => {
     // 时间轴跳转 / 切 tag 接管页面滚动：先停掉还在进行的 hash 深链落地，读者已离开那篇
     hashScrollStopRef.current?.();
-    hashLandedRef.current = null;
     setPendingEntryId(id);
   }, []);
   /** 是否至少有一次首屏请求成功落地（2xx）。用于区分「真的 0 篇」与「还没拿到 / 请求失败」 */
@@ -111,20 +105,20 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
    * cleanup 里 abort，每条 append 都会被自己触发的重建立刻取消：catch 判为
    * 「主动取消」绕过冷却，finally 翻回 loadingMore 后 observer 重挂再发，
    * 形成请求风暴（2026-08-25 自封 IP 事故）。
-   * 只在首屏换血（切 tag / gate 重拉）与组件卸载时中止。
+   * 只在首屏换血（切 tag）与组件卸载时中止。
    */
   const appendCtrlRef = useRef<AbortController | null>(null);
   /**
    * 当前 items 实际归属的 tag（首页请求成功时写入）。失败时用它区分两种场景：
    * - 切到新 tag 后首页失败 → 必须清空（否则显示「tag B 共 N 篇」+ tag A 的列表，
    *   一滚动还会把 B 的下一页追加到 A 的数据后面，跨 tag 混排）；
-   * - 同 tag 刷新失败（gate 就绪重拉）→ 保留旧数据，不把「加载失败」渲染成「暂无文章」。
+   * - 同 tag 重拉失败（快速来回切 tag）→ 保留旧数据，不把「加载失败」渲染成「暂无文章」。
    */
   const loadedTagRef = useRef<string | null | undefined>(undefined);
   /**
    * 已了结的 hash 深链锚点：已滚到过，或读者已离开（回顶、切去动态 tab）。地址栏的
    * #entry- 会一直留着，不记下来的话此后每次翻页 append 都会重跑深链 effect，
-   * 把读者拉回分享的那篇。只在 gate 就绪重拉冲掉刚落地的位置时清掉（见 hashLandedRef）。
+   * 把读者拉回分享的那篇。
    */
   const hashHandledRef = useRef<string | null>(null);
 
@@ -160,7 +154,6 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
             // 只有 2xx 首屏响应才算「拿到过数据」：失败时下面会清空 items、total 归零，
             // 那种 0 不能当成「本站没有文章」写回顶部卡片。
             setFirstPageLoaded(true);
-            firstPageLoadedRef.current = true;
           }
           if (typeof data.total === "number") setTotal(data.total);
           if (Array.isArray(data.tagCounts)) setTagCounts(data.tagCounts);
@@ -178,42 +171,14 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     [],
   );
 
-  /* ── gate 就绪时的重加载触发器 ── */
-  const [gateGen, setGateGen] = useState(0);
-  /** 上一次首页加载对应的 gateGen：区分「gate 就绪重拉」与快速来回切 tag 造成的同 tag 重拉 */
-  const lastGateGenRef = useRef(gateGen);
-  useEffect(() => {
-    const onGateReady = () => {
-      // 首屏已经拿到 2xx 数据时，握手完成只是一次重复请求：
-      // 从首页点进博客、GateClient 稍后才 dispatch 会让列表闪一次骨架屏，
-      // 看起来像整页重载。只有首屏失败/仍在请求时才需要 gate 重拉。
-      if (firstPageLoadedRef.current) return;
-      setGateGen((g) => g + 1);
-    };
-    window.addEventListener("dr-gate-ready", onGateReady);
-    return () => window.removeEventListener("dr-gate-ready", onGateReady);
-  }, []);
-
-  /* ── 首屏 / selectedTag 切换 / gate 就绪：从头拉一页 ──
-   * AbortController cleanup 有两个作用：
-   * 1. gateGen 自增（握手完成）触发二次执行时，取消上一条 in-flight 请求的
-   *    客户端等待（服务端在途的那份会跑完，同实例由 ensureRefreshTask 合并；
-   *    2026-08 事故中两条请求都活着且互相清 state，是放大器之一）。
-   * 2. 被取消的旧请求 reject 后绝不能再动 state——否则后失败的会把先成功的清空。
+  /* ── 首屏 / selectedTag 切换：从头拉一页 ──
+   * AbortController cleanup：切 tag 时取消上一条 in-flight 请求的客户端等待；
+   * 被取消的旧请求 reject 后绝不能再动 state——否则后失败的会把先成功的清空
+   * （2026-08 事故中两条请求都活着且互相清 state，是放大器之一）。
    * catch 的清空策略见 loadedTagRef 注释：只在「切到新 tag 后首页失败」时清空，
    * 同 tag 刷新失败保留旧数据，「加载失败」不再被渲染成「暂无文章」。 */
   useEffect(() => {
     const ctrl = new AbortController();
-    const gateReload = lastGateGenRef.current !== gateGen;
-    lastGateGenRef.current = gateGen;
-    // gate 就绪重拉（新标签页打开分享链接时握手完成会来一次）期间 loading 为真、卡片全部卸载，
-    // 页面缩回顶部，刚落地的位置随之丢失。同一 tag 下真正落地、之后读者没再操作过（切 tag、
-    // 点时间轴、打断落地）的那次，重拉结束后清掉「已了结」让深链重新定位；读者已离开的不恢复。
-    const landed = hashLandedRef.current;
-    const relocate =
-      gateReload && landed !== null && landed.tag === selectedTag && hashHandledRef.current === landed.anchor;
-    // 卡片即将卸载：还在进行的落地滚动随之作废，免得追着脱离 DOM 的卡片把页面往上带
-    if (relocate) hashScrollStopRef.current?.();
     // 首屏换血后列表整体重置，在途的旧 append 结果不能再接到新列表后面
     appendCtrlRef.current?.abort();
     appendCtrlRef.current = null;
@@ -223,7 +188,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
     setLoading(true);
     loadPage(0, false, selectedTag, ctrl.signal)
       .catch(() => {
-        // 本 effect 自己取消的请求（cleanup / gate 二次触发），不动任何 state
+        // 本 effect 自己取消的请求（cleanup），不动任何 state
         if (ctrl.signal.aborted) return;
         // 切到新 tag 后首页失败：清空，避免旧 tag 数据顶着新 tag 的名义展示
         // 并被后续分页混排；同 tag 刷新失败则保留旧数据（见 loadedTagRef 注释）。
@@ -236,15 +201,10 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
       })
       .finally(() => {
         if (ctrl.signal.aborted) return;
-        // 成功或同 tag 失败保留旧数据都会重新渲染卡片，此时再放开深链
-        if (relocate) {
-          hashHandledRef.current = null;
-          hashLandedRef.current = null;
-        }
         setLoading(false);
       });
     return () => ctrl.abort();
-  }, [selectedTag, loadPage, gateGen]);
+  }, [selectedTag, loadPage]);
 
   /* 同页 hash 跳转（例如 AI-Persona 回复里的文章链接）不会重载页面：递增一下让深链 effect
    * 立即处理新锚点，否则要等下一次翻页才生效，把读者从当前位置拉回去 */
@@ -274,12 +234,7 @@ export function useEntries(selectedTag: string | null): UseEntriesState {
       // 不用原生 smooth scrollIntoView：首屏翻转动画（rotateX）期间按变形后的几何
       // 算落点，会停在半路或根本不滚；scrollToEntry 逐帧跟随目标实时位置并在结束后校正
       hashScrollStopRef.current?.();
-      const landing = { anchor, tag: selectedTag };
-      hashLandedRef.current = landing;
-      hashScrollStopRef.current = scrollToEntry(el, (completed) => {
-        // 读者滚轮/触摸/按键打断了落地：算读者已接管，gate 重拉时不再恢复
-        if (!completed && hashLandedRef.current === landing) hashLandedRef.current = null;
-      });
+      hashScrollStopRef.current = scrollToEntry(el, () => {});
       return;
     }
     const targetId = anchor.slice("entry-".length);

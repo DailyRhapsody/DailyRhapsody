@@ -2,11 +2,9 @@ import { NextResponse } from "next/server";
 import { markNonceUsed, recordViolation } from "@/lib/honeypot";
 import {
   checkPow,
-  GATE_TTL_MS,
-  mintGateValue,
   POW_DIFFICULTY,
-  SCRAPE_GATE_COOKIE,
   SCRAPE_SEED_COOKIE,
+  setGateCookies,
   verifySeedValue,
 } from "@/lib/scrape-gate";
 import {
@@ -125,15 +123,9 @@ export async function POST(req: Request) {
     );
   }
 
-  // 通过：签发 dr_gate（HttpOnly），同时清除 seed
+  // 通过：签发 dr_gate（HttpOnly）与提示，同时清除 seed
   const res = withAntiScrapeHeaders(NextResponse.json({ ok: true }));
-  res.cookies.set(SCRAPE_GATE_COOKIE, mintGateValue(), {
-    httpOnly: true,
-    path: "/",
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: Math.floor(GATE_TTL_MS / 1000),
-  });
+  setGateCookies(res);
   res.cookies.set(SCRAPE_SEED_COOKIE, "", {
     path: "/",
     maxAge: 0,

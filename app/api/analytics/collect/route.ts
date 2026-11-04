@@ -38,13 +38,13 @@ function numOrNull(v: unknown): number | null {
 
 export async function POST(req: Request) {
   // analytics 是「fire-and-forget」最佳努力上报：任何分支都返回 204
-  // 让前端不看到 console 红 + 不触发 fetchWithTimeout 的 403 退避循环。
+  // 让前端不看到 console 红。
   // 不该计入的（管理员/无 gate/解析失败/存储故障）一律静默丢弃。
 
   // 管理员自身的浏览不计入统计
   if (await isAdmin()) return new NextResponse(null, { status: 204 });
 
-  // 没有 dr_gate 视为脏数据，静默丢弃；不返回 403（避免污染前端 console + 触发 fetchWithTimeout 重试）
+  // 没有 dr_gate 视为脏数据，静默丢弃；不返回 403（避免污染前端 console）
   const gate = (await cookies()).get(SCRAPE_GATE_COOKIE)?.value;
   if (!verifyGateValue(gate)) {
     return new NextResponse(null, { status: 204 });

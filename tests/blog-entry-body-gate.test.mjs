@@ -112,6 +112,6 @@ test("页面不直出正文，正文组件只拿到 id", () => {
 
   const body = fs.readFileSync("app/(detail)/blog/[id]/BlogEntryBody.tsx", "utf8");
   assert.match(body, /^"use client";/);
-  // 走 fetchWithTimeout：握手未完成时的 403 会等 dr-gate-ready 后重试
+  // 走 fetchWithTimeout：先等门闸握手完成再发请求
   assert.match(body, /fetchWithTimeout\(`\/api\/diaries\/\$\{encodeURIComponent\(id\)\}`/);
 });

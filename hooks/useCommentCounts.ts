@@ -30,7 +30,7 @@ function load() {
       emit();
     })
     .catch(() => {
-      // 失败不缓存结果：gate 就绪或下一张卡片订阅时再试
+      // 失败不缓存结果：下一张卡片订阅时再试
       state = "idle";
     });
 }
@@ -38,10 +38,8 @@ function load() {
 function subscribe(onChange: () => void) {
   listeners.add(onChange);
   load();
-  if (listeners.size === 1) window.addEventListener("dr-gate-ready", load);
   return () => {
     listeners.delete(onChange);
-    if (listeners.size === 0) window.removeEventListener("dr-gate-ready", load);
   };
 }
 

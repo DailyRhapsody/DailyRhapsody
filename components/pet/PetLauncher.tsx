@@ -22,7 +22,7 @@ export function PetLauncher() {
   const mode = getPetMode();
   const pathname = usePathname();
   if (mode === "off") return null;
-  // 只放在会签发握手的页面：404 等页面拿不到 dr_gate，请求对话接口只会被拒并记违规。
+  // 只放在会签发 seed 的内容页（挂载范围是界面决定；其他页面的握手也能向 /api/gate/seed 现取 seed）。
   // 封面虽然签发握手，但它是全屏沉浸页且会自动跳转，不放
   if (!pathname || pathname === "/" || !isGateIssuingPath(pathname)) return null;
   // /blog 与 /moments 是同一页的两个 tab，切 tab 不算换页，不必重查会话

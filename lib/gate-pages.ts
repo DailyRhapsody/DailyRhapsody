@@ -1,7 +1,7 @@
 /**
- * 会签发 dr_seed 的页面。只有在这些页面上 GateClient 才能完成握手，
- * 受保护接口（含 AI-Persona 对话）才请求得通。proxy.ts 与右下角宠物共用这一份清单，
- * 增删页面时两边不会不同步。
+ * 会签发 dr_seed 的页面：页面 GET 时 proxy 随响应下发 seed，握手不必再现取。
+ * 其他页面上握手会先向 /api/gate/seed 现取一张（lib/gate-handshake.ts），同样能完成。
+ * proxy.ts 与右下角宠物共用这一份清单，增删页面时两边不会不同步。
  */
 export function isGateIssuingPath(pathname: string): boolean {
   if (pathname === "/reference") return true;
