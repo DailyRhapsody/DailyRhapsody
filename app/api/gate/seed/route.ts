@@ -13,9 +13,9 @@ import {
 } from "@/lib/scrape-gate";
 
 /**
- * 客户端在 POST /api/gate/issue 因 IP bucket 不匹配返回 403 后，
- * 通过本端点在同一条 fetch 通道上重新获取绑定当前 IP 的 dr_seed，
- * 无需页面重载。安全模型与 middleware attachSeed 一致：
+ * 客户端握手时手上没有 dr_seed（挂起超过 5 分钟、只做过客户端跳转、页面不签发 seed、
+ * 上次握手中止后丢弃了 seed），或 POST /api/gate/issue 因 IP bucket 不匹配返回 403 时，
+ * 通过本端点在同一条 fetch 通道上获取绑定当前 IP 的 dr_seed，无需页面重载（lib/gate-handshake.ts）。安全模型与 middleware attachSeed 一致：
  *  — Sec-Fetch-Site/Mode/Dest 浏览器专属校验
  *  — Origin/Referer 同源
  *  — 速率限制 scope=gate:seed

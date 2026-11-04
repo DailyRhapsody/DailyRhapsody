@@ -2,12 +2,11 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
   gateExpiringSoon,
-  GATE_TTL_MS,
-  mintGateValue,
   mintSeedValue,
   SCRAPE_GATE_COOKIE,
   SCRAPE_SEED_COOKIE,
   SEED_TTL_MS,
+  setGateCookies,
   verifyGateValue,
   verifySeedValue,
 } from "@/lib/scrape-gate";
@@ -229,18 +228,12 @@ export default async function proxy(req: NextRequest) {
         )
       );
     }
-    // gate 临期自动续期：避免用户正在浏览中突然 48h 到期被踢出。
+    // gate 临期自动续期：避免用户正在浏览中突然 48h 到期被踢出（提示 cookie 一并续期）。
     // admin_session 走自己的续期逻辑，这里只续 dr_gate。
     const gateRaw = req.cookies.get(SCRAPE_GATE_COOKIE)?.value;
     if (gateRaw && gateExpiringSoon(gateRaw)) {
       const res = withAntiScrapeHeaders(NextResponse.next());
-      res.cookies.set(SCRAPE_GATE_COOKIE, mintGateValue(), {
-        httpOnly: true,
-        path: "/",
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        maxAge: Math.floor(GATE_TTL_MS / 1000),
-      });
+      setGateCookies(res);
       return res;
     }
     return withAntiScrapeHeaders(NextResponse.next());

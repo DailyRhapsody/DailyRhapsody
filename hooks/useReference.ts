@@ -48,7 +48,7 @@ export type UseReferenceState = {
 
 /**
  * /reference 列表的数据层。仿 useEntries 的最简版本：
- *  - 首屏 / 切 tag / dr-gate-ready 后从头拉一页
+ *  - 首屏 / 切 tag 时从头拉一页
  *  - sentinel 进入视窗 → append 下一页
  *  - 不做日历热力图、彩蛋、hash 深链（reference 没有这些需求）
  */
@@ -70,23 +70,15 @@ export function useReference(
    *  空列表不算「给过」——缓存冷时服务端可能只回空态，仍需客户端走 gate 补拉。 */
   const skipHydrationFetchRef = useRef(Boolean(initial?.items.length));
 
-  /* ── gate 就绪时的重加载触发器 ── */
-  const [gateGen, setGateGen] = useState(0);
-  useEffect(() => {
-    const onGateReady = () => setGateGen((g) => g + 1);
-    window.addEventListener("dr-gate-ready", onGateReady);
-    return () => window.removeEventListener("dr-gate-ready", onGateReady);
-  }, []);
-
   /**
    * loading 不用独立 state：它完全可以从「当前想要的请求」与「已完成的请求」之差派生。
    * 这样 effect body 里不需要同步 setState（react-hooks/set-state-in-effect），
    * 也避免了切 tag 时先渲染一帧旧数据、再翻转 loading 的级联渲染。
    */
   const [loadedKey, setLoadedKey] = useState<string | null>(
-    initial ? `${selectedTag ?? ""}#0` : null,
+    initial ? (selectedTag ?? "") : null,
   );
-  const requestKey = `${selectedTag ?? ""}#${gateGen}`;
+  const requestKey = selectedTag ?? "";
   const loading = loadedKey !== requestKey;
 
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -104,14 +96,14 @@ export function useReference(
    * 在途 append 请求的 controller。生命周期跟随请求本身而不是 observer effect——
    * observer effect 因 loadingMore / items.length 翻转会频繁重建，若在它的
    * cleanup 里 abort，每条 append 都会被自己触发的重建立刻取消。
-   * 只在首屏换血（切 tag / gate 重拉）与组件卸载时中止。
+   * 只在首屏换血（切 tag）与组件卸载时中止。
    */
   const appendCtrlRef = useRef<AbortController | null>(null);
   /**
    * 当前 items 实际归属的 tag（首页请求成功时写入）。失败时用它区分两种场景：
    * - 切到新 tag 后首页失败 → 必须清空（否则显示「tag B 共 N 条」+ tag A 的列表，
    *   一滚动还会把 B 的下一页追加到 A 的数据后面，跨 tag 混排）；
-   * - 同 tag 刷新失败（gate 就绪重拉）→ 保留旧数据，不把「加载失败」渲染成「暂无收藏」。
+   * - 请求的正是 items 当前归属的 tag（切走失败后再切回）→ 保留旧数据，不把「加载失败」渲染成「暂无收藏」。
    */
   const loadedTagRef = useRef<string | null | undefined>(
     initial ? selectedTag : undefined,
@@ -146,15 +138,15 @@ export function useReference(
     [],
   );
 
-  /* ── 首屏 / 切 tag / gate 就绪：从头拉一页 ──
-   * AbortController cleanup：gate 就绪或切 tag 触发二次执行时取消上一条
+  /* ── 首屏 / 切 tag：从头拉一页 ──
+   * AbortController cleanup：切 tag 触发二次执行时取消上一条
    * in-flight 请求；被取消的旧请求 reject 后绝不能再动 state——否则后失败的
    * 会把先成功的清空。catch 的清空策略见 loadedTagRef 注释：只在「切到新 tag
-   * 后首页失败」时清空，同 tag 刷新失败保留旧数据，「加载失败」不再被渲染成
+   * 后首页失败」时清空，同 tag 重拉失败保留旧数据，「加载失败」不再被渲染成
    * 「暂无收藏」。 */
   useEffect(() => {
     // 首屏数据已经由 server component 塞进来：跳过挂载时的重复请求。
-    // 后续切 tag、gate 就绪重拉照常走下面的逻辑。
+    // 后续切 tag 照常走下面的逻辑。
     if (skipHydrationFetchRef.current) {
       skipHydrationFetchRef.current = false;
       return;
@@ -165,7 +157,7 @@ export function useReference(
     appendCtrlRef.current = null;
     loadPage(0, false, selectedTag, ctrl.signal)
       .catch(() => {
-        // 本 effect 自己取消的请求（cleanup / gate 二次触发），不动任何 state
+        // 本 effect 自己取消的请求（cleanup / 切 tag 二次触发），不动任何 state
         if (ctrl.signal.aborted) return;
         // tagCounts 是全站维度、与 tag 筛选无关，保留。
         if (loadedTagRef.current !== selectedTag) {

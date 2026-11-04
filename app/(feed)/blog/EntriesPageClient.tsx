@@ -25,6 +25,7 @@ import { useMoments } from "@/hooks/useMoments";
 import { useTabSwipeNavigation } from "@/hooks/useTabSwipeNavigation";
 import { useEntries } from "@/hooks/useEntries";
 import { useEggPullToRefresh } from "@/hooks/useEggPullToRefresh";
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
 // 修饰键点击（新标签页）打开的地址。文章用绝对地址：在 /moments 上用相对 hash 会落在动态 tab；
 // 动态没有深链定位，只打开动态 tab
@@ -214,33 +215,22 @@ export default function EntriesPageClient({
     return () => clearTimeout(t);
   }, []);
 
-  /* gate 握手完成前后各会跑一次：首屏这次多半拿不到 dr_gate（接口 403），
-     握手完成后由 dr-gate-ready 再取一次。与 useEntries / useCommentCounts 的重拉写法一致。 */
-  const [mapGateGen, setMapGateGen] = useState(0);
-  useEffect(() => {
-    const onGateReady = () => setMapGateGen((g) => g + 1);
-    window.addEventListener("dr-gate-ready", onGateReady);
-    return () => window.removeEventListener("dr-gate-ready", onGateReady);
-  }, []);
-
+  /* 访客点位不是首屏必需：晚 1.2 秒再取，经 fetchWithTimeout 等门闸就绪后发出。 */
   useEffect(() => {
     let cancelled = false;
-    const timer = setTimeout(
-      () => {
-        fetch("/api/analytics/visitor-map", { cache: "no-store" })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((d) => {
-            if (!cancelled && d && Array.isArray(d.points)) setMapPoints(d.points as VisitorMapPoint[]);
-          })
-          .catch(() => {});
-      },
-      mapGateGen === 0 ? 1200 : 0,
-    );
+    const timer = setTimeout(() => {
+      fetchWithTimeout("/api/analytics/visitor-map", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!cancelled && d && Array.isArray(d.points)) setMapPoints(d.points as VisitorMapPoint[]);
+        })
+        .catch(() => {});
+    }, 1200);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [mapGateGen]);
+  }, []);
 
   /* ── 禁止复制：键盘、右键菜单的复制与剪切都拦下；输入框里（写评论）照常，
         「复制文章链接」走剪贴板接口或临时 textarea，不受影响 ── */

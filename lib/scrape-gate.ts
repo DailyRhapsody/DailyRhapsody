@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { isIPv4, isIPv6 } from "node:net";
+import type { NextResponse } from "next/server";
 
 /**
  * 防爬「双 cookie + 客户端二次握手」机制：
@@ -170,6 +171,21 @@ export function mintGateValue(): string {
 
 export function verifyGateValue(raw: string | undefined): boolean {
   return parseAndVerifyGate(raw) !== null;
+}
+
+/** 脚本可读的「持有 dr_gate」提示，值无意义。客户端（lib/gate-handshake.ts）只凭它决定要不要握手。 */
+export const GATE_HINT_COOKIE = "dr_gate_hint";
+
+/**
+ * 签发与续期 dr_gate 的唯一入口：凭据与提示同一处写出，客户端的判断与凭据同源。
+ * 提示比凭据早 60 秒过期：token 的到期时间签发时就定了，浏览器收到响应才开始计 Max-Age，
+ * 留出提前量，客户端换新凭据时旧凭据一定还有效，不会在最后一刻撞上 403。
+ */
+export function setGateCookies(res: NextResponse): void {
+  const maxAge = Math.floor(GATE_TTL_MS / 1000);
+  const base = { path: "/", sameSite: "lax", secure: process.env.NODE_ENV === "production" } as const;
+  res.cookies.set(SCRAPE_GATE_COOKIE, mintGateValue(), { ...base, httpOnly: true, maxAge });
+  res.cookies.set(GATE_HINT_COOKIE, "1", { ...base, maxAge: maxAge - 60 });
 }
 
 /**

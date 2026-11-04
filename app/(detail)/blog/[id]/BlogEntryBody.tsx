@@ -17,7 +17,7 @@ type BodyState =
  * 正文不能由服务端直出。这个页面不要求握手，而文章 id 不是秘密：思维大树的
  * public/tree/tree.json 与 v15-oak.html 的内嵌快照列着全部公开文章的 id，静态文件又不经过
  * proxy。页面直出正文，脚本不握手就能按 id 逐篇取走全站正文。/api/diaries/[id] 受门闸保护；
- * 握手还没完成时拿到的 403 由 fetchWithTimeout 等 dr-gate-ready 后重试。
+ * fetchWithTimeout 先等门闸握手完成再发请求（lib/gate-handshake.ts）。
  */
 export function BlogEntryBody({ id }: { id: string }) {
   const [state, setState] = useState<BodyState>({ status: "loading" });

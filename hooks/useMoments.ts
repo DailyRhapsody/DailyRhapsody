@@ -57,7 +57,7 @@ export function useMoments({ active }: { active: boolean }): UseMomentsState {
    * 在途 append 请求的 controller。生命周期跟随请求本身而不是 observer effect——
    * observer effect 因 loadingMore / offset 翻转会频繁重建，若在它的 cleanup 里
    * abort，每条 append 都会被自己触发的重建立刻取消。
-   * 只在首屏换血（gate 重拉）与组件卸载时中止。
+   * 只在首屏重拉（effect 重跑）与组件卸载时中止。
    */
   const appendCtrlRef = useRef<AbortController | null>(null);
 
@@ -87,10 +87,10 @@ export function useMoments({ active }: { active: boolean }): UseMomentsState {
       } else setMoments((prev) => [...prev, ...next]);
       return true;
     } catch {
-      // 主动取消的请求（gate 重拉换血 / 卸载），不动任何 state
+      // 主动取消的请求（首屏重拉 / 卸载），不动任何 state
       if (signal?.aborted) return true;
-      // 失败保留已有数据、不动 hasMore：不把「加载失败」渲染成空列表，
-      // 恢复交给 gate 重拉或下面的冷却重试
+      // 失败保留已有数据、不动 hasMore：不把「加载失败」渲染成空列表。
+      // 门闸凭据失效已由 fetchWithTimeout 重新握手并重试过；翻页失败再走下面的冷却重试
       if (!replace) {
         // 冷却 5s：避免「失败 → observer 重建 → sentinel 仍在视窗 → 立即重试」
         // 的自旋打满限流
@@ -116,25 +116,16 @@ export function useMoments({ active }: { active: boolean }): UseMomentsState {
     }
   }, []);
 
-  /* gate 就绪时重加载 */
-  const [gateGen, setGateGen] = useState(0);
-  useEffect(() => {
-    const onGateReady = () => setGateGen((g) => g + 1);
-    window.addEventListener("dr-gate-ready", onGateReady);
-    return () => window.removeEventListener("dr-gate-ready", onGateReady);
-  }, []);
-
-  /* 首次拉取 + gate 就绪后重拉。
-   * AbortController cleanup：gate 就绪触发二次执行时取消上一条 in-flight 请求，
+  /* 首次拉取。AbortController cleanup：卸载或重挂时取消 in-flight 请求，
    * 被取消的旧请求 reject 后绝不能再动 state——否则后失败的会把先成功的覆盖。 */
   useEffect(() => {
     const ctrl = new AbortController();
-    // 换血重拉后列表整体重置，在途的旧 append 结果不能再接到新列表后面
+    // 首屏重拉后列表整体重置，在途的旧 append 结果不能再接到新列表后面
     appendCtrlRef.current?.abort();
     appendCtrlRef.current = null;
     void loadPage(0, true, ctrl.signal);
     return () => ctrl.abort();
-  }, [loadPage, gateGen]);
+  }, [loadPage]);
 
   /* 无限滚动：仅在动态 tab 激活时挂 IntersectionObserver */
   useEffect(() => {
