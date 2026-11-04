@@ -206,6 +206,12 @@ export type AnalysisPlan = {
   result?: Note;
 };
 
+/** 全站分析额度拒绝了某次模型调用：带着闸门的原始响应冒泡，由路由最外层原样返回。 */
+export class QuotaRejected extends Error {
+  readonly response: Response;
+  constructor(response: Response) { super("分析额度已用完"); this.response = response; }
+}
+
 /** 切换供应商时按它的拒答措辞补充；认不出来就当作普通失败，不静默跳过。 */
 export function isProviderRefusal(e: unknown): boolean {
   const message = e instanceof Error ? e.message : "";

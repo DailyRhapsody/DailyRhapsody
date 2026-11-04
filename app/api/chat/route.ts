@@ -17,7 +17,7 @@ import { guardApiRequest, withAntiScrapeHeaders } from "@/lib/request-guard";
 import { rejectCrossSiteWrite } from "@/lib/same-origin";
 import { isUpstashConfigured, limitByIp } from "@/lib/upstash-rate-limit";
 
-// 分析（Skill）每次只调用一次模型；300s 同时为文章缓存的后台刷新保留原有预算。
+// 分析（Skill）每次请求通常只调用一次模型（拒答二分探测例外）；300s 同时为文章缓存的后台刷新保留原有预算。
 // Agent 模式下普通对话改走工具循环（模型调用 ≤5 次 / 工具执行 ≤4 次，预算见 AGENT_LIMITS），Skill 口径不受影响。
 export const maxDuration = 300;
 
@@ -75,7 +75,7 @@ function normalizeMessages(raw: unknown): LlmMessage[] | null {
 
 
 async function authorizeModel(req: Request, admin: boolean, analysis = false): Promise<Response | null> {
-  // Skill 使用共享结果、固定服务器任务；每个真实批次计全站分析额度，不消耗聊天30轮。
+  // Skill 使用共享结果、固定服务器任务；每次真实模型调用（含拒答二分探测）计全站分析额度，不消耗聊天30轮。
   if (analysis) {
     try {
       return await limitByIp("chat:analysis:global", "all", 120, "1 d", { failClosed: true })
