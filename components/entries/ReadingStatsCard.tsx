@@ -313,8 +313,16 @@ export function ReadingStatsCard({ stats }: { stats: ReadingStats | null }) {
     [panels],
   );
 
-  // 没有数据就整张卡不渲染：宁可少一张卡，也不显示空壳
-  if (!stats || panels === 0) return null;
+  // 数据缺失不改变卡片条结构；不显示伪造数字，也不开放空详情。
+  if (!stats || panels === 0) return (
+    <div
+      aria-label="微信读书阅读数据暂不可用"
+      className="flex h-[148px] w-[168px] shrink-0 flex-col rounded-xl border border-zinc-200 bg-white/80 p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-800/80"
+    >
+      <p className={`text-xl font-bold ${VALUE}`}>微信读书</p>
+      <p className={`mt-1 text-[0.7rem] ${MUTED}`}>数据暂不可用</p>
+    </div>
+  );
 
   const current = Math.min(index, panels - 1);
 
