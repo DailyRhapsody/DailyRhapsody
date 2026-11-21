@@ -42,10 +42,8 @@ export async function GET(req: NextRequest) {
   }
   const result: Record<string, number | string> = {};
 
-  // 顺序执行而不是并发：三个源共享同一 Notion token 的速率配额（约 3 req/s），
-  // 并发只会互相拖慢；预热对时延不敏感。diaries 放最后：它连同持锁补跑最长可到约 290s
-  // （lib/notion.ts CATCH_UP_DEADLINE_MS），moments / reference 几秒就完，先跑完并释放各自的锁，
-  // 不会因为本次调用超时被截断在持锁状态。
+  // 顺序执行：Notion 三源共享速率配额。diaries 最长可到约 290s，放最后；
+  // 微信读书不共享 Notion 配额，也必须在 diaries 之前刷新，否则 300s 总预算会使它长期饿死。
   try {
     result.moments = await warmMomentsCache();
   } catch (e) {
@@ -58,22 +56,18 @@ export async function GET(req: NextRequest) {
     console.warn("[cron/warm-cache] reference failed:", e);
     result.reference = "failed";
   }
-  try {
-    result.diaries = await warmDiariesCache();
-  } catch (e) {
-    console.warn("[cron/warm-cache] diaries failed:", e);
-    result.diaries = "failed";
-  }
-
-  // 微信读书放在三源之后：它失败时有上一份缓存可用，是最适合牺牲的一段；
-  // 自带独立超时（lib/weread.ts GATEWAY_TIMEOUT_MS），不持有 Notion 侧的刷新锁。
-  // 它的状态是独立字段，且不参与下面的 failed 判定 —— 否则微信读书单次失败会让
-  // 整个 Cron 返回 500，掩盖真正的 Notion 故障。
+  // 其状态独立于 Notion 的 failed 判定，不用一次网关故障掩盖 Notion 故障。
   try {
     result.weread = await refreshReadingStats();
   } catch (e) {
     console.warn("[cron/warm-cache] weread failed:", e);
     result.weread = "failed";
+  }
+  try {
+    result.diaries = await warmDiariesCache();
+  } catch (e) {
+    console.warn("[cron/warm-cache] diaries failed:", e);
+    result.diaries = "failed";
   }
 
   const failed = ["moments", "reference", "diaries"].some(

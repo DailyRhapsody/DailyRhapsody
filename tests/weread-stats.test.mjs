@@ -2,7 +2,7 @@
 //
 // 微信读书阅读数据的纯函数与降级行为。
 //
-// 字段口径以腾讯官方 skill 文档为准（Tencent/WeChatReading，skills/readdata.md，v1.0.5），
+// 字段口径以腾讯官方 skill 文档为准（Tencent/WeChatReading，skills/readdata.md，v1.0.6），
 // 两处最容易写错的地方各有专门用例：
 //   totalReadTime 单位是秒；readTimes 的 key 是分桶起始时间戳（秒），不是日期字符串。
 import assert from "node:assert/strict";
@@ -42,6 +42,28 @@ test("网关升级提示不丢弃本次已返回的阅读数据，后续请求�
   assert.equal(stats?.totalMinutes, 60);
   assert.deepEqual(requests.map((request) => request.mode), ["monthly", "overall"]);
   assert.ok(requests.every((request) => request.skill_version === "1.0.6"));
+});
+
+test("冷缓存时两次稍慢的网关请求仍能填充真实统计", async (t) => {
+  const saved = process.env.WEREAD_API_KEY;
+  process.env.WEREAD_API_KEY = "test-only";
+  t.after(() => {
+    if (saved === undefined) delete process.env.WEREAD_API_KEY;
+    else process.env.WEREAD_API_KEY = saved;
+  });
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    const { mode } = JSON.parse(options.body);
+    return new Response(JSON.stringify({ totalReadTime: mode === "monthly" ? 600 : 3600 }), { status: 200 });
+  });
+  const stats = await getReadingStats();
+  assert.equal(stats?.monthMinutes, 10);
+  assert.equal(stats?.totalMinutes, 60);
+});
+
+test("Cron 在长耗时日记预热之前刷新微信读书，避免饿死缓存", () => {
+  const source = readFileSync(new URL("../app/api/cron/warm-cache/route.ts", import.meta.url), "utf8");
+  assert.ok(source.indexOf("result.weread = await refreshReadingStats()") < source.indexOf("result.diaries = await warmDiariesCache()"));
 });
 
 test("阅读接口无数据时顶部卡保留无数据状态且不开放详情", () => {

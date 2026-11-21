@@ -1,7 +1,7 @@
 /**
  * 微信读书阅读数据。
  *
- * 取数走服务端单向：Cron 拉一次官方网关写入 Redis，页面服务端只读缓存，
+ * 取数走服务端单向：Cron 拉一次官方网关写入 Redis，页面缓存未命中时限时回源，
  * 不把 API Key 带进浏览器，也不在每次浏览时打第三方接口。
  *
  * 接口协议以腾讯官方 skill 文档为准
@@ -203,8 +203,8 @@ const CACHE_KEY = "dr:weread:monthly:v10";
 const CACHE_HARD_TTL_S = 48 * 60 * 60;
 /** 独立超时预算。Cron 共享 300s 预算，微信读书失败可读上一份缓存，是最适合牺牲的一段 */
 const GATEWAY_TIMEOUT_MS = Number(process.env.WEREAD_TIMEOUT_MS) || 10_000;
-/** 页面回源填充的预算，比 Cron 更短，避免渲染被第三方接口拖住 */
-const PAGEVIEW_FILL_TIMEOUT_MS = Number(process.env.WEREAD_FILL_TIMEOUT_MS) || 2_000;
+/** 冷缓存可等待一次网关请求的超时预算；两周期并发，不再叠加耗时 */
+const PAGEVIEW_FILL_TIMEOUT_MS = Number(process.env.WEREAD_FILL_TIMEOUT_MS) || 12_000;
 const GATEWAY_URL = "https://i.weread.qq.com/api/agent/gateway";
 /** 官方要求在每次请求的 body 里上报技能版本，服务端据此检查更新 */
 const SKILL_VERSION = "1.0.6";
@@ -1074,9 +1074,11 @@ async function withDeadline<T>(p: Promise<T>, ms: number): Promise<T | null> {
  */
 export async function fetchReadingStats(): Promise<ReadingStats | null> {
   if (!apiKey()) return null;
-  const monthly = await callGateway("/readdata/detail", { mode: "monthly" });
+  const [monthly, overall] = await Promise.all([
+    callGateway("/readdata/detail", { mode: "monthly" }),
+    callGateway("/readdata/detail", { mode: "overall" }),
+  ]);
   if (!monthly) return null;
-  const overall = await callGateway("/readdata/detail", { mode: "overall" });
   return buildReadingStats(monthly, overall);
 }
 
