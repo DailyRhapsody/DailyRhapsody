@@ -21,6 +21,36 @@ import {
   refreshReadingStats,
 } from "../lib/weread.ts";
 
+test("网关升级提示不丢弃本次已返回的阅读数据，后续请求上报新版本", async (t) => {
+  const saved = process.env.WEREAD_API_KEY;
+  process.env.WEREAD_API_KEY = "test-only";
+  t.after(() => {
+    if (saved === undefined) delete process.env.WEREAD_API_KEY;
+    else process.env.WEREAD_API_KEY = saved;
+  });
+  const requests = [];
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    const request = JSON.parse(options.body);
+    requests.push(request);
+    return new Response(JSON.stringify({
+      totalReadTime: request.mode === "monthly" ? 600 : 3600,
+      upgrade_info: { latest_version: "1.0.6", current_version: "1.0.5" },
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  });
+  const stats = await fetchReadingStats();
+  assert.equal(stats?.monthMinutes, 10);
+  assert.equal(stats?.totalMinutes, 60);
+  assert.deepEqual(requests.map((request) => request.mode), ["monthly", "overall"]);
+  assert.ok(requests.every((request) => request.skill_version === "1.0.6"));
+});
+
+test("阅读接口无数据时顶部卡保留无数据状态且不开放详情", () => {
+  const source = readFileSync(new URL("../components/entries/ReadingStatsCard.tsx", import.meta.url), "utf8");
+  assert.match(source, /if \(!stats \|\| panels === 0\) return\s*\([\s\S]*?aria-label="微信读书阅读数据暂不可用"/);
+  assert.match(source, /aria-label="微信读书阅读数据暂不可用"[\s\S]*?微信读书[\s\S]*?数据暂不可用[\s\S]*?\);/);
+  assert.doesNotMatch(source, /if \(!stats \|\| panels === 0\) return null/);
+});
+
 /** 2026-10-01 00:00 本地时间的时间戳（秒），与真实回包的 baseTime 一致 */
 const OCT_1 = Math.floor(new Date(2026, 9, 1).getTime() / 1000);
 const day = (n) => OCT_1 + (n - 1) * 86400;

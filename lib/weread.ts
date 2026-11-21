@@ -5,10 +5,10 @@
  * 不把 API Key 带进浏览器，也不在每次浏览时打第三方接口。
  *
  * 接口协议以腾讯官方 skill 文档为准
- * （github.com/Tencent/WeChatReading/skills，readdata.md 与 SKILL.md，v1.0.5）：
+ * （github.com/Tencent/WeChatReading/skills，readdata.md 与 SKILL.md，v1.0.6）：
  *   POST https://i.weread.qq.com/api/agent/gateway
  *   Authorization: Bearer wrk-xxxx
- *   body: {"api_name": "/readdata/detail", "mode": "monthly", "skill_version": "1.0.5"}
+ *   body: {"api_name": "/readdata/detail", "mode": "monthly", "skill_version": "1.0.6"}
  * 业务参数平铺在 body 顶层，不要包进 params。
  *
  * 两处与直觉相反的字段，容易写错，已按文档口径处理：
@@ -207,7 +207,7 @@ const GATEWAY_TIMEOUT_MS = Number(process.env.WEREAD_TIMEOUT_MS) || 10_000;
 const PAGEVIEW_FILL_TIMEOUT_MS = Number(process.env.WEREAD_FILL_TIMEOUT_MS) || 2_000;
 const GATEWAY_URL = "https://i.weread.qq.com/api/agent/gateway";
 /** 官方要求在每次请求的 body 里上报技能版本，服务端据此检查更新 */
-const SKILL_VERSION = "1.0.5";
+const SKILL_VERSION = "1.0.6";
 /** 与 lib/notion-diary-date.ts 的 Asia/Shanghai 口径一致，避免跨月边界差一天 */
 const TIME_ZONE = "Asia/Shanghai";
 
@@ -257,12 +257,11 @@ async function callGateway(
       console.warn(`[weread] ${apiName} errcode=${payload.errcode} ${payload.errmsg ?? ""}`);
       return null;
     }
-    // 官方硬要求：出现 upgrade_info 必须停下按指引升级，不得忽略
+    // 升级提示不阻断本次有效业务数据；官方网关明确要求先消费同一回包。
     if (payload.upgrade_info) {
       console.warn(
-        `[weread] 官方要求升级后再调用：${JSON.stringify(payload.upgrade_info).slice(0, 300)}`,
+        `[weread] 版本升级提示：${JSON.stringify(payload.upgrade_info).slice(0, 300)}`,
       );
-      return null;
     }
     return payload;
   } catch (e) {
