@@ -354,9 +354,9 @@ export function PetChatPanel({
                         onClick={chat.retry}
                         aria-label="重试"
                         title="重试"
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-zinc-900 transition-apple hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500 dark:text-zinc-100 dark:hover:bg-white/10"
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-zinc-500 transition-apple hover:bg-black/5 hover:text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100"
                       >
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <path d="M13 6.5A5 5 0 1 0 13 9.5M13 3.5v3H10" />
                         </svg>
                       </button>
