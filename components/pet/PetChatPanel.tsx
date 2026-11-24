@@ -346,15 +346,19 @@ export function PetChatPanel({
                   </div>
                 )}
                 {chat.error && (
-                  <div role="alert" className="flex items-center gap-2 text-[0.8rem] text-zinc-500 dark:text-zinc-400">
-                    <span>{chat.error.message}</span>
+                  <div role="alert" className="flex items-start gap-2 text-[0.8rem] text-zinc-500 dark:text-zinc-400">
+                    <span className="min-w-0 flex-1">{chat.error.message}</span>
                     {chat.error.retryable && (
                       <button
                         type="button"
                         onClick={chat.retry}
-                        className="px-1 text-zinc-900 underline decoration-zinc-400 underline-offset-2 dark:text-zinc-100"
+                        aria-label="重试"
+                        title="重试"
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-zinc-900 transition-apple hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500 dark:text-zinc-100 dark:hover:bg-white/10"
                       >
-                        重试
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M13 6.5A5 5 0 1 0 13 9.5M13 3.5v3H10" />
+                        </svg>
                       </button>
                     )}
                   </div>
